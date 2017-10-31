@@ -1,4 +1,16 @@
-lib/
+trafficgraphnn/lib/
+data/
 
 *.sublime-project
 *.sublime-workspace
+.idea
+
+### Python template
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
