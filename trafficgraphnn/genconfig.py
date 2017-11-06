@@ -26,11 +26,10 @@ logger = logging.getLogger(__name__)
 class ConfigGenerator(object):
     def __init__(
         self, net_name, net_config_dir='data/networks',
-        output_data_dir='data/output'
     ):
-        self.net_config_dir = net_config_dir
+        self.net_config_dir = os.path.join(net_config_dir, net_name)
         self.net_name = net_name
-        self.output_data_dir = output_data_dir
+        self.output_data_dir = os.path.join(self.net_config_dir, 'output')
 
         self.net_output_file = os.path.join(
             self.net_config_dir, self.net_name + '.net.xml')
@@ -39,8 +38,8 @@ class ConfigGenerator(object):
 
         self.tripfile = None
         self.routefile = None
-        self.detector_def_file = None
-        self.detector_output_file = None
+        self.detector_def_files = []
+        self.detector_output_files = []
 
     def gen_grid_network(
         self, check_lane_foes_all=True,
@@ -67,6 +66,9 @@ class ConfigGenerator(object):
                 '--plain-output-prefix', plain_output_dir + self.net_name])
 
         logger.info('Calling {}'.format(' '.join(netgen_args)))
+
+        if not os.path.exists(self.net_config_dir):
+            os.makedirs(self.net_config_dir)
         netgenproc = subprocess.Popen(netgen_args)
         netgenproc.wait()
         logger.info('Wrote grid network to {}'.format(self.net_output_file))
@@ -150,7 +152,7 @@ class ConfigGenerator(object):
     def gen_detectors(
         self,
         detector_type,
-        detector_def_file_name=None,
+        detector_def_file=None,
         detector_output_file=None,
         distance_to_tls=5,
         frequency=60,
@@ -167,25 +169,34 @@ class ConfigGenerator(object):
 
         pyfile = os.path.join(tools_dir, 'output', scriptname)
 
-        if detector_def_file_name is None:
-            detector_def_file_name = '{}_{}.add.xml'.format(
-                self.net_name, detector_type)
+        if detector_def_file is None:
+            detector_def_file = os.path.join(
+                self.net_config_dir,
+                '{}_{}.add.xml'.format(
+                    self.net_name, detector_type)
+            )
         if detector_output_file is None:
-            detector_output_file = '{}_{}_output.xml'.format(
-                self.net_name, detector_type)
+            detector_output_file = os.path.join(
+                self.output_data_dir,
+                '{}_{}_output.xml'.format(
+                    self.net_name, detector_type)
+            )
 
-        self.detector_def_file = os.path.join(
-            self.net_config_dir, detector_def_file_name)
-        self.detector_output_file = os.path.join(
-            self.output_data_dir, detector_output_file)
+        self.detector_def_files.append(detector_def_file)
+        self.detector_output_files.append(detector_output_file)
 
         gendetectors_args = [
             sys.executable, pyfile,
             '--net-file', self.net_output_file,
             '--distance-to-TLS', str(distance_to_tls),
             '--frequency', str(frequency),
-            '--output', detector_def_file_name,
-            '--results-file', detector_output_file
+            '--output', os.path.basename(detector_def_file),
+            '--results-file', os.path.join(
+                os.path.relpath(
+                    os.path.dirname(detector_output_file),
+                    os.path.dirname(detector_def_file)),
+                os.path.basename(detector_output_file)
+            )
         ]
         if detector_type == 'e2':
             gendetectors_args.extend(['--detector_length', '-1'])
@@ -194,11 +205,16 @@ class ConfigGenerator(object):
         gendetproc = subprocess.Popen(gendetectors_args)
         gendetproc.wait()
 
-        if detector_type == 'e1':
-            remove_e1_lengths(self.detector_def_file)
-        logger.info('Wrote detector file to {}'.format(self.detector_def_file))
+        if not os.path.exists(self.output_data_dir):
+            os.makedirs(self.output_data_dir)
 
-        return self.detector_def_file
+        if detector_type == 'e1':
+            remove_e1_lengths(detector_def_file)
+        elif detector_type == 'e2':
+            update_e2_tag(detector_def_file)
+        logger.info('Wrote detector file to {}'.format(detector_def_file))
+
+        return self.detector_def_files
 
     def gen_e1_detectors(
         self,
