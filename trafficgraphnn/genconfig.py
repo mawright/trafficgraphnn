@@ -149,45 +149,92 @@ class ConfigGenerator(object):
 
     def gen_detectors(
         self,
+        detector_type,
         detector_def_file_name=None,
-        detectoroutputfile_name=None,
+        detector_output_file=None,
         distance_to_tls=5,
         frequency=60,
     ):
+        # TODO write own script that can place multiple e1 detectors on the same lane
+        if detector_type not in ['e1', 'e2', 'e3']:
+            raise ValueError('Unknown detector type: {}'.format(detector_type))
         tools_dir = get_sumo_tools_dir()
-        pyfile = os.path.join(tools_dir, 'output', 'generateTLSE1Detectors.py')
+
+        if detector_type == 'e1':
+            scriptname = 'generateTLSE1Detectors.py'
+        elif detector_type == 'e2':
+            scriptname = 'generateTLSE2Detectors.py'
+
+        pyfile = os.path.join(tools_dir, 'output', scriptname)
 
         if detector_def_file_name is None:
-            detector_def_file_name = '{}_e1.add.xml'.format(self.net_name)
-        if detectoroutputfile_name is None:
-            detectoroutputfile_name = '{}_e1output.xml'.format(self.net_name)
+            detector_def_file_name = '{}_{}.add.xml'.format(
+                self.net_name, detector_type)
+        if detector_output_file is None:
+            detector_output_file = '{}_{}_output.xml'.format(
+                self.net_name, detector_type)
 
         self.detector_def_file = os.path.join(
             self.net_config_dir, detector_def_file_name)
         self.detector_output_file = os.path.join(
-            self.output_data_dir, detectoroutputfile_name)
+            self.output_data_dir, detector_output_file)
 
         gendetectors_args = [
             sys.executable, pyfile,
             '--net-file', self.net_output_file,
             '--distance-to-TLS', str(distance_to_tls),
             '--frequency', str(frequency),
-            '--output', self.detector_def_file,
-            '--results-file', self.detector_output_file
+            '--output', detector_def_file_name,
+            '--results-file', detector_output_file
         ]
+        if detector_type == 'e2':
+            gendetectors_args.extend(['--detector_length', '-1'])
 
-        logger.info('Calling {}'.format(' '.format(gendetectors_args)))
+        logger.info('Calling {}'.format(' '.join(gendetectors_args)))
         gendetproc = subprocess.Popen(gendetectors_args)
         gendetproc.wait()
 
-        remove_e1_lengths(self.detector_def_file)
+        if detector_type == 'e1':
+            remove_e1_lengths(self.detector_def_file)
         logger.info('Wrote detector file to {}'.format(self.detector_def_file))
+
+        return self.detector_def_file
+
+    def gen_e1_detectors(
+        self,
+        detector_def_file_name=None,
+        detector_output_file=None,
+        distance_to_tls=5,
+        frequency=60,
+    ):
+        return self.gen_detectors(
+            'e1', detector_def_file_name, detector_output_file,
+            distance_to_tls, frequency)
+
+    def gen_e2_detectors(
+        self,
+        detector_def_file_name=None,
+        detector_output_file=None,
+        distance_to_tls=5,
+        frequency=60,
+    ):
+        return self.gen_detectors(
+            'e2', detector_def_file_name, detector_output_file,
+            distance_to_tls, frequency)
 
 
 def remove_e1_lengths(detector_def_file):
     det_etree = etree.parse(detector_def_file)
     for element in det_etree.getroot().iter('e1Detector'):
-        if 'length' in element.keys():
-            del element['length']
+        if 'length' in element.attrib.keys():
+            del element.attrib['length']
+
+    det_etree.write(detector_def_file)
+
+
+def update_e2_tag(detector_def_file):
+    det_etree = etree.parse(detector_def_file)
+    for element in det_etree.getroot().iter('laneAreaDetector'):
+        element.tag = 'e2Detector'
 
     det_etree.write(detector_def_file)
