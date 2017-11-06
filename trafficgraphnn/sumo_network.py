@@ -15,7 +15,12 @@ logger = logging.getLogger(__name__)
 
 
 class SumoNetwork(object):
-    def __init__(self, netfile, lanewise=False, undirected_graph=False):
+    def __init__(
+        self, netfile, lanewise=False, undirected_graph=False,
+        routefile=None, addlfiles=[], seed=None
+    ):
+        if type(addlfiles) is str:
+            addlfiles = [addlfiles]
         self.netfile = netfile
         self.net = readNet(netfile)
 
@@ -33,11 +38,22 @@ class SumoNetwork(object):
                 for tl in self.net.getTrafficLights()
             }
 
-        self.routefile = None
-        self.additional_files = []
-        self.seed = None
+        self.routefile = routefile
+        self.additional_files = addlfiles
+        self.seed = seed
 
         self.binfile = checkBinary('sumo')
+
+    @classmethod
+    def from_gen_config(
+        cls, config_gen, lanewise=False, undirected_graph=False,
+        seed=None
+    ):
+        return cls(
+            config_gen.net_output_file, lanewise=lanewise,
+            undirected_graph=undirected_graph, routefile=config_gen.routefile,
+            addlfiles=[config_gen.detector_def_file]
+        )
 
     def set_routefile(self, routefile):
         assert os.path.exists(routefile)
@@ -53,7 +69,7 @@ class SumoNetwork(object):
     def clear_additional_files(self):
         self.additional_files = []
 
-    def get_sumo_command(self, with_bin_file=True):
+    def get_sumo_command(self, with_bin_file=True, queue_output_file=None):
         if self.routefile is None:
             raise ValueError('Route file not set.')
         sumo_args = [
@@ -64,7 +80,11 @@ class SumoNetwork(object):
 
         if len(self.additional_files) > 0:
             sumo_args.extend(
-                ['--additional_files'] + self.additional_files
+                ['--additional-files', ','.join(self.additional_files)]
+            )
+        if queue_output_file is not None:
+            sumo_args.extend(
+                ['--queue-output', queue_output_file]
             )
         if self.seed is not None:
             assert type(self.seed) in six.integer_types
@@ -81,7 +101,12 @@ class SumoNetwork(object):
     def start(self):
         traci.start(self.get_sumo_command())
 
-    def get_loop_ids(self):
+    def sorted_lanes_for_edge(self, edge_id):
+        lanes = self.net.getEdge(edge_id).getLanes()
+        lanes.sort(key=lambda x: x.getIndex())
+        return [lane.getID() for lane in lanes]
+
+    def get_edges_at_junction(self, node_id):
         pass
 
     def get_edge_adj_matrix(self, undirected=False):
@@ -95,7 +120,7 @@ class SumoNetwork(object):
             os.path.splitext(
                 os.path.splitext(
                     os.path.basename(self.netfile))[0])[0],
-            net_config_dir=os.path.dirname(self.netflie),
+            net_config_dir=os.path.dirname(self.netfile),
         )
 
 
