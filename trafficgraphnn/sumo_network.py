@@ -4,6 +4,7 @@ import six
 from collections import OrderedDict
 import logging
 import os
+import networkx as nx
 
 from sumolib import checkBinary
 from sumolib.net import readNet
@@ -23,6 +24,9 @@ class SumoNetwork(object):
             addlfiles = [addlfiles]
         self.netfile = netfile
         self.net = readNet(netfile)
+
+        self.tls_list = net.getTrafficLights()
+        # tl.getLinks() returns a dict with a consistent ordering of movements
 
         if not lanewise:
             self.A = get_edge_adj_matrix(netfile, undirected_graph)
@@ -124,6 +128,47 @@ class SumoNetwork(object):
         )
 
 
+def get_lane_graph(netfile, undirected=False):
+    net = readNet(netfile)
+
+    if undirected:
+        graph = nx.Graph()
+    else:
+        graph = nx.DiGraph()
+
+    for edge in net.getEdges():
+        for lane in edge.getLanes():
+            graph.add_node(lane.getID())
+
+    for node in net.getNodes():
+        for conn in node.getConnections():
+            graph.add_edge(
+                conn.getFromLane().getID(), conn.getToLane().getID(),
+                direction=conn.getDirection())
+
+    return graph
+
+
+def get_edge_graph(netfile, undirected=False):
+    net = readNet(netfile)
+
+    if undirected:
+        graph = nx.Graph()
+    else:
+        graph = nx.DiGraph()
+
+    for edge in net.getEdges():
+        graph.add_node(edge.getID())
+        for conn_list in edge.getOutgoing().values():
+            for conn in conn_list:
+                graph.add_edge(
+                    conn.getFrom().getID(), conn.getTo().getID(),
+                    direction=conn.getDirection()
+                )
+
+    return graph
+
+
 def get_edge_adj_matrix(netfile, undirected=False):
     net = readNet(netfile)
 
@@ -182,5 +227,5 @@ def get_lane_adj_matrix(netfile, undirected=False):
 def make_undirected(A):
     no_double_edge = A.T > A
     A_und = A - A.multiply(no_double_edge) + A.T.multiply(no_double_edge)
-    assert np.abs(A - A.T).max() < 1e-10
+    assert np.abs(A_und - A_und.T).max() < 1e-10
     return A_und
