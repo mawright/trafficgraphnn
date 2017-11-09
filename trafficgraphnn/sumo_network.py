@@ -5,6 +5,7 @@ from collections import OrderedDict
 import logging
 import os
 import networkx as nx
+from lxml import etree
 
 from sumolib import checkBinary
 from sumolib.net import readNet
@@ -25,7 +26,7 @@ class SumoNetwork(object):
         self.netfile = netfile
         self.net = readNet(netfile)
 
-        self.tls_list = net.getTrafficLights()
+        self.tls_list = self.net.getTrafficLights()
         # tl.getLinks() returns a dict with a consistent ordering of movements
 
         if not lanewise:
@@ -128,7 +129,7 @@ class SumoNetwork(object):
         )
 
 
-def get_lane_graph(netfile, undirected=False):
+def get_lane_graph(netfile, undirected=False, detector_files=None):
     net = readNet(netfile)
 
     if undirected:
@@ -146,10 +147,30 @@ def get_lane_graph(netfile, undirected=False):
                 conn.getFromLane().getID(), conn.getToLane().getID(),
                 direction=conn.getDirection())
 
+    if detector_files is not None:
+        lane_info = {}
+        if isinstance(detector_files, str):
+            detector_files = [detector_files]
+        for det_file in detector_files:
+            tree = etree.parse(det_file)
+            for element in tree.iter():
+                if element.tag in [
+                    'e1Detector', 'inductionLoop',
+                    'e2Detector', 'laneAreaDetector'
+                ]:
+                    lane_id = element.get('lane')
+                    if lane_id not in lane_info.keys():
+                        lane_info[lane_id] = {}
+                    detector_info_dict = dict(element.items())
+                    detector_info_dict['type'] = element.tag
+                    lane_info[lane_id][element.get('id')] = detector_info_dict
+
+        nx.set_node_attributes(graph, lane_info)
+
     return graph
 
 
-def get_edge_graph(netfile, undirected=False):
+def get_edge_graph(netfile, undirected=False, detector_files=None):
     net = readNet(netfile)
 
     if undirected:
@@ -158,13 +179,33 @@ def get_edge_graph(netfile, undirected=False):
         graph = nx.DiGraph()
 
     for edge in net.getEdges():
-        graph.add_node(edge.getID())
+        graph.add_node(
+            edge.getID(), lanes=[l.getID() for l in edge.getLanes()])
         for conn_list in edge.getOutgoing().values():
             for conn in conn_list:
                 graph.add_edge(
                     conn.getFrom().getID(), conn.getTo().getID(),
                     direction=conn.getDirection()
                 )
+
+    if detector_files is not None:
+        edge_info = dict(graph.nodes.data())
+        if isinstance(detector_files, str):
+            detector_files = [detector_files]
+        for det_file in detector_files:
+            tree = etree.parse(det_file)
+            for element in tree.iter():
+                if element.tag in [
+                    'e1Detector', 'inductionLoop',
+                    'e2Detector', 'laneAreaDetector'
+                ]:
+                    lane_id = element.get('lane')
+                    edge_id = net.getLane(lane_id).getEdge().getID()
+                    detector_info_dict = dict(element.items())
+                    detector_info_dict['type'] = element.tag
+                    edge_info[edge_id][element.get('id')] = detector_info_dict
+
+        nx.set_node_attributes(graph, edge_info)
 
     return graph
 
