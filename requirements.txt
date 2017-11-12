@@ -5,3 +5,6 @@ scipy
 six
 lxml
 gym
+pandas
+networkx
+keras
