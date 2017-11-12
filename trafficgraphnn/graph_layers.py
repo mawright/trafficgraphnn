@@ -1,16 +1,13 @@
-from six.moves import range
-
 from keras.layers import Layer
 from keras.engine import InputSpec
 from keras import backend as K
 from keras import activations, initializers, constraints, regularizers
-import tensorflow as tf
 
 
-class LocalSamplingUndirectedLayer(Layer):
+class LocalGraphLayer(Layer):
     """ Local graph sampling layer (no different logic for in-edges and out-edges)
 
-    Input shape: (batch_dim, )
+    Input shape: (batch_dim, k-step neigh dim, neigh dim, feature dim)
     """
     def __init__(
         self, num_filters, filter_path_length, activation='relu',
@@ -18,9 +15,10 @@ class LocalSamplingUndirectedLayer(Layer):
         kernel_initializer='glorot_uniform', bias_initalizer='zeros',
         kernel_regularizer=None, bias_regularizer=None,
         kernel_constraint=None, bias_constraint=None,
+        include_back_hops=False,
         **kwargs
     ):
-        super(LocalSamplingUndirectedLayer, self).__init__(**kwargs)
+        super(LocalGraphLayer, self).__init__(**kwargs)
         self.num_filters = num_filters
         self.filter_path_length = filter_path_length
         self.activation = activations.get(activation)
@@ -31,18 +29,19 @@ class LocalSamplingUndirectedLayer(Layer):
         self.bias_regularizer = regularizers.get(bias_regularizer)
         self.kernel_constraint = constraints.get(kernel_constraint)
         self.bias_constraint = constraints.get(bias_constraint)
-        self.input_spec = InputSpec(ndim=3)
+        self.include_back_hops = include_back_hops
+        self.input_spec = InputSpec(ndim=4)
 
     def build(self, input_shape):
-        assert len(input_shape) == 2
-        assert len(input_shape[0]) == 3
-        assert len(input_shape[1]) == 2
 
-        data_shape, adj_matrix_shape = input_shape
+        self.input_feature_dim = input_shape[-1]
+        if self.include_back_hops:
+            self.num_of_neighborhoods = 2 * self.filter_path_length + 1
+        else:
+            self.num_of_neighborhoods = self.filter_path_length + 1
 
-        self.input_feature_dim = data_shape[1]
         self.kernel_shape = (
-            self.filter_path_length + 1,
+            self.num_of_neighborhoods,
             self.input_feature_dim,
             self.num_filters)
         self.kernel = self.add_weight(
@@ -60,10 +59,9 @@ class LocalSamplingUndirectedLayer(Layer):
             self.bias = None
 
         self.input_spec = [
-            InputSpec(ndim=3),  # data matrix
-            InputSpec(ndim=2)   # adjacency matrix
+            InputSpec(ndim=4),  # data matrix
         ]
-        super(LocalSamplingUndirectedLayer, self).build(input_shape)
+        super(LocalGraphLayer, self).build(input_shape)
 
     def update_graph(self, graph):
         if not type(self.graph) == type(graph):
@@ -74,43 +72,26 @@ class LocalSamplingUndirectedLayer(Layer):
             )
         self.graph = graph
 
-    def call(self, inputs):
+    def call(self, data):
+        # Input shape: (batch, neighs, neigh nodes, input dim)
         # TODO:
         # Generalization of a matrix-product-based convolution operation
         # 1. flatten the 3D filter tensor to a 2D matrix with shape
         # [path_legth * input_feature_dim, output_dim]
         # 2. Extract image patches from the input tensor to produce a tensor of
         # shape [batch, out_]
-        data, adj_matrix = inputs
-
-        # compute the multiplication times all filters at each node
-        multiplied = K.reshape(
-            K.dot(data, K.reshape(self.kernel, (self.input_feature_dim, -1))),
-            (self.filter_path_length + 1, -1, self.num_filters)
-        )
 
         num_datapoints = K.shape(data)[0]
+        multiplied = K.dot(
+            K.reshape(data, (
+                num_datapoints,
+                -1,
+                self.input_feature_dim * self.num_of_neighborhoods)),
+            K.reshape(self.kernel, (
+                self.input_feature_dim * self.num_of_neighborhoods,
+                self.num_filters)))
 
-        output = multiplied[0]
-        A_k = K.eye(num_datapoints)
-        included = K.eye(num_datapoints)
-
-        for k in range(1, self.filter_path_length + 1):
-            A_k = K.dot(adj_matrix, A_k)
-            included_k = K.cast(
-                K.all(
-                    K.concatenate(
-                        A_k,
-                        K.not_equal(included, K.ones_like(included)),
-                        axis=-1
-                    ), axis=-1
-                ), 'float32'
-            )
-            # included_k = K.cast(
-                # tf.logical_and(A_k, tf.logical_not(included)), 'float32')
-            K.update_add(included, included_k)
-
-            K.update_add(output, K.dot(included_k, multiplied[k]))
+        output = K.sum(multiplied, axis=1)
 
         if self.use_bias:
             output = K.bias_add(output, self.bias)
@@ -137,7 +118,8 @@ class LocalSamplingUndirectedLayer(Layer):
             'bias_regularizer': regularizers.serialize(self.bias_regularizer),
             'activity_regularizer': regularizers.serialize(self.activity_regularizer),
             'kernel_constraint': constraints.serialize(self.kernel_constraint),
-            'bias_constraint': constraints.serialize(self.bias_constraint)
+            'bias_constraint': constraints.serialize(self.bias_constraint),
+            'include_back_hops': self.include_back_hops,
         }
         return config
 
