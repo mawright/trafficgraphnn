@@ -52,7 +52,7 @@ class LocalGraphLayer(Layer):
         if self.use_bias:
             self.bias = self.add_weight(
                 shape=(self.num_filters,), name='bias',
-                initalizer=self.bias_initalizer,
+                initializer=self.bias_initalizer,
                 regularizer=self.bias_regularizer,
                 constraint=self.bias_constraint)
         else:
