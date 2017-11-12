@@ -25,12 +25,14 @@ class SupervisedQueueLearner(object):
 
         self.batcher = NodeMinibatcher(
             self.graph, filter_path_length, data_files=output_files,
-            batch_size=batch_size, include_back_hops=True)
+            batch_size=batch_size, include_back_hops=include_back_hops,
+            features=features)
 
         if validation_output_files is not None:
             self.validation_batcher = NodeMinibatcher(
                 self.graph, filter_path_length, validation_output_files,
-                batch_size=batch_size, include_back_hops=True)
+                batch_size=batch_size, include_back_hops=include_back_hops,
+                features=features)
         else:
             self.validation_batcher = None
 
