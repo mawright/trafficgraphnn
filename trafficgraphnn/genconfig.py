@@ -199,7 +199,7 @@ class ConfigGenerator(object):
             )
         ]
         if detector_type == 'e2':
-            gendetectors_args.extend(['--detector_length', '-1'])
+            gendetectors_args.extend(['--detector-length', '-1'])
 
         logger.info('Calling {}'.format(' '.join(gendetectors_args)))
         gendetproc = subprocess.Popen(gendetectors_args)
