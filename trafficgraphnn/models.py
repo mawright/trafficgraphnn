@@ -41,7 +41,8 @@ class SupervisedQueueLearner(object):
         input = Input((num_neighborhoods, None, len(self.batcher.features)))
 
         x = LocalGraphLayer(
-            num_filters, filter_path_length, include_back_hops=True)(input)
+            num_filters, filter_path_length,
+            include_back_hops=include_back_hops)(input)
 
         for units in fc_layer_sizes:
             x = Dense(units, activation='relu')(x)
