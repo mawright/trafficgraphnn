@@ -81,7 +81,7 @@ class NodeMinibatcher(Sequence):
         batch_indeces = self.indeces[
             index * self.batch_size:(index + 1) * self.batch_size]
 
-        if self.graph.is_directed:
+        if self.graph.is_directed():
             neighs = self._directed_neighs(self.graph, batch_indeces)
             if self.include_back_hops:  # add negative-hop neighborhoods
                 reverse_neighs = self._reverse_neighs(
