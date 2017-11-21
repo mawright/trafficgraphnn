@@ -1,0 +1,1 @@
+from .genconfig import ConfigGenerator
