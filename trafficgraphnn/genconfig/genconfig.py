@@ -11,6 +11,7 @@ import logging
 from sumolib import checkBinary
 
 from trafficgraphnn.utils import get_sumo_tools_dir
+from trafficgraphnn.genconfig import detectors
 
 if six.PY2:
     try:
@@ -156,65 +157,12 @@ class ConfigGenerator(object):
         detector_output_file=None,
         distance_to_tls=5,
         frequency=60,
+        detector_length=None,
     ):
-        # TODO write own script that can place multiple e1 detectors on the same lane
-        if detector_type not in ['e1', 'e2', 'e3']:
-            raise ValueError('Unknown detector type: {}'.format(detector_type))
-        tools_dir = get_sumo_tools_dir()
-
-        if detector_type == 'e1':
-            scriptname = 'generateTLSE1Detectors.py'
-        elif detector_type == 'e2':
-            scriptname = 'generateTLSE2Detectors.py'
-
-        pyfile = os.path.join(tools_dir, 'output', scriptname)
-
-        if detector_def_file is None:
-            detector_def_file = os.path.join(
-                self.net_config_dir,
-                '{}_{}.add.xml'.format(
-                    self.net_name, detector_type)
-            )
-        if detector_output_file is None:
-            detector_output_file = os.path.join(
-                self.output_data_dir,
-                '{}_{}_output.xml'.format(
-                    self.net_name, detector_type)
-            )
-
-        self.detector_def_files.append(detector_def_file)
-        self.detector_output_files.append(detector_output_file)
-
-        gendetectors_args = [
-            sys.executable, pyfile,
-            '--net-file', self.net_output_file,
-            '--distance-to-TLS', str(distance_to_tls),
-            '--frequency', str(frequency),
-            '--output', os.path.basename(detector_def_file),
-            '--results-file', os.path.join(
-                os.path.relpath(
-                    os.path.dirname(detector_output_file),
-                    os.path.dirname(detector_def_file)),
-                os.path.basename(detector_output_file)
-            )
-        ]
-        if detector_type == 'e2':
-            gendetectors_args.extend(['--detector-length', '-1'])
-
-        logger.info('Calling {}'.format(' '.join(gendetectors_args)))
-        gendetproc = subprocess.Popen(gendetectors_args)
-        gendetproc.wait()
-
-        if not os.path.exists(self.output_data_dir):
-            os.makedirs(self.output_data_dir)
-
-        if detector_type == 'e1':
-            remove_e1_lengths(detector_def_file)
-        elif detector_type == 'e2':
-            update_e2_tag(detector_def_file)
-        logger.info('Wrote detector file to {}'.format(detector_def_file))
-
-        return self.detector_def_files
+        return detectors.generate_detector_set(
+            self.net_output_file, detector_type, distance_to_tls,
+            detector_def_file, detector_output_file, detector_length,
+            frequency)
 
     def gen_e1_detectors(
         self,
@@ -223,20 +171,24 @@ class ConfigGenerator(object):
         distance_to_tls=5,
         frequency=60,
     ):
-        return self.gen_detectors(
-            'e1', detector_def_file_name, detector_output_file,
-            distance_to_tls, frequency)
+        return detectors.generate_e1_detectors(
+            self.net_output_file, distance_to_tls=distance_to_tls,
+            detector_def_file=detector_def_file_name,
+            detector_output_file=detector_output_file, frequency=frequency)
 
     def gen_e2_detectors(
         self,
         detector_def_file_name=None,
         detector_output_file=None,
         distance_to_tls=5,
+        detector_length=None,
         frequency=60,
     ):
-        return self.gen_detectors(
-            'e2', detector_def_file_name, detector_output_file,
-            distance_to_tls, frequency)
+        return detectors.generate_e2_detectors(
+            self.net_output_file, distance_to_tls=distance_to_tls,
+            detector_def_file=detector_def_file_name,
+            detector_output_file=detector_output_file,
+            detector_length=detector_length, frequency=frequency)
 
 
 def remove_e1_lengths(detector_def_file):
