@@ -15,6 +15,14 @@ from trafficgraphnn.genconfig import ConfigGenerator
 
 logger = logging.getLogger(__name__)
 
+if six.PY2:
+    try:
+        import subprocess32 as subprocess
+    except ImportError:
+        import subprocess
+else:
+    import subprocess
+
 
 class SumoNetwork(object):
     def __init__(
@@ -105,6 +113,9 @@ class SumoNetwork(object):
 
     def start(self):
         traci.start(self.get_sumo_command())
+
+    def run(self):
+        return subprocess.call(self.get_sumo_command())
 
     def sorted_lanes_for_edge(self, edge_id):
         lanes = self.net.getEdge(edge_id).getLanes()
