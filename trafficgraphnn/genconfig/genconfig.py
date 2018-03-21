@@ -9,6 +9,7 @@ import logging
 
 # sumo path is appended in __init__.py
 from sumolib import checkBinary
+import sumolib
 
 from trafficgraphnn.utils import get_sumo_tools_dir
 from trafficgraphnn.genconfig import detectors
@@ -41,6 +42,7 @@ class ConfigGenerator(object):
         self.routefile = None
         self.detector_def_files = []
         self.detector_output_files = []
+        self.non_detector_addl_files = []
 
     def gen_grid_network(
         self, check_lane_foes_all=True,
@@ -102,6 +104,8 @@ class ConfigGenerator(object):
                 '--plain-output-prefix', plain_output_dir + self.net_name])
 
         logger.info('Calling {}'.format(' '.join(netgen_args)))
+        if not os.path.exists(self.net_config_dir):
+            os.makedirs(self.net_config_dir)
         netgenproc = subprocess.Popen(netgen_args)
         netgenproc.wait()
         logger.info('Wrote random network to {}'.format(self.net_output_file))
@@ -130,6 +134,7 @@ class ConfigGenerator(object):
             binomial = np.random.randint(1, 10)
         if period is None:
             period = np.random.uniform(0.2, 1.2)
+        # lower period leads to more cars
 
         randtrip_args = [
             sys.executable, pyfile,
@@ -159,10 +164,13 @@ class ConfigGenerator(object):
         frequency=60,
         detector_length=None,
     ):
-        return detectors.generate_detector_set(
+        def_filepath, output_filepath = detectors.generate_detector_set(
             self.net_output_file, detector_type, distance_to_tls,
             detector_def_file, detector_output_file, detector_length,
             frequency)
+
+        self.detector_def_files.append(def_filepath)
+        self.detector_output_files.append(output_filepath)
 
     def gen_e1_detectors(
         self,
@@ -171,10 +179,13 @@ class ConfigGenerator(object):
         distance_to_tls=5,
         frequency=60,
     ):
-        return detectors.generate_e1_detectors(
+        def_filepath, output_filepath = detectors.generate_e1_detectors(
             self.net_output_file, distance_to_tls=distance_to_tls,
             detector_def_file=detector_def_file_name,
             detector_output_file=detector_output_file, frequency=frequency)
+
+        self.detector_def_files.append(def_filepath)
+        self.detector_output_files.append(output_filepath)
 
     def gen_e2_detectors(
         self,
@@ -184,11 +195,52 @@ class ConfigGenerator(object):
         detector_length=None,
         frequency=60,
     ):
-        return detectors.generate_e2_detectors(
+        def_filepath, output_filepath = detectors.generate_e2_detectors(
             self.net_output_file, distance_to_tls=distance_to_tls,
             detector_def_file=detector_def_file_name,
             detector_output_file=detector_output_file,
             detector_length=detector_length, frequency=frequency)
+
+        self.detector_def_files.append(def_filepath)
+        self.detector_output_files.append(output_filepath)
+
+    def define_tls_output_file(
+        self,
+        tls_subset=None,
+        output_file_name=None,
+        addl_file_name='tls_output.add.xml'
+    ):
+        if output_file_name is None:
+            output_file_name = '{}_tls_output.xml'.format(self.net_name)
+
+        output_file = os.path.join(self.output_data_dir, output_file_name)
+
+        addl_file = os.path.join(self.net_config_dir, addl_file_name)
+
+        relative_output_filename = os.path.relpath(
+            output_file,
+            os.path.dirname(addl_file))
+
+        tls_addl = sumolib.xml.create_document('additional')
+
+        net = sumolib.net.readNet(self.net_output_file)
+
+        for tls in net.getTrafficLights():
+            tls_xml_element = tls_addl.addChild('timedEvent')
+            tls_xml_element.setAttribute('type', 'SaveTLSSwitchTimes')
+            tls_xml_element.setAttribute('source', tls.getID())
+            tls_xml_element.setAttribute('dest', relative_output_filename)
+
+        tls_addl_file_fid = open(os.path.realpath(addl_file), 'w')
+        tls_addl_file_fid.write(tls_addl.toXML())
+        tls_addl_file_fid.close()
+
+        if not os.path.exists(os.path.dirname(output_file)):
+            os.makedirs(os.path.dirname(output_file))
+
+        self.non_detector_addl_files.append(addl_file)
+
+        return os.path.realpath(addl_file)
 
 
 def remove_e1_lengths(detector_def_file):

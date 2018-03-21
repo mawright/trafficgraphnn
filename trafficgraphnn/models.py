@@ -11,7 +11,7 @@ class SupervisedQueueLearner(object):
         features=['occupancy', 'flow', 'meanSpeed'],
         use_undirected_graph=False, num_filters=32,
         filter_path_length=2, include_back_hops=False,
-        fc_layer_sizes=[128, 64], batch_size=64,
+        fc_layer_sizes=[128, 64], batch_size=256,
         validation_network_file=None, validation_addl_files=None,
         validation_output_files=None
     ):

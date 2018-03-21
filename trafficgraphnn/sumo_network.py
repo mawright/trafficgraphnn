@@ -27,12 +27,19 @@ else:
 class SumoNetwork(object):
     def __init__(
         self, netfile, lanewise=False, undirected_graph=False,
-        routefile=None, addlfiles=[], seed=None
+        routefile=None, addlfiles=None, seed=None, binfile='sumo'
     ):
-        if type(addlfiles) is str:
-            addlfiles = [addlfiles]
         self.netfile = netfile
         self.net = readNet(netfile)
+        self.undirected_graph = undirected_graph
+        self.lanewise = lanewise
+        self.routefile = routefile
+        self.seed = seed
+
+        if type(addlfiles) in six.string_types:
+            self.additional_files = [addlfiles]
+        elif addlfiles is None:
+            self.additional_files = []
 
         self.tls_list = self.net.getTrafficLights()
         # tl.getLinks() returns a dict with a consistent ordering of movements
@@ -51,11 +58,11 @@ class SumoNetwork(object):
                 for tl in self.net.getTrafficLights()
             }
 
-        self.routefile = routefile
-        self.additional_files = addlfiles
-        self.seed = seed
+        self.config_gen = self.get_config_generator()
 
-        self.binfile = checkBinary('sumo')
+        self.binfile = checkBinary(binfile)
+
+        self.reset_graph()
 
     @classmethod
     def from_gen_config(
@@ -106,6 +113,9 @@ class SumoNetwork(object):
             logger.warn('Seed not set, SUMO seed will be random.')
             sumo_args.extend(['--random', 'true'])
 
+        if self.binfile == 'sumo-gui':
+            sumo_args.extend(['--start', '--quit'])
+
         if with_bin_file:
             return [self.binfile] + sumo_args
         else:
@@ -125,6 +135,26 @@ class SumoNetwork(object):
     def get_edges_at_junction(self, node_id):
         pass
 
+    def reset_graph(self, undirected=None, lanewise=None):
+        if undirected is not None:
+            self.undirected_graph = undirected
+
+        if lanewise is not None:
+            self.lanewise = lanewise
+
+        if self.lanewise:
+            self.graph = get_lane_graph(
+                self.netfile, undirected=self.undirected_graph,
+                detector_files=self.additional_files)
+        else:
+            self.graph = get_edge_graph(
+                self.netfile, undirected=self.undirected_graph,
+                detector_files=self.additional_files)
+
+    def get_graph(self):
+        assert self.graph is not None
+        return self.graph
+
     def get_edge_adj_matrix(self, undirected=False):
         return get_edge_adj_matrix(self.netfile, undirected)
 
@@ -132,12 +162,25 @@ class SumoNetwork(object):
         return get_lane_adj_matrix(self.netfile, undirected)
 
     def get_config_generator(self):
-        return ConfigGenerator(
+        config_gen = ConfigGenerator(
             os.path.splitext(
                 os.path.splitext(
                     os.path.basename(self.netfile))[0])[0],
             net_config_dir=os.path.dirname(self.netfile),
         )
+        return config_gen
+
+    def generate_datasets(
+        self, num_simulations=20, simulation_length=3600,
+        routefile_period=None, routefile_binomial=None
+    ):
+
+        config_gen = self.get_config_generator()
+
+        # if not hasattr
+
+        # for i in range(num_simulations):
+        # con
 
 
 def get_lane_graph(netfile, undirected=False, detector_files=None):

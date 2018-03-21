@@ -1,7 +1,18 @@
 from keras.layers import Layer
+from keras.layers.recurrent import RNN
 from keras.engine import InputSpec
 from keras import backend as K
 from keras import activations, initializers, constraints, regularizers
+
+from kegra.layers.graph import GraphConvolution as SpectralGraphConvolution
+from keras_gat import GraphAttention
+
+
+class GraphAttentionLSTMCell(Layer):
+    """Cell class for LSTM cell of graph attention layer"""
+
+    def __init__(self, num_):
+        pass
 
 
 class LocalGraphLayer(Layer):
@@ -9,6 +20,7 @@ class LocalGraphLayer(Layer):
 
     Input shape: (batch_dim, k-step neigh dim, neigh dim, feature dim)
     """
+
     def __init__(
         self, num_filters, filter_path_length, activation='relu',
         use_bias=True,
@@ -91,7 +103,7 @@ class LocalGraphLayer(Layer):
                 self.input_feature_dim * self.num_of_neighborhoods,
                 self.num_filters)))
 
-        output = K.sum(multiplied, axis=1)
+        output = K.max(multiplied, axis=1)
 
         if self.use_bias:
             output = K.bias_add(output, self.bias)
@@ -124,5 +136,25 @@ class LocalGraphLayer(Layer):
         return config
 
 
-class LocalSamplingDirectedGraphLayer(Layer):
-    pass
+class GlobalChebyshevLayer(object):
+    def __init__(
+        self, num_filters, activation='relu',
+        use_bias=True,
+        kernel_initializer='glorot_uniform', bias_initalizer='zeros',
+        kernel_regularizer=None, bias_regularizer=None,
+        kernel_constraint=None, bias_constraint=None,
+        include_back_hops=False,
+        **kwargs
+    ):
+        super(LocalGraphLayer, self).__init__(**kwargs)
+        self.num_filters = num_filters
+        self.activation = activations.get(activation)
+        self.use_bias = use_bias
+        self.kernel_initializer = initializers.get(kernel_initializer)
+        self.bias_initalizer = initializers.get(bias_initalizer)
+        self.kernel_regularizer = regularizers.get(kernel_regularizer)
+        self.bias_regularizer = regularizers.get(bias_regularizer)
+        self.kernel_constraint = constraints.get(kernel_constraint)
+        self.bias_constraint = constraints.get(bias_constraint)
+        self.include_back_hops = include_back_hops
+        self.input_spec = InputSpec(ndim=4)

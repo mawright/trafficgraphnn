@@ -4,6 +4,8 @@ import os
 import sys
 import collections
 
+import six
+import pandas as pd
 from lxml import etree
 
 
@@ -29,6 +31,19 @@ def get_edge_neighbors(edge):
     return edge.getIncoming(), edge.getOutgoing()
 
 
+def get_net_name(netfile):
+    return os.path.basename(
+        os.path.splitext(os.path.splitext(netfile)[0])[0])
+
+
+def get_net_dir(netfile):
+    return os.path.dirname(os.path.realpath(netfile))
+
+
+def load_data(network_name, output_tag):
+    pass
+
+
 def xml_to_list_of_dicts(
     xml_file, tags_to_filter=None, attributes_to_get=None
 ):
@@ -52,8 +67,34 @@ def xml_to_list_of_dicts(
     return all_records
 
 
+def parse_detector_output_xml(data_file, ids=None, fields=None):
+    parsed = etree.iterparse(data_file, tag='interval')
+
+    records = {}
+
+    for _, element in parsed:
+        det_id = element.attrib['id']
+        if ids is None or det_id in ids:
+            if fields is None:
+                record = {col: element.attrib[col]
+                          for col in element.keys()
+                          if col not in ['begin', 'id']}
+            else:
+                record = {col: element.attrib[col]
+                          for col in fields
+                          if col in element.keys()}
+
+            records[(int(round(float(element.attrib['begin']))), det_id,
+                     )] = record
+
+    df = pd.DataFrame.from_dict(records, orient='index', dtype=float)
+    df.index.set_names(['time', 'det_id'], inplace=True)
+
+    return df
+
+
 def iterfy(x):
-    if isinstance(x, collections.Iterable) and not isinstance(x, basestring):
+    if isinstance(x, collections.Iterable) and type(x) not in six.string_types:
         return x
     else:
         return (x,)

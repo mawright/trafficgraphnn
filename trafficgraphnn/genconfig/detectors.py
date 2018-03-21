@@ -5,7 +5,7 @@ import logging
 
 import sumolib
 
-from trafficgraphnn.utils import iterfy
+from trafficgraphnn.utils import iterfy, get_net_name, get_net_dir
 
 logger = logging.getLogger(__name__)
 
@@ -72,9 +72,9 @@ def generate_detector_set(netfile, detector_type, distance_to_tls,
             'and len(detector_length) = {}').format(
             len(distance_to_tls), len(detector_length)))
 
-    default_net_config_dir = os.path.dirname(os.path.realpath(netfile))
-    net_name = os.path.basename(
-        os.path.splitext(os.path.splitext(netfile)[0])[0])
+    default_net_config_dir = get_net_dir(netfile)
+    net_name = get_net_name(netfile)
+
     default_output_data_dir = os.path.join(default_net_config_dir, 'output')
     if detector_def_file is None:
         detector_def_file = os.path.join(
@@ -149,7 +149,8 @@ def generate_detector_set(netfile, detector_type, distance_to_tls,
     if not os.path.exists(os.path.dirname(detector_output_file)):
         os.makedirs(os.path.dirname(detector_output_file))
 
-    return os.path.realpath(detector_def_file)
+    return (os.path.realpath(detector_def_file),
+            os.path.realpath(detector_output_file))
 
 
 def generate_e1_detectors(netfile, distance_to_tls, detector_def_file=None,

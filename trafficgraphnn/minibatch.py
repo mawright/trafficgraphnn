@@ -9,6 +9,7 @@ import six
 
 from keras.utils import Sequence
 
+from trafficgraphnn.utils import load_data
 
 class NodeMinibatcher(Sequence):
     """
@@ -16,6 +17,7 @@ class NodeMinibatcher(Sequence):
 
 
     """
+
     def __init__(
         self, graph, filter_path_length, data_files, batch_size=64,
         features=['occupancy', 'flow', 'meanSpeed'],
@@ -73,6 +75,20 @@ class NodeMinibatcher(Sequence):
         df.index.set_names(['time', 'node', 'det_id'], inplace=True)
 
         return df
+
+    def _get_data_metadata(self):
+        parsed_files = [etree.parse(f) for f in self.data_files]
+        timesteps = timesteps = np.unique([
+            float(interval.attrib['begin'])
+            for f in parsed_files
+            for interval in f.iterfind('interval')
+        ])
+        detectors = sorted(set([
+            interval.attrib['id']
+            for f in parsed_files
+            for interval in f.iterfind('interval')
+        ]))
+        return timesteps, detectors
 
     def _calc_num_datapoints(self):
         return len(self.timesteps) * self.graph.number_of_nodes()
