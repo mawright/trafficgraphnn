@@ -12,6 +12,7 @@ from sumolib.net import readNet
 import traci
 
 from trafficgraphnn.genconfig import ConfigGenerator
+from trafficgraphnn.utils import parse_detector_output_xml
 
 logger = logging.getLogger(__name__)
 
@@ -35,11 +36,11 @@ class SumoNetwork(object):
         self.lanewise = lanewise
         self.routefile = routefile
         self.seed = seed
+        self.data_dfs = []
 
-        if type(addlfiles) in six.string_types:
-            self.additional_files = [addlfiles]
-        elif addlfiles is None:
-            self.additional_files = []
+        if isinstance(addlfiles, six.string_types):
+            addlfiles = [addlfiles]
+        self.additional_files = addlfiles or []
 
         self.tls_list = self.net.getTrafficLights()
         # tl.getLinks() returns a dict with a consistent ordering of movements
@@ -170,6 +171,32 @@ class SumoNetwork(object):
         )
         return config_gen
 
+    def load_data_to_graph(self):
+        if self.graph is None:
+            return
+
+        self.data_dfs = []
+
+        detectors_in_files = {}
+        det_to_data = {}
+        for _, detector_data in self.graph.nodes.data('detectors'):
+            for det_id, data in detector_data.items():
+                if data['file'] not in detectors_in_files.keys():
+                    detectors_in_files[data['file']] = []
+                detectors_in_files[data['file']].append(det_id)
+                det_to_data[det_id] = data
+
+        for file, det_list in detectors_in_files.items():
+            filename = os.path.join(os.path.dirname(self.netfile), file)
+            if not os.path.exists(filename):
+                continue
+            df = parse_detector_output_xml(filename, ids=det_list)
+            self.data_dfs.append(df)
+
+            for det_id in det_list:
+                det_data = det_to_data[det_id]
+                det_data['data_series'] = df.xs(det_id, level=1)
+
     def generate_datasets(
         self, num_simulations=20, simulation_length=3600,
         routefile_period=None, routefile_binomial=None
@@ -202,8 +229,7 @@ def get_lane_graph(netfile, undirected=False, detector_files=None):
                 direction=conn.getDirection())
 
     if detector_files is not None:
-        lane_info = {}
-        if isinstance(detector_files, str):
+        if isinstance(detector_files, six.string_types):
             detector_files = [detector_files]
         for det_file in detector_files:
             tree = etree.parse(det_file)
@@ -213,13 +239,14 @@ def get_lane_graph(netfile, undirected=False, detector_files=None):
                     'e2Detector', 'laneAreaDetector'
                 ]:
                     lane_id = element.get('lane')
-                    if lane_id not in lane_info.keys():
-                        lane_info[lane_id] = {}
-                    detector_info_dict = dict(element.items())
-                    detector_info_dict['type'] = element.tag
-                    lane_info[lane_id][element.get('id')] = detector_info_dict
+                    if lane_id in graph.nodes:
+                        if 'detectors' not in graph.node[lane_id]:
+                            graph.node[lane_id]['detectors'] = {}
 
-        nx.set_node_attributes(graph, lane_info)
+                        detector_info_dict = dict(element.items())
+                        detector_info_dict['type'] = element.tag
+                        graph.node[lane_id]['detectors'][
+                            element.get('id')] = detector_info_dict
 
     return graph
 
