@@ -4,7 +4,7 @@ from keras.engine import InputSpec
 from keras import backend as K
 from keras import activations, initializers, constraints, regularizers
 
-from kegra.layers.graph import GraphConvolution as SpectralGraphConvolution
+# from kegra.layers.graph import GraphConvolution as SpectralGraphConvolution
 from keras_gat import GraphAttention
 
 
@@ -136,7 +136,7 @@ class LocalGraphLayer(Layer):
         return config
 
 
-class GlobalChebyshevLayer(object):
+class GlobalChebyshevLayer(Layer):
     def __init__(
         self, num_filters, activation='relu',
         use_bias=True,
