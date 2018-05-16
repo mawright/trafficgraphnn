@@ -171,7 +171,7 @@ class SumoNetwork(object):
         )
         return config_gen
 
-    def load_data_to_graph(self):
+    def load_data_to_graph(self, features=None):
         if self.graph is None:
             return
 
@@ -179,28 +179,91 @@ class SumoNetwork(object):
 
         detectors_in_files = {}
         det_to_data = {}
-        for _, detector_data in self.graph.nodes.data('detectors'):
+        for node, detector_data in self.graph.nodes.data('detectors'):
             for det_id, data in detector_data.items():
                 if data['file'] not in detectors_in_files.keys():
                     detectors_in_files[data['file']] = []
                 detectors_in_files[data['file']].append(det_id)
                 det_to_data[det_id] = data
 
+        det_to_node = self.det_to_node_dict()
+
         for file, det_list in detectors_in_files.items():
             filename = os.path.join(os.path.dirname(self.netfile), file)
             if not os.path.exists(filename):
                 continue
-            df = parse_detector_output_xml(filename, ids=det_list)
+            df = parse_detector_output_xml(filename, det_list, features)
+
+            df['node_id'] = df.index.get_level_values('det_id')
+            df['node_id'].replace(det_to_node, inplace=True)
+
+            df.set_index('node_id', append=True, inplace=True)
+            df = df.swaplevel('det_id', 'node_id')
+
             self.data_dfs.append(df)
 
             for det_id in det_list:
                 det_data = det_to_data[det_id]
-                det_data['data_series'] = df.xs(det_id, level=1)
+                det_data['data_series'] = df.xs(det_id, level='det_id')
+
+        for node_id, data in self.graph.nodes.data():
+            data['data_series'] = [df.xs(node_id, level='node_id')
+                                   for df in self.data_dfs]
+
+    def get_lane_data_and_adj_matrix(self, node_ordering=None):
+        """
+        Returns a tuple of (A, X), where A is a Scipy sparse matrix from the
+        networkx graph and X is a numpy ndarray of the data.
+        X will have dimensions time x node x feature
+
+        :param node_ordering: (optional) Iterable of node names. If passed a
+        value, this function will return A and X in that order. If None
+        (default) will return the order determined by networkx.
+        :type node_ordering: Iterable
+        """
+        raise NotImplementedError
+        if self.graph is None:
+            raise ValueError('Graph not set.')
+        if len(self.data_dfs) == 0:
+            raise ValueError('No data loaded.')
+
+        graph = self.get_graph()
+
+        A = nx.adj_matrix(graph, node_ordering)
+
+        det_to_node = self.det_to_node_dict()
+
+    def det_to_node_dict(self):
+        if self.graph is None:
+            raise ValueError("Graph not set.")
+
+        graph = self.get_graph()
+
+        det_to_node = {}
+        for node, det_dict in graph.nodes('detectors'):
+            for det_id, _ in det_dict.items():
+                det_to_node[det_id] = node
+
+        return det_to_node
+
+    def get_data(self, nodes, features):
+        """Returns the network's data in ndarray format for a particular node
+        ordering and feature ordering.
+
+        Given a node and feature ordering, returns the data in the shape
+        [Time x Node x Feature]
+        :param nodes: Iterable containing node names from the networkx
+        graph.
+        :type nodes: Iterable
+        :param features: Iterable containing feature names
+        """
+        raise NotImplementedError
 
     def generate_datasets(
         self, num_simulations=20, simulation_length=3600,
         routefile_period=None, routefile_binomial=None
     ):
+        raise NotImplementedError
 
         config_gen = self.get_config_generator()
 
@@ -249,6 +312,36 @@ def get_lane_graph(netfile, undirected=False, detector_files=None):
                             element.get('id')] = detector_info_dict
 
     return graph
+
+
+def e2_detector_graph(
+    netfile, detector_file, undirected=False, lanewise=True
+):
+    net = readNet(netfile)
+
+    tree = etree.parse(detector_file)
+
+    if undirected:
+        detector_graph = nx.Graph()
+    else:
+        detector_graph = nx.DiGraph()
+
+    for element in tree.iter():
+        if element.tag in ['e2Detector', 'laneAreaDetector']:
+            det_id = element.get('id')
+            info_dict = dict(element.items())
+            detector_graph.add_node(det_id, **info_dict)
+
+    lane_to_det = {lane: det for det, lane in detector_graph.node('lane')}
+
+    for node in net.getNodes():
+        for conn in node.getConnections():
+            detector_graph.add_edge(
+                lane_to_det[conn.getFromLane().getID()],
+                lane_to_det[conn.getToLane().getID()],
+                direction=conn.getDirection())
+
+    return detector_graph
 
 
 def get_edge_graph(netfile, undirected=False, detector_files=None):
