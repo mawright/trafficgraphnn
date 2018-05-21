@@ -2,6 +2,8 @@ from __future__ import absolute_import, print_function, division
 
 import os
 import logging
+import six
+import collections
 
 import sumolib
 
@@ -28,7 +30,7 @@ def adjust_detector_length(requested_detector_length,
         match the distance between requested distance to TLS
         and lane beginning. """
 
-    if requested_detector_length == -1:
+    if requested_detector_length == -1 or requested_detector_length is None:
         return lane_length - requested_distance_to_tls
 
     return min(lane_length - requested_distance_to_tls,
@@ -169,12 +171,15 @@ def generate_e2_detectors(netfile, distance_to_tls, detector_def_file=None,
 
     if len(detector_length) not in [1, len(distance_to_tls)]:
         raise ValueError(
-            'detector_length must be 1 or len(distance_to_tls), got {}'.format(
+            ('len(detector_length) must be 1 or '
+             'len(distance_to_tls), got {}').format(
                 len(detector_length))
         )
 
-    if len(detector_length) == 1:
-        detector_length = [detector_length] * len(distance_to_tls)
+    if (len(detector_length) == 1
+            and isinstance(detector_length, collections.Iterable)
+            and type(detector_length) not in six.string_types):
+        detector_length = detector_length * len(distance_to_tls)
 
     return generate_detector_set(
         netfile, 'e2', distance_to_tls, detector_def_file,

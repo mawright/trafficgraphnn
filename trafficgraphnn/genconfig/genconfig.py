@@ -191,7 +191,7 @@ class ConfigGenerator(object):
         self,
         detector_def_file_name=None,
         detector_output_file=None,
-        distance_to_tls=5,
+        distance_to_tls=0,
         detector_length=None,
         frequency=60,
     ):

@@ -13,7 +13,7 @@ import traci
 
 from trafficgraphnn.genconfig import ConfigGenerator
 from trafficgraphnn.utils import (
-    parse_detector_output_xml, parse_tls_output_xml)
+    parse_detector_output_xml, parse_tls_output_xml, iterfy)
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +74,9 @@ class SumoNetwork(object):
         return cls(
             config_gen.net_output_file, lanewise=lanewise,
             undirected_graph=undirected_graph, routefile=config_gen.routefile,
-            addlfiles=[config_gen.detector_def_file]
+            addlfiles=(
+                list(iterfy(config_gen.detector_def_files))
+                + list(iterfy(config_gen.non_detector_addl_files)))
         )
 
     def set_routefile(self, routefile):
