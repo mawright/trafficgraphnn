@@ -322,7 +322,6 @@ def get_lane_graph(netfile, undirected=False, additional_files=None):
                 elif (element.tag == 'timedEvent' and
                       element.get('type') == 'SaveTLSSwitchTimes'):
                     tls_id = element.get('source')
-                    nx.set_edge_attributes
                     for edge in tls_to_edges[tls_id]:
                         graph.edges[edge].update(
                             {'tls_output_info': dict(element.items())})
