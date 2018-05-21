@@ -146,11 +146,11 @@ class SumoNetwork(object):
         if self.lanewise:
             self.graph = get_lane_graph(
                 self.netfile, undirected=self.undirected_graph,
-                detector_files=self.additional_files)
+                additional_files=self.additional_files)
         else:
             self.graph = get_edge_graph(
                 self.netfile, undirected=self.undirected_graph,
-                detector_files=self.additional_files)
+                additional_files=self.additional_files)
 
     def get_graph(self):
         assert self.graph is not None
@@ -270,10 +270,9 @@ class SumoNetwork(object):
         # if not hasattr
 
         # for i in range(num_simulations):
-        # con
 
 
-def get_lane_graph(netfile, undirected=False, detector_files=None):
+def get_lane_graph(netfile, undirected=False, additional_files=None):
     net = readNet(netfile)
 
     if undirected:
@@ -285,17 +284,27 @@ def get_lane_graph(netfile, undirected=False, detector_files=None):
         for lane in edge.getLanes():
             graph.add_node(lane.getID())
 
+    tls_to_edges = {}
+
     for node in net.getNodes():
         for conn in node.getConnections():
+            tls_id = conn.getTLSID()
+            if tls_id not in tls_to_edges:
+                tls_to_edges[tls_id] = []
+            edge_from_to = (conn.getFromLane().getID(),
+                            conn.getToLane().getID())
             graph.add_edge(
-                conn.getFromLane().getID(), conn.getToLane().getID(),
-                direction=conn.getDirection())
+                *edge_from_to,
+                direction=conn.getDirection(),
+                tls=tls_id)
+            tls_to_edges[tls_id].append(edge_from_to)
 
-    if detector_files is not None:
-        if isinstance(detector_files, six.string_types):
-            detector_files = [detector_files]
-        for det_file in detector_files:
-            tree = etree.parse(det_file)
+    edge_info_dicts = {}
+    if additional_files is not None:
+        if isinstance(additional_files, six.string_types):
+            additional_files = [additional_files]
+        for addl_file in additional_files:
+            tree = etree.parse(addl_file)
             for element in tree.iter():
                 if element.tag in [
                     'e1Detector', 'inductionLoop',
@@ -311,6 +320,16 @@ def get_lane_graph(netfile, undirected=False, detector_files=None):
                         graph.node[lane_id]['detectors'][
                             element.get('id')] = detector_info_dict
 
+                elif (element.tag == 'timedEvent' and
+                      element.get('type') == 'SaveTLSSwitchTimes'):
+                    tls_id = element.get('source')
+                    nx.set_edge_attributes
+                    for edge in tls_to_edges[tls_id]:
+                        tls_info_dict = dict(element.items())
+                        edge_info_dicts[edge] = {
+                            'tls_output_info': tls_info_dict}
+
+        nx.set_edge_attributes(graph, edge_info_dicts)
     return graph
 
 
@@ -344,7 +363,7 @@ def e2_detector_graph(
     return detector_graph
 
 
-def get_edge_graph(netfile, undirected=False, detector_files=None):
+def get_edge_graph(netfile, undirected=False, additional_files=None):
     net = readNet(netfile)
 
     if undirected:
@@ -362,12 +381,12 @@ def get_edge_graph(netfile, undirected=False, detector_files=None):
                     direction=conn.getDirection()
                 )
 
-    if detector_files is not None:
+    if additional_files is not None:
         edge_info = dict(graph.nodes.data())
-        if isinstance(detector_files, str):
-            detector_files = [detector_files]
-        for det_file in detector_files:
-            tree = etree.parse(det_file)
+        if isinstance(additional_files, str):
+            additional_files = [additional_files]
+        for addl_file in additional_files:
+            tree = etree.parse(addl_file)
             for element in tree.iter():
                 if element.tag in [
                     'e1Detector', 'inductionLoop',
