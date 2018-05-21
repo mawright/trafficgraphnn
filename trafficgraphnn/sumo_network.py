@@ -299,7 +299,6 @@ def get_lane_graph(netfile, undirected=False, additional_files=None):
                 tls=tls_id)
             tls_to_edges[tls_id].append(edge_from_to)
 
-    edge_info_dicts = {}
     if additional_files is not None:
         if isinstance(additional_files, six.string_types):
             additional_files = [additional_files]
@@ -325,11 +324,9 @@ def get_lane_graph(netfile, undirected=False, additional_files=None):
                     tls_id = element.get('source')
                     nx.set_edge_attributes
                     for edge in tls_to_edges[tls_id]:
-                        tls_info_dict = dict(element.items())
-                        edge_info_dicts[edge] = {
-                            'tls_output_info': tls_info_dict}
+                        graph.edges[edge].update(
+                            {'tls_output_info': dict(element.items())})
 
-        nx.set_edge_attributes(graph, edge_info_dicts)
     return graph
 
 
