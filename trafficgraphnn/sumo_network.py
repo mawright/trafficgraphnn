@@ -12,7 +12,8 @@ from sumolib.net import readNet
 import traci
 
 from trafficgraphnn.genconfig import ConfigGenerator
-from trafficgraphnn.utils import parse_detector_output_xml
+from trafficgraphnn.utils import (
+    parse_detector_output_xml, parse_tls_output_xml)
 
 logger = logging.getLogger(__name__)
 
@@ -209,6 +210,29 @@ class SumoNetwork(object):
         for node_id, data in self.graph.nodes.data():
             data['data_series'] = [df.xs(node_id, level='node_id')
                                    for df in self.data_dfs]
+
+        tlses_in_files = {}
+        for (in_node, out_node, data
+             ) in self.graph.edges.data('tls_output_info'):
+            file = data['dest']
+            if file not in tlses_in_files:
+                tlses_in_files[file] = set()
+            tlses_in_files[file].add(data['source'])
+
+        for file, tls_list in tlses_in_files.items():
+            filename = os.path.join(os.path.dirname(self.netfile), file)
+
+            df = parse_tls_output_xml(filename)
+
+            for from_lane, to_lane, data in self.graph.edges.data():
+                if data['tls'] in tls_list:
+                    data['switch_times'] = df.xs(
+                        (from_lane, to_lane),
+                        level=('fromLane', 'toLane'), drop_level=False)
+
+            self.data_dfs.append(df)
+
+            # TODO? version where graph.nodes are roads instead of lanes
 
     def get_lane_data_and_adj_matrix(self, node_ordering=None):
         """

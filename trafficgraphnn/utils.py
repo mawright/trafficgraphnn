@@ -93,6 +93,41 @@ def parse_detector_output_xml(data_file, ids=None, fields=None):
     return df
 
 
+def parse_tls_output_xml(data_file):
+    parsed = etree.iterparse(data_file, tag='tlsSwitch')
+
+    records = []
+
+    for _, element in parsed:
+        records.append(
+            (element.attrib['id'],
+             element.attrib['fromLane'],
+             element.attrib['toLane'],
+             element.attrib['programID'],
+             float(element.attrib['begin']),
+             float(element.attrib['end']),
+             float(element.attrib['duration']))
+        )
+
+    df = pd.DataFrame.from_records(
+        records,
+        columns=[
+            'tls_id', 'fromLane', 'toLane', 'programID',
+            'begin', 'end', 'duration'])
+    df.set_index(['tls_id', 'fromLane', 'toLane'], inplace=True)
+
+    return df
+
+
+def verify_xml_schema(xml_file):
+    tools_dir = get_sumo_tools_dir()
+    schemacheck_py_file = os.path.join(
+        tools_dir, 'xml', 'schemaCheck.py')
+
+    # schemaCheck.py errors when you send it a valid tls output file?
+    raise NotImplementedError
+
+
 def iterfy(x):
     if isinstance(x, collections.Iterable) and type(x) not in six.string_types:
         return x
