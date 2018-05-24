@@ -183,11 +183,12 @@ class SumoNetwork(object):
         detectors_in_files = {}
         det_to_data = {}
         for node, detector_data in self.graph.nodes.data('detectors'):
-            for det_id, data in detector_data.items():
-                if data['file'] not in detectors_in_files.keys():
-                    detectors_in_files[data['file']] = []
-                detectors_in_files[data['file']].append(det_id)
-                det_to_data[det_id] = data
+            if detector_data is not None:
+                for det_id, data in detector_data.items():
+                    if data['file'] not in detectors_in_files.keys():
+                        detectors_in_files[data['file']] = []
+                    detectors_in_files[data['file']].append(det_id)
+                    det_to_data[det_id] = data
 
         det_to_node = self.det_to_node_dict()
 
@@ -210,15 +211,17 @@ class SumoNetwork(object):
                 det_data['data_series'] = df.xs(det_id, level='det_id')
 
         for node_id, data in self.graph.nodes.data():
-            data['data_series'] = [df.xs(node_id, level='node_id')
-                                   for df in self.data_dfs]
+            if 'detectors' in data:
+                data['data_series'] = [df.xs(node_id, level='node_id')
+                                       for df in self.data_dfs]
 
         tlses_in_files = {}
         for (in_node, out_node, data
              ) in self.graph.edges.data('tls_output_info'):
-            file = data['dest']
-            if file not in tlses_in_files:
-                tlses_in_files[file] = set()
+            if data is not None:
+                file = data['dest']
+                if file not in tlses_in_files:
+                    tlses_in_files[file] = set()
             tlses_in_files[file].add(data['source'])
 
         for file, tls_list in tlses_in_files.items():
@@ -267,8 +270,9 @@ class SumoNetwork(object):
 
         det_to_node = {}
         for node, det_dict in graph.nodes('detectors'):
-            for det_id, _ in det_dict.items():
-                det_to_node[det_id] = node
+            if det_dict is not None:
+                for det_id, _ in det_dict.items():
+                    det_to_node[det_id] = node
 
         return det_to_node
 
