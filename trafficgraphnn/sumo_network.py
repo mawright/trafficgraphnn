@@ -222,7 +222,7 @@ class SumoNetwork(object):
                 file = data['dest']
                 if file not in tlses_in_files:
                     tlses_in_files[file] = set()
-            tlses_in_files[file].add(data['source'])
+                tlses_in_files[file].add(data['source'])
 
         for file, tls_list in tlses_in_files.items():
             filename = os.path.join(os.path.dirname(self.netfile), file)
