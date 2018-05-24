@@ -11,7 +11,7 @@ import logging
 from sumolib import checkBinary
 import sumolib
 
-from trafficgraphnn.utils import get_sumo_tools_dir
+from trafficgraphnn.utils import get_sumo_tools_dir, get_net_dir, get_net_name
 from trafficgraphnn.genconfig import detectors
 
 if six.PY2:
@@ -210,37 +210,62 @@ class ConfigGenerator(object):
         output_file_name=None,
         addl_file_name='tls_output.add.xml'
     ):
-        if output_file_name is None:
-            output_file_name = '{}_tls_output.xml'.format(self.net_name)
+        addl_file = define_tls_output_file(
+            self.net_output_file, tls_subset=tls_subset,
+            output_data_dir=self.output_data_dir,
+            output_file_name=output_file_name,
+            config_dir=self.net_config_dir, addl_file_name=addl_file_name)
 
-        output_file = os.path.join(self.output_data_dir, output_file_name)
-
-        addl_file = os.path.join(self.net_config_dir, addl_file_name)
-
-        relative_output_filename = os.path.relpath(
-            output_file,
-            os.path.dirname(addl_file))
-
-        tls_addl = sumolib.xml.create_document('additional')
-
-        net = sumolib.net.readNet(self.net_output_file)
-
-        for tls in net.getTrafficLights():
-            tls_xml_element = tls_addl.addChild('timedEvent')
-            tls_xml_element.setAttribute('type', 'SaveTLSSwitchTimes')
-            tls_xml_element.setAttribute('source', tls.getID())
-            tls_xml_element.setAttribute('dest', relative_output_filename)
-
-        tls_addl_file_fid = open(os.path.realpath(addl_file), 'w')
-        tls_addl_file_fid.write(tls_addl.toXML())
-        tls_addl_file_fid.close()
-
-        if not os.path.exists(os.path.dirname(output_file)):
-            os.makedirs(os.path.dirname(output_file))
-
-        self.non_detector_addl_files.append(addl_file)
+        if addl_file not in self.non_detector_addl_files:
+            self.non_detector_addl_files.append(addl_file)
 
         return os.path.realpath(addl_file)
+
+
+def define_tls_output_file(
+    netfile,
+    tls_subset=None,
+    output_data_dir=None,
+    output_file_name=None,
+    config_dir=None,
+    addl_file_name='tls_output.add.xml',
+):
+    if config_dir is None:
+        config_dir = get_net_dir(netfile)
+
+    if output_data_dir is None:
+        output_data_dir = os.path.join(config_dir, 'output')
+
+    if output_file_name is None:
+        net_name = get_net_name(netfile)
+        output_file_name = '{}_tls_output.xml'.format(net_name)
+
+    output_file = os.path.join(output_data_dir, output_file_name)
+
+    addl_file = os.path.join(config_dir, addl_file_name)
+
+    relative_output_filename = os.path.relpath(
+        output_file,
+        os.path.dirname(addl_file))
+
+    tls_addl = sumolib.xml.create_document('additional')
+
+    net = sumolib.net.readNet(netfile)
+
+    for tls in net.getTrafficLights():
+        tls_xml_element = tls_addl.addChild('timedEvent')
+        tls_xml_element.setAttribute('type', 'SaveTLSSwitchTimes')
+        tls_xml_element.setAttribute('source', tls.getID())
+        tls_xml_element.setAttribute('dest', relative_output_filename)
+
+    tls_addl_file_fid = open(os.path.realpath(addl_file), 'w')
+    tls_addl_file_fid.write(tls_addl.toXML())
+    tls_addl_file_fid.close()
+
+    if not os.path.exists(os.path.dirname(output_file)):
+        os.makedirs(os.path.dirname(output_file))
+
+    return os.path.realpath(addl_file)
 
 
 def remove_e1_lengths(detector_def_file):
