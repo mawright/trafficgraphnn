@@ -46,7 +46,7 @@ class ConfigGenerator(object):
 
     def gen_grid_network(
         self, check_lane_foes_all=True,
-        grid_number=5, grid_length=100,
+        grid_number=3, grid_length=100,
         tlstype='static', gen_editable_xml=False
     ):
         netgenerate_bin = checkBinary('netgenerate')
@@ -58,7 +58,7 @@ class ConfigGenerator(object):
             '--default-junction-type', 'traffic_light',
             '--tls.guess', 'true',
             '--tls.default-type', tlstype,
-            '--default.lanenumber', '2',
+            '--default.lanenumber', '3',
             '--check-lane-foes.all', str(check_lane_foes_all).lower(),
             '-o', self.net_output_file,
         ]
