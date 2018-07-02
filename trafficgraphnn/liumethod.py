@@ -97,7 +97,7 @@ class LiuIntersection(object):
             # eg dataframes
             in_lane_id = in_lane.getID()
             out_lane_id = out_lane.getID()
-            if in_lane_id not in liu_lanes_id:
+            if in_lane_id not in liu_lanes_id and self.parent.graph.nodes('detectors')[in_lane.getID()] != None:
                 #if in_lane_id == '1/3to1/2_0' or in_lane_id == '1/3to1/2_1' or in_lane_id == '1/3to1/2_2': #selecting the eligible lanes (remove later on!)
                 
                 liu_lanes_id.append(in_lane_id)
@@ -132,7 +132,7 @@ class LiuLane(object):
         # any steps)
         self.sumolib_in_lane = sumolib_in_lane
         self.sumolib_out_lane = out_lane
-        self.max_veh_leaving_on_green = 15
+        self.max_veh_leaving_on_green = 17 # initialize value, but will be estimated during simulation run
         
         #dataframes that are loaded once at the beginning
         self.df_e1_adv_detector = pd.DataFrame()
@@ -148,15 +148,9 @@ class LiuLane(object):
         columns_e2 = ['time', 'startedHalts']
         self.curr_e2_detector = pd.DataFrame(columns = columns_e2)        
 
-#        
-#        self.df_e1_adv_detector = self.graph.node[sumolib_lane]['detectors']['e1_'+lane+'_1']['data_series']
-#        self.df_e1_stopbar = self.graph.node[sumolib_lane]['detectors']['e1_'+lane+'_0']['data_series']
-#        self.df_e2_detector = self.graph.node[sumolib_lane]['detectors']['e2_'+lane+'_0']['data_series']                  
-#        self.df_traffic_lights = self.graph.edges[(sumolib_in_lane.getID(), out_lane.getID())]['switch_times']
-#        self.phase_length = int(self.df_traffic_lights['begin'].values[1] - self.df_traffic_lights['begin'].values[0])
-#        self.duration_green_light = int(self.df_traffic_lights['duration'].values[0])
-#        self.max_num_phases = int(6000/(self.phase_length))  ###Attention: right simu time!
-#        print("All dataframes for lane " + lane +" are loaded")
+        self.parsed_xml_e1_stopbar_detector = None
+        self.parsed_xml_e1_adv_detector = None
+        self.parsed_xml_e2_detector = None
         
         
         #arrays for store results
@@ -197,13 +191,14 @@ class LiuLane(object):
         got_duration = 0
         for node in self.parent.parent.parsed_xml_tls.getroot():   
             fromLane = str(node.attrib.get('fromLane'))
+            end = float(node.attrib.get('end'))
             if fromLane == lane_id and (got_phase_length == 0 or got_duration == 0):
                 if cnt == 0:
-                   self.phase_start = float(node.attrib.get('end'))
+                   self.phase_start = end
                    self.duration_green_light = float(node.attrib.get('duration'))
                    got_duration = 1
                    cnt = 1
-                elif cnt == 1:
+                elif cnt == 1 and self.phase_start != end:
                    phase_end = float(node.attrib.get('end'))
                    self.phase_length = int(phase_end - self.phase_start)
                    got_phase_length = 1
@@ -241,23 +236,38 @@ class LiuLane(object):
         
         ###  parse e1 andvanced and stopbar detector from xml file ####       
        
-        if self.parent.parent.parsed_xml_e1_detectors == None:
-        #if self.parent.parent.bool_parsed_e1 == 0:
-            self.parent.parent.parsed_xml_e1_detectors = et.parse(
+        if self.parsed_xml_e1_stopbar_detector == None:
+            self.parsed_xml_e1_stopbar_detector = et.parse(
+                    os.path.join(os.path.dirname(self.parent.parent.sumo_network.netfile),
+                                 self.graph.nodes('detectors')[lane_id][stopbar_detector_id]['file']))
+            print('e1 stopbar detector parsing was successful')
+            self.parent.parent.bool_parsed_e1 = 1
+                
+        list_time_stop = []     #for stop bar detector
+        list_nVehContrib_stop = []
+        
+        for node in self.parsed_xml_e1_stopbar_detector.getroot():
+            begin = float(node.attrib.get('begin'))
+            det_id = node.attrib.get('id')    
+            if begin >= start-self.phase_length and begin < end+self.phase_length and det_id == stopbar_detector_id:
+                list_time_stop.append(begin)
+                list_nVehContrib_stop.append(float(node.attrib.get('nVehContrib')))
+                
+        self.curr_e1_stopbar = pd.DataFrame(
+                {'time': list_time_stop, 'nVehContrib': list_nVehContrib_stop})                
+                
+        if self.parsed_xml_e1_adv_detector == None:
+            self.parsed_xml_e1_adv_detector = et.parse(
                     os.path.join(os.path.dirname(self.parent.parent.sumo_network.netfile),
                                  self.graph.nodes('detectors')[lane_id][adv_detector_id]['file']))
-            print('e1 detector parsing was successful')
+            print('e1 advanced detector parsing was successful')
             self.parent.parent.bool_parsed_e1 = 1
         
         list_time =[]       #for advanced detector
         list_occupancy =[]
         list_nVehEntered =[]
         list_nVehContrib =[]
-        
-        list_time_stop = []     #for stop bar detector
-        list_nVehContrib_stop = []
-        
-        for node in self.parent.parent.parsed_xml_e1_detectors.getroot():
+        for node in self.parsed_xml_e1_adv_detector.getroot():
             begin = float(node.attrib.get('begin'))
             det_id = node.attrib.get('id')
             if begin >= start-self.phase_length and begin < end+self.phase_length and det_id == adv_detector_id:
@@ -265,16 +275,10 @@ class LiuLane(object):
                 list_occupancy.append(float(node.attrib.get('occupancy')))
                 list_nVehEntered.append(float(node.attrib.get('nVehEntered')))
                 list_nVehContrib.append(float(node.attrib.get('nVehContrib')))
-                
-            if begin >= start-self.phase_length and begin < end+self.phase_length and det_id == stopbar_detector_id:
-                list_time_stop.append(begin)
-                list_nVehContrib_stop.append(float(node.attrib.get('nVehContrib')))
-                
+            
         self.curr_e1_adv_detector = pd.DataFrame(
                 {'time': list_time, 'occupancy': list_occupancy,
                  'nVehEntered': list_nVehEntered, 'nVehContrib': list_nVehContrib})
-        self.curr_e1_stopbar = pd.DataFrame(
-                {'time': list_time, 'nVehContrib': list_nVehContrib})
                           
         self.curr_e1_adv_detector.set_index('time', inplace=True)  
         self.curr_e1_stopbar.set_index('time', inplace=True) 
@@ -286,8 +290,8 @@ class LiuLane(object):
         e2_detector_id = "e2_" + dash_lane_id + "_0"
         
         
-        if self.parent.parent.parsed_xml_e2_detectors == None:
-            self.parent.parent.parsed_xml_e2_detectors = et.parse(
+        if self.parsed_xml_e2_detector == None:
+            self.parsed_xml_e2_detector = et.parse(
                     os.path.join(os.path.dirname(self.parent.parent.sumo_network.netfile),
                                  self.graph.nodes('detectors')[lane_id][e2_detector_id]['file'])) 
             print('e2 detector parsing was successful')
@@ -296,7 +300,7 @@ class LiuLane(object):
         list_time_e2 = []
         list_startedHalts_e2 = []
         
-        for node in self.parent.parent.parsed_xml_e2_detectors.getroot():
+        for node in self.parsed_xml_e2_detector.getroot():
             begin = float(node.attrib.get('begin'))
             det_id = node.attrib.get('id')
             if begin >= start and begin < end+self.phase_length and det_id == e2_detector_id:
@@ -306,6 +310,18 @@ class LiuLane(object):
         self.curr_e2_detector = pd.DataFrame(
                 {'time': list_time_e2, 'startedHalts': list_startedHalts_e2})     
         self.curr_e2_detector.set_index('time', inplace=True)  
+        
+        ###DEBUG###
+#        if lane_id == '0/1to1/1_0':
+#            with pd.option_context('display.max_rows', None, 'display.max_columns', 3): #show all rows
+#                print('curr_e1_stopbar:')
+#                print(self.curr_e1_stopbar)
+#                print('curr_e1_adv_detector:')
+#                print(self.curr_e1_adv_detector)            
+#                print('curr_e2_detector:')
+#                print(self.curr_e2_detector)        
+        
+        ####
     
         #self.parent.parent.parsed_xml_e2_detectors = None
         
@@ -405,7 +421,9 @@ class LiuLane(object):
                 old_estimated_queue_nVeh = 0
             else:
                 old_estimated_queue_nVeh = self.arr_estimated_max_queue_length[len(self.arr_estimated_max_queue_length)-1]*self.k_j
-            
+            #with pd.option_context('display.max_rows', None, 'display.max_columns', 3): #show all rows
+                #print('lane id:', self.sumolib_in_lane.getID())
+                #print('Vehicle arriving during red light:', curr_e1_adv_detector[start-8:end-self.duration_green_light]) #debug
             estimated_queue_nVeh = max(old_estimated_queue_nVeh - self.max_veh_leaving_on_green + sum(curr_e1_adv_detector["nVehContrib"][start-self.duration_green_light:start-8]), 0)+ sum(curr_e1_adv_detector["nVehContrib"][start-8:end-self.duration_green_light])
             self.arr_estimated_max_queue_length.append(estimated_queue_nVeh/self.k_j)
             #estimated_queue_nVeh = max(old_estimated_queue_nVeh - 17 + sum(df_e1_adv_detector["nVehContrib"][start-duration_green_light-8:start-8]), 0)+ sum(df_e1_adv_detector["nVehContrib"][start-8:end-duration_green_light])
@@ -456,6 +474,8 @@ class LiuLane(object):
         #calculate ground truth data for queue and store in self arrays
         #print('ppppppp', sum(curr_e2_detector['startedHalts'][start:end]))
         self.arr_real_max_queue_length.append(sum(curr_e2_detector['startedHalts'][start:end])/self.k_j)
+        #with pd.option_context('display.max_rows', None, 'display.max_columns', 3): #show all rows
+            #print('Ground Truth:', curr_e2_detector[start:end])
         return sum(curr_e2_detector['startedHalts'][start:end])/self.k_j
        
     def get_MAPE(self):
@@ -506,6 +526,5 @@ class LiuLane(object):
         print('real queue length: ', self.arr_real_max_queue_length)
         print('phase length:', self.phase_length)
         print('phase start:', self.phase_start)
-        
-        
+                
         pass
