@@ -59,7 +59,7 @@ detector_type_tag_dict = {
 def generate_detector_set(netfile, detector_type, distance_to_tls,
                           detector_def_file=None,
                           detector_output_file=None, detector_length=None,
-                          frequency=60):
+                          frequency=60, per_detector_output_files=False):
 
     if detector_type not in ['e1', 'e2']:
         raise ValueError('Unknown detector type: {}'.format(detector_type))
@@ -84,7 +84,7 @@ def generate_detector_set(netfile, detector_type, distance_to_tls,
             '{}_{}.add.xml'.format(
                 net_name, detector_type)
         )
-    if detector_output_file is None:
+    if detector_output_file is None and per_detector_output_files == False: #manipulated by simon
         detector_output_file = os.path.join(
             default_output_data_dir,
             '{}_{}_output.xml'.format(
@@ -118,7 +118,6 @@ def generate_detector_set(netfile, detector_type, distance_to_tls,
 
             for i, distance in enumerate(distance_to_tls):
                 detector_xml = detectors_xml.addChild(detector_tag)
-                detector_xml.setAttribute("file", relative_output_filename)
                 detector_xml.setAttribute("freq", str(frequency))
                 detector_xml.setAttribute("friendlyPos", "x")
                 detector_xml.setAttribute(
@@ -126,6 +125,11 @@ def generate_detector_set(netfile, detector_type, distance_to_tls,
                     "{}_{}_{}".format(
                         detector_type, lane_id, i).replace('/', '-')
                 )
+                # --- inserted by simon ---
+
+                    
+                # --- end ---
+                detector_xml.setAttribute("file", relative_output_filename)
                 detector_xml.setAttribute("lane", str(lane_id))
 
                 if detector_type == 'e2':

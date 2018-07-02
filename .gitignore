@@ -14,3 +14,10 @@ __pycache__/
 # Jupyter Notebook
 .ipynb_checkpoints
 *.ipynb
+
+3lanes_estimation_results
+
+*.pdf
+
+run sumo-gui with simulation
+
