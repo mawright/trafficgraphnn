@@ -46,7 +46,7 @@ class ConfigGenerator(object):
 
     def gen_grid_network(
         self, check_lane_foes_all=True,
-        grid_number=5, grid_length=100,
+        grid_number=5, grid_length=100, num_lanes=3,
         tlstype='static', gen_editable_xml=False
     ):
         netgenerate_bin = checkBinary('netgenerate')
@@ -55,10 +55,11 @@ class ConfigGenerator(object):
             netgenerate_bin, '--grid',
             '--grid.number', str(grid_number),
             '--grid.length', str(grid_length),
+            '--grid.attach-length', str(grid_length),
             '--default-junction-type', 'traffic_light',
             '--tls.guess', 'true',
             '--tls.default-type', tlstype,
-            '--default.lanenumber', '2',
+            '--default.lanenumber', str(num_lanes),
             '--check-lane-foes.all', str(check_lane_foes_all).lower(),
             '-o', self.net_output_file,
         ]
@@ -113,7 +114,7 @@ class ConfigGenerator(object):
     def gen_rand_trips(
         self, tripfile_name=None, routefile_name=None,
         period=None, binomial=None, seed=None,
-        start_time=0, end_time=3600, fringe_factor=10,
+        start_time=0, end_time=3600, thru_only=True, fringe_factor=100,
         trip_attrib="departLane=\"best\" departSpeed=\"max\" departPos=\"random\"",
     ):
         if tripfile_name is None:
@@ -136,6 +137,20 @@ class ConfigGenerator(object):
             period = np.random.uniform(0.2, 1.2)
         # lower period leads to more cars
 
+        if thru_only:
+            trip_weights_prefix = os.path.join(
+                self.net_config_dir, 'trip-weights-temp')
+            weight_file_args = [
+                sys.executable, pyfile,
+                '--net-file', self.net_output_file,
+                '--output-trip-file', self.tripfile,
+                '--weights-output-prefix', trip_weights_prefix
+            ]
+            weight_file_proc = subprocess.Popen(weight_file_args)
+            weight_file_proc.wait()
+            set_non_fringe_weights_to_zero(
+                trip_weights_prefix, self.net_output_file)
+
         randtrip_args = [
             sys.executable, pyfile,
             '--net-file', self.net_output_file,
@@ -149,6 +164,9 @@ class ConfigGenerator(object):
             '--fringe-factor', str(fringe_factor),
             '--trip-attributes', trip_attrib,
         ]
+        if thru_only:
+            randtrip_args.extend([
+                '--weights-prefix', trip_weights_prefix])
 
         logger.info('Calling {}'.format(' '.join(randtrip_args)))
         tripgenproc = subprocess.Popen(randtrip_args)
@@ -266,6 +284,30 @@ def define_tls_output_file(
         os.makedirs(os.path.dirname(output_file))
 
     return os.path.realpath(addl_file)
+
+
+def set_non_fringe_weights_to_zero(weights_file_prefix, netfile):
+    net = sumolib.net.readNet(netfile)
+
+    src_def_file = weights_file_prefix + '.src.xml'
+    dst_def_file = weights_file_prefix + '.dst.xml'
+    src_etree = etree.parse(src_def_file)
+    for element in src_etree.getroot().iter('edge'):
+        edge = net.getEdge(element.attrib['id'])
+        if edge.is_fringe(edge.getIncoming()):
+            element.attrib['value'] = '1.00'  # this is a source edge
+        else:
+            element.attrib['value'] = '0.00'  # not a source edge
+    src_etree.write(src_def_file)
+
+    dst_etree = etree.parse(dst_def_file)
+    for element in dst_etree.getroot().iter('edge'):
+        edge = net.getEdge(element.attrib['id'])
+        if edge.is_fringe(edge.getOutgoing()):
+            element.attrib['value'] = '1.00'  # this is a sink edge
+        else:
+            element.attrib['value'] = '0.00'  # not a sink edge
+    dst_etree.write(dst_def_file)
 
 
 def remove_e1_lengths(detector_def_file):
