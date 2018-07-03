@@ -113,13 +113,13 @@ class LiuIntersection(object):
              current_lane.breakpoint_identification(num_phase, start, end, curr_e1_stopbar, curr_e1_adv_detector)
              current_lane.queue_estimate(num_phase, start, end, curr_e1_adv_detector)
              current_lane.get_ground_truth_queue(num_phase, start, end, curr_e2_detector)
-             mape = current_lane.get_MAPE()
-             print('MAPE: ', mape)        
+       
          pass
      
     def plot_results(self):
         for lane in self.liu_lanes:
             lane.plot()
+            print('MAPE: ', lane.get_MAPE()) 
         pass
         
 
@@ -132,7 +132,6 @@ class LiuLane(object):
         # any steps)
         self.sumolib_in_lane = sumolib_in_lane
         self.sumolib_out_lane = out_lane
-        self.max_veh_leaving_on_green = 17 # initialize value, but will be estimated during simulation run
         
         #dataframes that are loaded once at the beginning
         self.df_e1_adv_detector = pd.DataFrame()
@@ -203,7 +202,10 @@ class LiuLane(object):
                    self.phase_length = int(phase_end - self.phase_start)
                    got_phase_length = 1
                    
-        self.parent.parent.parsed_xml_tls = None       
+        self.parent.parent.parsed_xml_tls = None
+        
+        # initialize value (empirical), but will be estimated during simulation run
+        self.max_veh_leaving_on_green = int(0.5*self.duration_green_light) 
             
 
         # we would like to be able to have each lane's calculation of its Liu
@@ -421,10 +423,9 @@ class LiuLane(object):
                 old_estimated_queue_nVeh = 0
             else:
                 old_estimated_queue_nVeh = self.arr_estimated_max_queue_length[len(self.arr_estimated_max_queue_length)-1]*self.k_j
-            #with pd.option_context('display.max_rows', None, 'display.max_columns', 3): #show all rows
-                #print('lane id:', self.sumolib_in_lane.getID())
-                #print('Vehicle arriving during red light:', curr_e1_adv_detector[start-8:end-self.duration_green_light]) #debug
-            estimated_queue_nVeh = max(old_estimated_queue_nVeh - self.max_veh_leaving_on_green + sum(curr_e1_adv_detector["nVehContrib"][start-self.duration_green_light:start-8]), 0)+ sum(curr_e1_adv_detector["nVehContrib"][start-8:end-self.duration_green_light])
+
+            time_gap = int(self.L_d/self.parent.parent.sumo_network.net.getLane(self.sumolib_in_lane.getID()).getSpeed())
+            estimated_queue_nVeh = max(old_estimated_queue_nVeh - self.max_veh_leaving_on_green + sum(curr_e1_adv_detector["nVehContrib"][start-self.duration_green_light:start-time_gap]), 0)+ sum(curr_e1_adv_detector["nVehContrib"][start-time_gap:end-self.duration_green_light])
             self.arr_estimated_max_queue_length.append(estimated_queue_nVeh/self.k_j)
             #estimated_queue_nVeh = max(old_estimated_queue_nVeh - 17 + sum(df_e1_adv_detector["nVehContrib"][start-duration_green_light-8:start-8]), 0)+ sum(df_e1_adv_detector["nVehContrib"][start-8:end-duration_green_light])
             self.arr_estimated_time_max_queue.append(end-self.duration_green_light)
