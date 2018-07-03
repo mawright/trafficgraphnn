@@ -12,7 +12,7 @@ from sumolib import checkBinary
 import sumolib
 
 from trafficgraphnn.utils import get_sumo_tools_dir, get_net_dir, get_net_name
-from trafficgraphnn.genconfig import detectors
+from trafficgraphnn.genconfig import detectors, tls_config
 
 if six.PY2:
     try:
@@ -21,6 +21,7 @@ if six.PY2:
         import subprocess
 else:
     import subprocess
+    
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,10 @@ class ConfigGenerator(object):
         netgenproc = subprocess.Popen(netgen_args)
         netgenproc.wait()
         logger.info('Wrote grid network to {}'.format(self.net_output_file))
+        
+        if num_lanes == 3:
+            print('self.net_output_file:', self.net_output_file)
+            tls_config.tls_config(self.net_output_file)
 
     def gen_rand_network(
         self, check_lane_foes_all=True,
