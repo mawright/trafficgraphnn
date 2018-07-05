@@ -498,15 +498,21 @@ class LiuLane(object):
         # can add the plotting code here...
         start = 0
         fig = plt.figure()
-        fig.set_figheight(8)
-        fig.set_figwidth(16)
+        fig.set_figheight(5)
+        fig.set_figwidth(5)
         
         estimation, = plt.plot(self.arr_estimated_time_max_queue, self.arr_estimated_max_queue_length, c='r', label= 'estimation')
         ground_truth, = plt.plot(self.arr_estimated_time_max_queue, self.arr_real_max_queue_length, c='b', label= 'ground-truth')
         plt.legend(handles=[estimation, ground_truth], fontsize = 18)
-        plt.ylim(0, 300)
         
-
+        plt.xticks(np.arange(0, 6000, 250))
+        plt.xticks(fontsize=18)
+        plt.yticks(np.arange(0, 550, 50))
+        plt.yticks(fontsize=18)
+        plt.xlim(420,1400)
+        plt.ylim(0, 200)
+        plt.xlabel('time [s]', fontsize = 18)
+        plt.ylabel('queue length [m]', fontsize = 18)
         
         for i in range(len(self.arr_estimated_time_max_queue)):
             start = start+self.phase_length #MODIFIED -> shift of one phase! 
@@ -519,6 +525,12 @@ class LiuLane(object):
                 plt.axvspan(start, end, alpha=0.5, color='red') #'oversaturation'
             
         plt.show() 
+        
+        lane_id = self.sumolib_in_lane.getID()
+        dash_lane_id = lane_id.replace('/', '-')
+        #just to save plots, delete after writing
+        if self.sumolib_in_lane.getID()== '1/0to1/1_0' or self.sumolib_in_lane.getID()== '1/0to1/1_1' or self.sumolib_in_lane.getID()== '1/0to1/1_2':
+            fig.savefig("grid_network_"+dash_lane_id+".pdf", bbox_inches='tight')
         
         #show some stats for debug
         print('lane id:', self.sumolib_in_lane.getID())
