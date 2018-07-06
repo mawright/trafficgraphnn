@@ -21,7 +21,7 @@ _logger = logging.getLogger(__name__)
 
 
 class LiuEtAlRunner(object):
-    def __init__(self, sumo_network, lane_subset=None, time_window=None):
+    def __init__(self, sumo_network, lane_subset=None, time_window=None, prefer_liu = True):
         self.sumo_network = sumo_network
         #self.sumo_network.load_data_to_graph()
         self.graph = self.sumo_network.get_graph()
@@ -32,6 +32,7 @@ class LiuEtAlRunner(object):
         self.bool_parsed_e2 = 0
         self.parsed_xml_tls = None
         self.bool_parsed_tls = 0
+        self.prefer_liu = prefer_liu
         # verify all lanes requested are actually in the network
         if lane_subset is None:
             # process all lanes
@@ -65,7 +66,7 @@ class LiuEtAlRunner(object):
         for num_phase in range(1, max_num_phase):
             print('Running estimation for every lane in every intersection in phase', num_phase)
             for intersection in self.liu_intersections:
-                intersection.run_next_phase(num_phase)                   
+                intersection.run_next_phase(num_phase) 
         pass
 
     def run_next_phase(self, num_phase):
@@ -78,6 +79,22 @@ class LiuEtAlRunner(object):
         for intersection in self.liu_intersections:
             intersection.plot_results()
         pass
+    
+    def get_total_MAPE_per_net(self):
+        sum_MAPE_IO = 0
+        sum_MAPE_liu = 0
+        cnt = 0
+        for intersection in self.liu_intersections:
+            MAPE_IO, MAPE_liu = intersection.get_total_MAPE_per_intersection()
+            if MAPE_IO != 0 and MAPE_liu != 0:
+                sum_MAPE_IO += MAPE_IO
+                sum_MAPE_liu += MAPE_liu
+                cnt += 1
+            
+        final_MAPE_IO = sum_MAPE_IO/cnt
+        final_MAPE_liu = sum_MAPE_liu/cnt  
+        
+        return final_MAPE_IO, final_MAPE_liu
     
 
 class LiuIntersection(object):
@@ -111,7 +128,8 @@ class LiuIntersection(object):
          for current_lane in self.liu_lanes:
              start, end, curr_e1_stopbar, curr_e1_adv_detector, curr_e2_detector = current_lane.parse_cycle_data(num_phase)
              current_lane.breakpoint_identification(num_phase, start, end, curr_e1_stopbar, curr_e1_adv_detector)
-             current_lane.queue_estimate(num_phase, start, end, curr_e1_adv_detector)
+             current_lane.C_identification_short_queue(start, end, curr_e1_stopbar)
+             current_lane.queue_estimate(num_phase, start, end, curr_e1_adv_detector, curr_e1_stopbar)
              current_lane.get_ground_truth_queue(num_phase, start, end, curr_e2_detector)
        
          pass
@@ -121,7 +139,22 @@ class LiuIntersection(object):
             lane.plot()
             print('MAPE: ', lane.get_MAPE()) 
         pass
+    
+    def get_total_MAPE_per_intersection(self):
         
+        sum_MAPE_IO = 0
+        sum_MAPE_liu = 0
+        cnt = 0
+        for lane in self.liu_lanes:
+            MAPE_IO, MAPE_liu, used = lane.get_MAPE()
+            if used == True:
+                sum_MAPE_IO += MAPE_IO
+                sum_MAPE_liu += MAPE_liu
+                cnt += 1
+        if cnt > 0:    
+            sum_MAPE_IO = sum_MAPE_IO/cnt
+            sum_MAPE_liu = sum_MAPE_liu/cnt
+        return sum_MAPE_IO, sum_MAPE_liu       
 
 class LiuLane(object):
     def __init__(self, sumolib_in_lane, out_lane, parent):
@@ -156,8 +189,10 @@ class LiuLane(object):
         self.arr_breakpoint_A = []
         self.arr_breakpoint_B = []
         self.arr_breakpoint_C = []
+        self.arr_breakpoint_C_stopbar = []
         
         self.arr_estimated_max_queue_length = []
+        self.arr_estimated_max_queue_length_pure_liu = []
         self.arr_estimated_time_max_queue = []
         self.arr_real_max_queue_length = []
         self.used_method = []
@@ -173,6 +208,7 @@ class LiuLane(object):
         self.L_d = float(self.graph.nodes('detectors')[self.sumolib_in_lane.getID()][stopbar_detector_id]['pos']
             )-float(self.graph.nodes('detectors')[self.sumolib_in_lane.getID()][adv_detector_id]['pos'])
         self.k_j = 0.13333 #jam density
+        self.v_2 = -6.5 #just for initialization
         
         self.parent = parent
         #self.time_window = time_window
@@ -412,25 +448,87 @@ class LiuLane(object):
         pass
 
 
-    def queue_estimate(self, num_phase, start, end, curr_e1_adv_detector):
+
+    def C_identification_short_queue(self, start, end, curr_e1_stopbar):
+        #Calculating the time gap between vehicles
+        #I am assuming that there is maximum only one vehicle per second on the detector
+        point_of_time = []
+        time_gap_vehicles = []
+        time_cnt=0
+    
+        for t in range(start, end+self.phase_length):
+            if curr_e1_stopbar['nVehContrib'][t] == 1: #new vehicle enters the detector: start timer new timer and save old measurements
+                time_gap_vehicles.append(time_cnt)
+                point_of_time.append(t)
+                time_cnt=0 #reset time counter for new timing
+    
+            if curr_e1_stopbar['nVehContrib'][t] == 0: #timer is running, following vehicle hasn't come yet
+                time_cnt= time_cnt+1    
+        
+        ### Characterizing Breakpoint C ### using time gap between consecutive vehicles
+        bool_C_found = 0
+        breakpoint_C = 0
+        start_search = end-self.duration_green_light + 2 #start searching for C after the green start + 2 seconds and until end
+        end_search = end
+                
+    ###ATTENTION!! Breakpoint k-1 chosen!!! (alternative k, but that is overestimating!)
+        for k in range(0, len(point_of_time)-1):
+            if point_of_time[k] >= start_search and point_of_time[k] <= end_search and time_gap_vehicles[k] >= 4 and time_gap_vehicles[k] >= time_gap_vehicles[k-1]:
+                #print("Breakpoint C found!")
+                #print("Breakpoint:", point_of_time[k-1], "Time Gap:", time_gap_vehicles[k-1])
+                                
+                breakpoint_C = point_of_time[k-1]
+                bool_C_found = 1
+                self.arr_breakpoint_C_stopbar.append(breakpoint_C)  #store breakpoints
+
+        if bool_C_found == 0:
+           # print("No breakpoint C in phase", num_phase, "found!") 
+            self.arr_breakpoint_C_stopbar.append(-1)  #store breakpoints
+        
+    pass
+
+
+
+    def queue_estimate(self, num_phase, start, end, curr_e1_adv_detector, curr_e1_stopbar):
               
         #check if breakpoint A exists
-        if self.arr_breakpoint_A[len(self.arr_breakpoint_A)-1] == -1: #no breakpoint A exists -> short queue estimation method
+        if self.arr_breakpoint_A[len(self.arr_breakpoint_A)-1] == -1:
             
+                
             #simple input-output method
             #print('simple input-output method in phase', num_phase)
             if num_phase == 1:
                 old_estimated_queue_nVeh = 0
             else:
                 old_estimated_queue_nVeh = self.arr_estimated_max_queue_length[len(self.arr_estimated_max_queue_length)-1]*self.k_j
-
+    
             time_gap = int(self.L_d/self.parent.parent.sumo_network.net.getLane(self.sumolib_in_lane.getID()).getSpeed())
             estimated_queue_nVeh = max(old_estimated_queue_nVeh - self.max_veh_leaving_on_green + sum(curr_e1_adv_detector["nVehContrib"][start-self.duration_green_light:start-time_gap]), 0)+ sum(curr_e1_adv_detector["nVehContrib"][start-time_gap:end-self.duration_green_light])
             self.arr_estimated_max_queue_length.append(estimated_queue_nVeh/self.k_j)
             #estimated_queue_nVeh = max(old_estimated_queue_nVeh - 17 + sum(df_e1_adv_detector["nVehContrib"][start-duration_green_light-8:start-8]), 0)+ sum(df_e1_adv_detector["nVehContrib"][start-8:end-duration_green_light])
-            self.arr_estimated_time_max_queue.append(end-self.duration_green_light)
+            #self.arr_estimated_time_max_queue.append(end-self.duration_green_light)
             
             self.used_method.append(0)
+                
+            #elif self.arr_breakpoint_A[len(self.arr_breakpoint_A)-1] == -1 and self.parent.parent.prefer_liu == True:
+                
+            breakpoint_C_stopbar = self.arr_breakpoint_C_stopbar[len(self.arr_breakpoint_C_stopbar)-1]
+            ### Expansion I for short queue      
+            #print('Liu method extension I in phase', num_phase)
+            #n is the number of vehicles passing detector between T_ng(start red phase) and T_C (breakpoint C)
+            
+            if self.arr_breakpoint_C_stopbar[len(self.arr_breakpoint_C_stopbar)-1] == -1:                
+                n = sum(curr_e1_stopbar["nVehContrib"].loc[(end-self.duration_green_light):end])
+            else:
+                n = sum(curr_e1_stopbar["nVehContrib"].loc[(end-self.duration_green_light):breakpoint_C_stopbar])
+                
+            L_max = n/self.k_j
+            
+            
+            self.arr_estimated_max_queue_length_pure_liu.append(L_max)
+            self.arr_estimated_time_max_queue.append(end-self.duration_green_light)
+            self.used_method.append(4)              
+            
             
         else:
             #breakpoint_A = self.arr_breakpoint_A[len(self.arr_breakpoint_A)-1]
@@ -446,19 +544,22 @@ class LiuLane(object):
                 self.used_method.append(2)
             else:
                 breakpoint_C = self.arr_breakpoint_C[len(self.arr_breakpoint_C)-1]
-                v_2 = self.L_d/(breakpoint_B-(end-self.duration_green_light))
-                #print("Estimated v_2: ", v_2)
+                self.v_2 = self.L_d/(breakpoint_B-(end-self.duration_green_light))
+                #print("Estimated v_2: ", self.v_2)
                 
                 ### Expansion I      
                 #print('Liu method extension I in phase', num_phase)
                 #n is the number of vehicles passing detector between T_ng(start red phase) and T_C (breakpoint C)
                 n = sum(curr_e1_adv_detector["nVehEntered"].loc[(end-self.duration_green_light):breakpoint_C])
                 L_max = n/self.k_j + self.L_d
-                T_max = (end-self.duration_green_light) + L_max/abs(v_2)
+                T_max = (end-self.duration_green_light) + L_max/abs(self.v_2)
                 
                 self.arr_estimated_max_queue_length.append(L_max)
                 self.arr_estimated_time_max_queue.append(T_max)
-                self.used_method.append(1)                
+                self.used_method.append(1)
+
+            self.arr_estimated_max_queue_length_pure_liu.append(
+                    self.arr_estimated_max_queue_length[len(self.arr_estimated_max_queue_length)-1])                
                 
         pass
         # next iteration of queue estimation from breakpoints
@@ -480,19 +581,41 @@ class LiuLane(object):
         return sum(curr_e2_detector['startedHalts'][start:end])/self.k_j
        
     def get_MAPE(self):
-        #calculate MAPE
-        sum_mape = 0
-        #print('-----', self.arr_real_max_queue_length) #debug
+
+        #calculating MAPE for liu + IO
+        sum_mape_IO = 0
+        cnt = 0
         if len(self.arr_estimated_max_queue_length) > 2:
             for estimation_queue, real_queue in zip(self.arr_estimated_max_queue_length, self.arr_real_max_queue_length):
                 if estimation_queue != 0 and real_queue != 0:
-                    sum_mape = sum_mape + abs((real_queue-estimation_queue)/real_queue)
+                    sum_mape_IO = sum_mape_IO + abs((real_queue-estimation_queue)/real_queue)
+                    cnt += 1
             
-            sum_mape = sum_mape/len(self.arr_estimated_max_queue_length)
-            return sum_mape
+            if cnt > 0:
+                sum_mape_IO = sum_mape_IO/cnt
+            
+            #calculating MAPE for pure liu
+            sum_mape_liu = 0
+            cnt = 0
+        
+            for estimation_queue, real_queue in zip(self.arr_estimated_max_queue_length_pure_liu, self.arr_real_max_queue_length):
+                if estimation_queue != 0 and real_queue != 0:
+                    sum_mape_liu = sum_mape_liu + abs((real_queue-estimation_queue)/real_queue)
+                    cnt += 1
+            if cnt > 0:
+                sum_mape_liu = sum_mape_liu/cnt      
+            
+            # in some cases the MAPE is 0 because the estimation is perfect
+            # we have to count this cases into the MAPE; check if lane is used
+            if sum(self.arr_real_max_queue_length)>0: 
+                used = True
+            else:
+                used = False
+            
+            return sum_mape_IO, sum_mape_liu, used
         else:
             #print('Too less values to calculate MAPE!!!')
-            return -1
+            return -1, -1
 
     def plot(self):
         # can add the plotting code here...
@@ -502,8 +625,9 @@ class LiuLane(object):
         fig.set_figwidth(5)
         
         estimation, = plt.plot(self.arr_estimated_time_max_queue, self.arr_estimated_max_queue_length, c='r', label= 'estimation')
+        estimation_pure_liu, = plt.plot(self.arr_estimated_time_max_queue, self.arr_estimated_max_queue_length_pure_liu, c='g', label= 'pure liu')
         ground_truth, = plt.plot(self.arr_estimated_time_max_queue, self.arr_real_max_queue_length, c='b', label= 'ground-truth')
-        plt.legend(handles=[estimation, ground_truth], fontsize = 18)
+        plt.legend(handles=[estimation, estimation_pure_liu, ground_truth], fontsize = 18)
         
         plt.xticks(np.arange(0, 6000, 250))
         plt.xticks(fontsize=18)
