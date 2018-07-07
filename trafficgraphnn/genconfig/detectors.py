@@ -101,17 +101,17 @@ def generate_detector_set(netfile, detector_type, distance_to_tls,
 
     net = sumolib.net.readNet(netfile)
 
-    for tls in net._tlss:
-        for connection in tls._connections:
+    for tls in net.getTrafficLights():
+        for connection in tls.getConnections():
             lane = connection[0]
             lane_length = lane.getLength()
             lane_id = lane.getID()
 
-            logger.debug("Creating detector for lane %s" % (str(lane_id)))
+            logger.debug("Creating detector for lane %s", str(lane_id))
 
             if lane_id in lanes_with_detectors:
-                logger.warn(
-                    "Detectors for lane %s already generated" % (str(lane_id)))
+                logger.warning(
+                    "Detectors for lane %s already generated", str(lane_id))
                 continue
 
             lanes_with_detectors.add(lane_id)
