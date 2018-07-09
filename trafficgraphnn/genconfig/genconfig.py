@@ -48,7 +48,7 @@ class ConfigGenerator(object):
     def gen_grid_network(
         self, check_lane_foes_all=True,
         grid_number=5, grid_length=100, num_lanes=3,
-        tlstype='static', gen_editable_xml=False
+        tlstype='static', gen_editable_xml=False, simplify_tls = False
     ):
         netgenerate_bin = checkBinary('netgenerate')
 
@@ -78,7 +78,7 @@ class ConfigGenerator(object):
         netgenproc.wait()
         logger.info('Wrote grid network to {}'.format(self.net_output_file))
         
-        if num_lanes == 3:
+        if num_lanes == 3 and simplify_tls == True:
             print('self.net_output_file:', self.net_output_file)
             tls_config.tls_config(self.net_output_file)
 
@@ -243,6 +243,7 @@ class ConfigGenerator(object):
             self.non_detector_addl_files.append(addl_file)
 
         return os.path.realpath(addl_file)
+
 
 
 def define_tls_output_file(

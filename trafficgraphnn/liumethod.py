@@ -221,28 +221,37 @@ class LiuLane(object):
             print('tls data parsing was successful')
             self.parent.parent.bool_parsed_tls = 1
          
-        cnt = 0  
-        got_phase_length = 0
-        got_duration = 0
+
+        search_finished = False
+        self.duration_green_light = 0
+        marker_toLane = None
         for node in self.parent.parent.parsed_xml_tls.getroot():   
             fromLane = str(node.attrib.get('fromLane'))
+            toLane = str(node.attrib.get('toLane'))
             end = float(node.attrib.get('end'))
-            if fromLane == lane_id and (got_phase_length == 0 or got_duration == 0):
-                if cnt == 0:
-                   self.phase_start = end
-                   self.duration_green_light = float(node.attrib.get('duration'))
-                   got_duration = 1
-                   cnt = 1
-                elif cnt == 1 and self.phase_start != end:
-                   phase_end = float(node.attrib.get('end'))
-                   self.phase_length = int(phase_end - self.phase_start)
-                   got_phase_length = 1
+
+            if fromLane == lane_id and marker_toLane == toLane and search_finished == False: #find tls for 2nd time
+                phase_end = float(node.attrib.get('end'))
+                self.phase_length = int(phase_end - self.phase_start)
+                search_finished = True
+            
+            if fromLane == lane_id:
+                #searching for the longest duration in cycle
+                if float(node.attrib.get('duration')) > self.duration_green_light:
+                    self.duration_green_light = float(node.attrib.get('duration'))
+                    marker_toLane = str(node.attrib.get('toLane'))
+                    self.phase_start = end
+                    search_finished = False
+                    
                    
         self.parent.parent.parsed_xml_tls = None
         
         # initialize value (empirical), but will be estimated during simulation run
         self.max_veh_leaving_on_green = int(0.5*self.duration_green_light) 
-            
+        
+        print('phase_start:' , self.phase_start)
+        print('phase_length:' , self.phase_length)
+        print('duration_green_light:' , self.duration_green_light)
 
         # we would like to be able to have each lane's calculation of its Liu
         # state be entirely local to its instance of this class
@@ -523,11 +532,9 @@ class LiuLane(object):
                 n = sum(curr_e1_stopbar["nVehContrib"].loc[(end-self.duration_green_light):breakpoint_C_stopbar])
                 
             L_max = n/self.k_j
-            
-            
+                     
             self.arr_estimated_max_queue_length_pure_liu.append(L_max)
             self.arr_estimated_time_max_queue.append(end-self.duration_green_light)
-            self.used_method.append(4)              
             
             
         else:
@@ -624,10 +631,11 @@ class LiuLane(object):
         fig.set_figheight(5)
         fig.set_figwidth(5)
         
-        estimation, = plt.plot(self.arr_estimated_time_max_queue, self.arr_estimated_max_queue_length, c='r', label= 'estimation')
-        estimation_pure_liu, = plt.plot(self.arr_estimated_time_max_queue, self.arr_estimated_max_queue_length_pure_liu, c='g', label= 'pure liu')
+        estimation, = plt.plot(self.arr_estimated_time_max_queue, self.arr_estimated_max_queue_length, c='r', label= 'hybrid model')
         ground_truth, = plt.plot(self.arr_estimated_time_max_queue, self.arr_real_max_queue_length, c='b', label= 'ground-truth')
-        plt.legend(handles=[estimation, estimation_pure_liu, ground_truth], fontsize = 18)
+        estimation_pure_liu, = plt.plot(self.arr_estimated_time_max_queue, self.arr_estimated_max_queue_length_pure_liu, c='m', label= 'basic model', linestyle='--')
+
+        plt.legend(handles=[estimation, ground_truth, estimation_pure_liu], fontsize = 18)
         
         plt.xticks(np.arange(0, 6000, 250))
         plt.xticks(fontsize=18)
@@ -635,6 +643,8 @@ class LiuLane(object):
         plt.yticks(fontsize=18)
         plt.xlim(420,1400)
         plt.ylim(0, 200)
+        if self.sumolib_in_lane.getID()== '1/0to0/0_0':
+            plt.ylim(0, 350)
         plt.xlabel('time [s]', fontsize = 18)
         plt.ylabel('queue length [m]', fontsize = 18)
         
@@ -653,7 +663,7 @@ class LiuLane(object):
         lane_id = self.sumolib_in_lane.getID()
         dash_lane_id = lane_id.replace('/', '-')
         #just to save plots, delete after writing
-        if self.sumolib_in_lane.getID()== '1/0to1/1_0' or self.sumolib_in_lane.getID()== '1/0to1/1_1' or self.sumolib_in_lane.getID()== '1/0to1/1_2':
+        if self.sumolib_in_lane.getID()== '2/2to2/1_2' or self.sumolib_in_lane.getID()== 'top1to1/2_2' or self.sumolib_in_lane.getID()== '1/0to0/0_0':
             fig.savefig("grid_network_"+dash_lane_id+".pdf", bbox_inches='tight')
         
         #show some stats for debug
