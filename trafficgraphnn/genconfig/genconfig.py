@@ -79,7 +79,6 @@ class ConfigGenerator(object):
         logger.info('Wrote grid network to {}'.format(self.net_output_file))
         
         if num_lanes == 3 and simplify_tls == True:
-            print('self.net_output_file:', self.net_output_file)
             tls_config.tls_config(self.net_output_file)
 
     def gen_rand_network(
