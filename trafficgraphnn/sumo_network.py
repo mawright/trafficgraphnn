@@ -114,7 +114,7 @@ class SumoNetwork(object):
             assert type(self.seed) in six.integer_types
             sumo_args.extend(['--seed', str(self.seed)])
         else:
-            logger.warn('Seed not set, SUMO seed will be random.')
+            logger.warning('Seed not set, SUMO seed will be random.')
             sumo_args.extend(['--random', 'true'])
 
         if self.binfile == 'sumo-gui':
