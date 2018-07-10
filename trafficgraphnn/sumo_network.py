@@ -28,7 +28,7 @@ else:
 
 class SumoNetwork(object):
     def __init__(
-        self, netfile, lanewise=False, undirected_graph=False,
+        self, netfile, lanewise=True, undirected_graph=False,
         routefile=None, addlfiles=None, seed=None, binfile='sumo'
     ):
         self.netfile = netfile
@@ -68,7 +68,7 @@ class SumoNetwork(object):
 
     @classmethod
     def from_gen_config(
-        cls, config_gen, lanewise=False, undirected_graph=False,
+        cls, config_gen, lanewise=True, undirected_graph=False,
         seed=None
     ):
         return cls(
