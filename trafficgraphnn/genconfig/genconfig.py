@@ -21,15 +21,15 @@ if six.PY2:
         import subprocess
 else:
     import subprocess
-    
+
 
 logger = logging.getLogger(__name__)
 
 
 class ConfigGenerator(object):
     def __init__(
-        self, net_name, net_config_dir='data/networks',
-    ):
+        self, net_name, net_config_dir='data/networks'
+        ):
         self.net_config_dir = os.path.join(net_config_dir, net_name)
         self.net_name = net_name
         self.output_data_dir = os.path.join(self.net_config_dir, 'output')
@@ -48,7 +48,7 @@ class ConfigGenerator(object):
     def gen_grid_network(
         self, check_lane_foes_all=True,
         grid_number=5, grid_length=100, num_lanes=3,
-        tlstype='static', gen_editable_xml=False, simplify_tls = False
+        tlstype='static', gen_editable_xml=False, simplify_tls=False
     ):
         netgenerate_bin = checkBinary('netgenerate')
 
@@ -70,14 +70,18 @@ class ConfigGenerator(object):
             netgen_args.extend([
                 '--plain-output-prefix', plain_output_dir + self.net_name])
 
-        logger.info('Calling {}'.format(' '.join(netgen_args)))
+        logger.debug('Calling %s', ' '.join(netgen_args))
 
         if not os.path.exists(self.net_config_dir):
             os.makedirs(self.net_config_dir)
-        netgenproc = subprocess.Popen(netgen_args)
-        netgenproc.wait()
-        logger.info('Wrote grid network to {}'.format(self.net_output_file))
-        
+        netgenproc = subprocess.Popen(netgen_args, stdout=subprocess.PIPE,
+                                      stderr=subprocess.STDOUT,
+                                      universal_newlines=True)
+        out, _ = netgenproc.communicate()
+        if out is not None:
+            logger.debug('Returned %s', out)
+        logger.debug('Wrote grid network to {}'.format(self.net_output_file))
+
         if num_lanes == 3 and simplify_tls == True:
             tls_config.tls_config(self.net_output_file)
 
@@ -108,12 +112,16 @@ class ConfigGenerator(object):
             netgen_args.extend([
                 '--plain-output-prefix', plain_output_dir + self.net_name])
 
-        logger.info('Calling {}'.format(' '.join(netgen_args)))
+        logger.debug('Calling %s', ' '.join(netgen_args))
         if not os.path.exists(self.net_config_dir):
             os.makedirs(self.net_config_dir)
-        netgenproc = subprocess.Popen(netgen_args)
-        netgenproc.wait()
-        logger.info('Wrote random network to {}'.format(self.net_output_file))
+        netgenproc = subprocess.Popen(netgen_args, stdout=subprocess.PIPE,
+                                      stderr=subprocess.STDOUT,
+                                      universal_newlines=True)
+        out, _ = netgenproc.communicate()
+        if out is not None:
+            logger.debug('Returned %s', out)
+        logger.debug('Wrote random network to %s', self.net_output_file)
 
     def gen_rand_trips(
         self, tripfile_name=None, routefile_name=None,
@@ -150,8 +158,13 @@ class ConfigGenerator(object):
                 '--output-trip-file', self.tripfile,
                 '--weights-output-prefix', trip_weights_prefix
             ]
-            weight_file_proc = subprocess.Popen(weight_file_args)
-            weight_file_proc.wait()
+            weight_file_proc = subprocess.Popen(weight_file_args,
+                                                stdout=subprocess.PIPE,
+                                                stderr=subprocess.STDOUT,
+                                                universal_newlines=True)
+            out, _ = weight_file_proc.communicate()
+            if out is not None:
+                logger.debug('Returned %s', out)
             set_non_fringe_weights_to_zero(
                 trip_weights_prefix, self.net_output_file)
 
@@ -172,10 +185,15 @@ class ConfigGenerator(object):
             randtrip_args.extend([
                 '--weights-prefix', trip_weights_prefix])
 
-        logger.info('Calling {}'.format(' '.join(randtrip_args)))
-        tripgenproc = subprocess.Popen(randtrip_args)
-        tripgenproc.wait()
-        logger.info('Wrote random route file to {}'.format(self.routefile))
+        logger.debug('Calling %s', ' '.join(randtrip_args))
+        tripgenproc = subprocess.Popen(randtrip_args,
+                                       stdout=subprocess.PIPE,
+                                       stderr=subprocess.STDOUT,
+                                       universal_newlines=True)
+        out, _ = tripgenproc.communicate()
+        if out is not None:
+            logger.debug('Returned %s', out)
+        logger.debug('Wrote random route file to %s', self.routefile)
 
     def gen_detectors(
         self,
@@ -242,7 +260,6 @@ class ConfigGenerator(object):
             self.non_detector_addl_files.append(addl_file)
 
         return os.path.realpath(addl_file)
-
 
 
 def define_tls_output_file(
