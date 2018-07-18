@@ -17,7 +17,6 @@ JAM_DENSITY = 0.13333  # hardcoded jam density value (veh/meter)
 class LiuEtAlRunner(object):
     def __init__(self, sumo_network, lane_subset=None, time_window=None, prefer_liu=True):
         self.sumo_network = sumo_network
-        #self.sumo_network.load_data_to_graph()
         self.graph = self.sumo_network.get_graph()
         self.net = sumo_network.net
         self.parsed_xml_e1_detectors = None
@@ -113,8 +112,10 @@ class LiuIntersection(object):
             # update this call if the instance lane needs more references to
             # eg dataframes
             in_lane_id = in_lane.getID()
-            if in_lane_id not in liu_lanes_id and self.parent.graph.nodes('detectors')[in_lane.getID()] != None:
-
+            if (
+                in_lane_id not in liu_lanes_id
+                and self.parent.graph.nodes('detectors')[in_lane.getID()] is not None
+            ):
                 liu_lanes_id.append(in_lane_id)
                 #print('Creating Liu lane with in_lane = ', in_lane_id, 'and out_lane = ', out_lane_id)
                 lane = LiuLane(in_lane, out_lane, self)
