@@ -28,10 +28,13 @@ class PreprocessData(object):
         self.detector_data_path =  os.path.join(os.path.dirname(
                 self.sumo_network.netfile), 'output')
         self.df_liu_results = pd.DataFrame()
+        
         try:
             self.df_liu_results = pd.read_hdf(self.liu_results_path)
         except IOError:
             print('An error occured trying to read the hdf file.')
+        
+        self.parsed_xml_tls = None
                 
 
         
@@ -63,6 +66,7 @@ class PreprocessData(object):
         
         file_list = os.listdir(self.detector_data_path)
         str_e1 = 'e1'
+        str_tls = 'tls_output.xml'
        
         for interval in average_intervals:
             print('processing interval ', interval)
@@ -72,14 +76,37 @@ class PreprocessData(object):
                 if str_e1 in filename:                    
                     df_detector = self.process_e1_data(filename, interval)
                     self.df_interval_results = pd.concat(
-                            [self.df_interval_results, df_detector], axis = 1)                   
-                  
+                            [self.df_interval_results, df_detector], axis = 1)  
+                                  
             self.df_interval_results.to_hdf(os.path.join(os.path.dirname(self.sumo_network.netfile),
                             'e1_detector_data_'+ str(interval) + '_seconds.h5'),
-                            key = 'df_estimation_results')
+                            key = 'preprocessed e1_detector_data')
+                    
+        if average_over_cycle == True:
+            self.df_interval_results = pd.DataFrame() #reset df for every interval
+            for filename in file_list:
+                if str_tls in filename:
+                    filename_tls = filename
+            
+            for filename in file_list:
+                if str_e1 in filename:
+                    lane_id = self.get_lane_id_from_filename(filename)             
+                    phase_length, phase_start = self.get_tls_data(lane_id, filename_tls)
+#                    print('lane_id:', lane_id)
+#                    print('phase_length:', phase_length)
+#                    print('phase_start:', phase_start)
+                    df_detector = self.process_e1_data(filename, phase_length, 
+                                start_time = phase_start,  average_over_cycle = True)
+                    self.df_interval_results = pd.concat(
+                            [self.df_interval_results, df_detector], axis = 1)
+            self.df_interval_results.to_hdf(os.path.join(os.path.dirname(self.sumo_network.netfile),
+                'e1_detector_data_tls_interval.h5'), key = 'preprocessed e1_detector_data')         
                 
-    def process_e1_data(self, filename, interval):
+                    
+                
+    def process_e1_data(self, filename, interval, start_time = 0,  average_over_cycle = False):
         append_cnt=0    #counts how often new data were appended
+        phase_cnt=0 #counts the phases
         list_nVehContrib = []
         list_flow = []
         list_occupancy = []
@@ -92,12 +119,13 @@ class PreprocessData(object):
         memory_speed = []
         memory_length = []
         memory_end_time = []
+        memory_phases = []
         
         df_detector = pd.DataFrame()
         
         for event, elem in et.iterparse(os.path.join(self.detector_data_path, filename)):
             
-            if elem.tag == 'interval':
+            if elem.tag == 'interval' and int(float(elem.attrib.get('end'))) >= start_time:
             
                 list_nVehContrib.append(float(elem.attrib.get('nVehContrib')))
                 list_flow.append(float(elem.attrib.get('flow')))
@@ -109,6 +137,7 @@ class PreprocessData(object):
                 if append_cnt == interval:
                     
                     append_cnt = 0
+                    phase_cnt += 1
                     #process data
                     memory_nVehContrib.append(sum(list_nVehContrib))
                     memory_flow.append(sum(list_flow)/interval)
@@ -131,6 +160,7 @@ class PreprocessData(object):
                         
                     #append data to dataframe          
                     memory_end_time.append(int(float(elem.attrib.get('end'))))
+                    memory_phases.append(phase_cnt)
                     detector_id = elem.attrib.get('id')
                     
                     #reset temporary lists
@@ -143,7 +173,10 @@ class PreprocessData(object):
         iterables = [[detector_id], [
                 'nVehContrib', 'flow', 'occupancy', 'speed', 'length']]
         index = pd.MultiIndex.from_product(iterables, names=['detector ID', 'values'])
-        df_detector = pd.DataFrame(index = [memory_end_time], columns = index)
+        if average_over_cycle == False:
+            df_detector = pd.DataFrame(index = [memory_end_time], columns = index)
+        else:
+            df_detector = pd.DataFrame(index = [memory_phases], columns = index)
         df_detector.index.name = 'end time'
         
         # fill interval_series with values
@@ -155,8 +188,49 @@ class PreprocessData(object):
        
         return df_detector 
 
+    def get_tls_data(self, lane_id, filename_tls):
+        
+        if self.parsed_xml_tls == None:
+            try:
+                self.parsed_xml_tls = et.parse(
+                        os.path.join(self.detector_data_path, filename_tls))
+            except:
+                IOError('Could not load tls_xml_file')    
 
+        search_finished = False
+        duration_green_light = 0
+        marker_toLane = None
+        for node in self.parsed_xml_tls.getroot():
+            fromLane = str(node.attrib.get('fromLane'))
+            toLane = str(node.attrib.get('toLane'))
+            end = float(node.attrib.get('end'))
+
+            if fromLane == lane_id and marker_toLane == toLane and search_finished == False: #find tls for 2nd time
+                phase_end = float(node.attrib.get('end'))
+                phase_length = int(phase_end - phase_start)
+                search_finished = True
+
+            if fromLane == lane_id:
+                #searching for the longest duration in cycle
+                if float(node.attrib.get('duration')) > duration_green_light:
+                    duration_green_light = float(node.attrib.get('duration'))
+                    marker_toLane = str(node.attrib.get('toLane'))
+                    phase_start = end
+                    search_finished = False
+
+        return phase_length, phase_start
+        
+
+    def get_lane_id_from_filename(self, filename):
+        search_str_start = 'e1_'
+        search_str_end = '_output.xml'
+        index_start = filename.find(search_str_start) + 3
+        index_end = filename.find(search_str_end) - 2
+        lane_id = filename[index_start:index_end]
+        return lane_id.replace('-', '/')
+        
     def unload_data(self):
         #this code should unload all the data and give memory free
+        self.parsed_xml_tls = None
         pass
     
