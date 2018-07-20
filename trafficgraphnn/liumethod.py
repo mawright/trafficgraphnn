@@ -292,27 +292,6 @@ class LiuLane(object):
             self.parent.parent.parsed_xml_tls = et.parse(
                     os.path.join(os.path.dirname(self.parent.parent.sumo_network.netfile),
                         self.graph.edges[lane_id, out_lane_id]['tls_output_info']['dest']))
-
-#        search_finished = False
-#        self.duration_green_light = 0
-#        marker_toLane = None
-#        for node in self.parent.parent.parsed_xml_tls.getroot():
-#            fromLane = str(node.attrib.get('fromLane'))
-#            toLane = str(node.attrib.get('toLane'))
-#            end = float(node.attrib.get('end'))
-#
-#            if fromLane == lane_id and marker_toLane == toLane and search_finished == False: #find tls for 2nd time
-#                phase_end = float(node.attrib.get('end'))
-#                self.phase_length = int(phase_end - self.phase_start)
-#                search_finished = True
-#
-#            if fromLane == lane_id:
-#                #searching for the longest duration in cycle
-#                if float(node.attrib.get('duration')) > self.duration_green_light:
-#                    self.duration_green_light = float(node.attrib.get('duration'))
-#                    marker_toLane = str(node.attrib.get('toLane'))
-#                    self.phase_start = end
-#                    search_finished = False
             
             (self.phase_start, self.phase_length, self.duration_green_light
                      ) = get_tls_data(self.parent.parent.parsed_xml_tls, lane_id)
