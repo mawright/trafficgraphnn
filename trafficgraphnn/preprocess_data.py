@@ -15,7 +15,7 @@ import pandas as pd
 from matplotlib import pyplot as plt
 
 from trafficgraphnn.utils import iterfy
-
+from trafficgraphnn.get_tls_data import get_tls_data
 
 _logger = logging.getLogger(__name__)
 
@@ -91,7 +91,7 @@ class PreprocessData(object):
             for filename in file_list:
                 if str_e1 in filename:
                     lane_id = self.get_lane_id_from_filename(filename)             
-                    phase_length, phase_start = self.get_tls_data(lane_id, filename_tls)
+                    phase_length, phase_start = self.calc_tls_data(lane_id, filename_tls)
 #                    print('lane_id:', lane_id)
 #                    print('phase_length:', phase_length)
 #                    print('phase_start:', phase_start)
@@ -120,6 +120,8 @@ class PreprocessData(object):
         memory_length = []
         memory_end_time = []
         memory_phases = []
+        memory_phase_start = []
+        memory_phase_end = []
         
         df_detector = pd.DataFrame()
         
@@ -140,7 +142,7 @@ class PreprocessData(object):
                     phase_cnt += 1
                     #process data
                     memory_nVehContrib.append(sum(list_nVehContrib))
-                    memory_flow.append(sum(list_flow)/interval)
+                    memory_flow.append(sum(list_flow)/interval)                    
                     memory_occupancy.append(sum(list_occupancy)/interval)
                     
                     cnt_veh = 0
@@ -162,6 +164,10 @@ class PreprocessData(object):
                     memory_end_time.append(int(float(elem.attrib.get('end'))))
                     memory_phases.append(phase_cnt)
                     detector_id = elem.attrib.get('id')
+                    if average_over_cycle == True:
+                        memory_phase_start.append(start_time + phase_cnt*interval)
+                        memory_phase_end.append(start_time + (phase_cnt+1)*interval)
+                    
                     
                     #reset temporary lists
                     list_nVehContrib = []
@@ -185,10 +191,13 @@ class PreprocessData(object):
         df_detector[detector_id, 'occupancy'] = memory_occupancy
         df_detector[detector_id, 'speed'] = memory_speed
         df_detector[detector_id, 'length'] = memory_length
+        if average_over_cycle == True:
+            df_detector[detector_id, 'phase start'] = memory_phase_start
+            df_detector[detector_id, 'phase end'] = memory_phase_end
        
         return df_detector 
 
-    def get_tls_data(self, lane_id, filename_tls):
+    def calc_tls_data(self, lane_id, filename_tls):
         
         if self.parsed_xml_tls == None:
             try:
@@ -197,26 +206,28 @@ class PreprocessData(object):
             except:
                 IOError('Could not load tls_xml_file')    
 
-        search_finished = False
-        duration_green_light = 0
-        marker_toLane = None
-        for node in self.parsed_xml_tls.getroot():
-            fromLane = str(node.attrib.get('fromLane'))
-            toLane = str(node.attrib.get('toLane'))
-            end = float(node.attrib.get('end'))
-
-            if fromLane == lane_id and marker_toLane == toLane and search_finished == False: #find tls for 2nd time
-                phase_end = float(node.attrib.get('end'))
-                phase_length = int(phase_end - phase_start)
-                search_finished = True
-
-            if fromLane == lane_id:
-                #searching for the longest duration in cycle
-                if float(node.attrib.get('duration')) > duration_green_light:
-                    duration_green_light = float(node.attrib.get('duration'))
-                    marker_toLane = str(node.attrib.get('toLane'))
-                    phase_start = end
-                    search_finished = False
+#        search_finished = False
+#        duration_green_light = 0
+#        marker_toLane = None
+#        for node in self.parsed_xml_tls.getroot():
+#            fromLane = str(node.attrib.get('fromLane'))
+#            toLane = str(node.attrib.get('toLane'))
+#            end = float(node.attrib.get('end'))
+#
+#            if fromLane == lane_id and marker_toLane == toLane and search_finished == False: #find tls for 2nd time
+#                phase_end = float(node.attrib.get('end'))
+#                phase_length = int(phase_end - phase_start)
+#                search_finished = True
+#
+#            if fromLane == lane_id:
+#                #searching for the longest duration in cycle
+#                if float(node.attrib.get('duration')) > duration_green_light:
+#                    duration_green_light = float(node.attrib.get('duration'))
+#                    marker_toLane = str(node.attrib.get('toLane'))
+#                    phase_start = end
+#                    search_finished = False
+                
+        phase_start, phase_length, _ = get_tls_data(self.parsed_xml_tls, lane_id)
 
         return phase_length, phase_start
         

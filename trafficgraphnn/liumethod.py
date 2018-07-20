@@ -8,6 +8,7 @@ import pandas as pd
 from matplotlib import pyplot as plt
 
 from trafficgraphnn.utils import iterfy
+from trafficgraphnn.get_tls_data import get_tls_data
 
 
 _logger = logging.getLogger(__name__)
@@ -122,8 +123,7 @@ class LiuEtAlRunner(object):
         pass
     
     def append_results(self, num_phase):
-        print(self.df_estimation_results) #debug
-        
+       
         if num_phase ==1: 
             self.df_estimation_results.to_hdf(os.path.join(os.path.dirname(
                     self.sumo_network.netfile), 'liu_estimation_results.h5'),
@@ -202,10 +202,10 @@ class LiuIntersection(object):
     
     def add_estimation_to_df(self, while_running, phase_cnt):
         for lane in self.liu_lanes:
-            time, real_queue, estimated_queue, estimated_queue_pure_liu = lane.get_estimation_data(while_running)
+            time, real_queue, estimated_queue, estimated_queue_pure_liu, phase_start, phase_end = lane.get_estimation_data(while_running)
             
             lane_ID = lane.get_lane_ID()
-            iterables = [[lane_ID], ['time', 'ground-truth', 'estimated hybrid', 'estimated pure liu']]
+            iterables = [[lane_ID], ['time', 'ground-truth', 'estimated hybrid', 'estimated pure liu', 'phase start', 'phase end']]
             index = pd.MultiIndex.from_product(iterables, names=['lane', 'values'])
             if while_running == False:
                 df_lane = pd.DataFrame(index = np.arange(1, len(time)+1), columns = index)
@@ -216,13 +216,10 @@ class LiuIntersection(object):
             df_lane[lane_ID, 'ground-truth'] = real_queue
             df_lane[lane_ID, 'estimated hybrid'] = estimated_queue
             df_lane[lane_ID, 'estimated pure liu'] = estimated_queue_pure_liu
-                        
-
-#            self.parent.df_estimation_results = self.parent.df_estimation_results.merge(
-#                    df_lane, how='outer', left_index=True, right_index=True)
+            df_lane[lane_ID, 'phase start'] = phase_start
+            df_lane[lane_ID, 'phase end'] = phase_end
             
-            self.parent.df_estimation_results = pd.concat([self.parent.df_estimation_results, df_lane], axis = 1)
-        
+            self.parent.df_estimation_results = pd.concat([self.parent.df_estimation_results, df_lane], axis = 1)       
         pass
     
     def unload_data(self):
@@ -271,6 +268,8 @@ class LiuLane(object):
         self.arr_estimated_time_max_queue = []
         self.arr_real_max_queue_length = []
         self.used_method = []
+        self.arr_phase_start = []
+        self.arr_phase_end = []
 
         #parameters for lane
         lane_id = self.sumolib_in_lane.getID()
@@ -294,26 +293,29 @@ class LiuLane(object):
                     os.path.join(os.path.dirname(self.parent.parent.sumo_network.netfile),
                         self.graph.edges[lane_id, out_lane_id]['tls_output_info']['dest']))
 
-        search_finished = False
-        self.duration_green_light = 0
-        marker_toLane = None
-        for node in self.parent.parent.parsed_xml_tls.getroot():
-            fromLane = str(node.attrib.get('fromLane'))
-            toLane = str(node.attrib.get('toLane'))
-            end = float(node.attrib.get('end'))
-
-            if fromLane == lane_id and marker_toLane == toLane and search_finished == False: #find tls for 2nd time
-                phase_end = float(node.attrib.get('end'))
-                self.phase_length = int(phase_end - self.phase_start)
-                search_finished = True
-
-            if fromLane == lane_id:
-                #searching for the longest duration in cycle
-                if float(node.attrib.get('duration')) > self.duration_green_light:
-                    self.duration_green_light = float(node.attrib.get('duration'))
-                    marker_toLane = str(node.attrib.get('toLane'))
-                    self.phase_start = end
-                    search_finished = False
+#        search_finished = False
+#        self.duration_green_light = 0
+#        marker_toLane = None
+#        for node in self.parent.parent.parsed_xml_tls.getroot():
+#            fromLane = str(node.attrib.get('fromLane'))
+#            toLane = str(node.attrib.get('toLane'))
+#            end = float(node.attrib.get('end'))
+#
+#            if fromLane == lane_id and marker_toLane == toLane and search_finished == False: #find tls for 2nd time
+#                phase_end = float(node.attrib.get('end'))
+#                self.phase_length = int(phase_end - self.phase_start)
+#                search_finished = True
+#
+#            if fromLane == lane_id:
+#                #searching for the longest duration in cycle
+#                if float(node.attrib.get('duration')) > self.duration_green_light:
+#                    self.duration_green_light = float(node.attrib.get('duration'))
+#                    marker_toLane = str(node.attrib.get('toLane'))
+#                    self.phase_start = end
+#                    search_finished = False
+            
+            (self.phase_start, self.phase_length, self.duration_green_light
+                     ) = get_tls_data(self.parent.parent.parsed_xml_tls, lane_id)
 
 
         self.parent.parent.parsed_xml_tls = None
@@ -536,6 +538,8 @@ class LiuLane(object):
 
     def queue_estimate(self, num_phase, start, end, curr_e1_adv_detector, curr_e1_stopbar):
 
+        self.arr_phase_start.append(start)
+        self.arr_phase_end.append(end)        
         #check if breakpoint A exists
         if self.arr_breakpoint_A[len(self.arr_breakpoint_A)-1] == -1:
 
@@ -704,11 +708,16 @@ class LiuLane(object):
             return(self.arr_estimated_time_max_queue[len(self.arr_estimated_time_max_queue)-1],
                    self.arr_real_max_queue_length[len(self.arr_real_max_queue_length)-1], 
                    self.arr_estimated_max_queue_length[len(self.arr_estimated_max_queue_length)-1], 
-                   self.arr_estimated_max_queue_length_pure_liu[len(self.arr_estimated_max_queue_length_pure_liu)-1])
+                   self.arr_estimated_max_queue_length_pure_liu[len(self.arr_estimated_max_queue_length_pure_liu)-1],
+                   self.arr_phase_start[len(self.arr_phase_start)-1],
+                   self.arr_phase_end[len(self.arr_phase_end)-1])
+            
         else:
             return (self.arr_estimated_time_max_queue, self.arr_real_max_queue_length,
                     self.arr_estimated_max_queue_length,
-                    self.arr_estimated_max_queue_length_pure_liu)
+                    self.arr_estimated_max_queue_length_pure_liu,
+                    self.arr_phase_start, 
+                    self.arr_phase_end)
         
     def get_lane_ID(self):
         return self.sumolib_in_lane.getID()
