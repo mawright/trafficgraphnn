@@ -54,17 +54,17 @@ class LiuEtAlRunner(object):
         # reaching the given time
         for num_phase in range(1, max_num_phase):
             print('Running estimation for every lane in every intersection in phase', num_phase)
-            self.df_estimation_results = pd.DataFrame() #reset df for case of online storage 
+            self.df_estimation_results = pd.DataFrame() #reset df for case of online storage
             for intersection in self.liu_intersections:
                 intersection.run_next_phase(num_phase)
                 if self.store_while_running == True:
                     intersection.add_estimation_to_df(self.store_while_running, num_phase)
             if self.store_while_running == True:
                 self.append_results(num_phase)
-                
+
         if self.store_while_running == False:
             self.store_results(unload_data = True)
-            
+
         pass
 
     def run_next_phase(self, num_phase):
@@ -102,28 +102,28 @@ class LiuEtAlRunner(object):
         #-2 because estimation for first and last phase is not possible
 
         return max_num_phase
-    
-    def store_results(self, unload_data = False):       
-        
+
+    def store_results(self, unload_data = False):
+
         for intersection in self.liu_intersections:
             intersection.add_estimation_to_df(self.store_while_running, 0)
-            
+
         self.df_estimation_results.to_hdf(os.path.join(os.path.dirname(
                 self.sumo_network.netfile), 'liu_estimation_results.h5'), key = 'df_estimation_results')
         print('Saved all results in hdf file')
-        
+
         if unload_data == True: #unload data and delete everything to save memory
             for intersection in self.liu_intersections:
                 intersection.unload_data()
                 del intersection
             self.df_estimation_results = None
-            print('Unload data from liu-method')       
+            print('Unload data from liu-method')
         pass
-    
+
     def append_results(self, num_phase):
         print(self.df_estimation_results) #debug
-        
-        if num_phase ==1: 
+
+        if num_phase ==1:
             self.df_estimation_results.to_hdf(os.path.join(os.path.dirname(
                     self.sumo_network.netfile), 'liu_estimation_results.h5'),
                     key = 'df_estimation_results', format='table')
@@ -134,13 +134,13 @@ class LiuEtAlRunner(object):
             #store.append('df_estimation_results', self.df_estimation_results, format='t',  data_columns=True)
             self.df_estimation_results.to_hdf(os.path.join(os.path.dirname(
                     self.sumo_network.netfile), 'liu_estimation_results.h5'),
-                    key = 'df_estimation_results', format='table', append = True)            
+                    key = 'df_estimation_results', format='table', append = True)
             #print(store.info())
             #store.close()
-            print('Appended results in hdf file')            
+            print('Appended results in hdf file')
 
         pass
-        
+
 
 class LiuIntersection(object):
     # LiuLane objects corresponding to its component
@@ -200,11 +200,11 @@ class LiuIntersection(object):
                 max_phase_length = current_lane.get_phase_length()
 
         return max_phase_length
-    
+
     def add_estimation_to_df(self, while_running, phase_cnt):
         for lane in self.liu_lanes:
             time, real_queue, estimated_queue, estimated_queue_pure_liu = lane.get_estimation_data(while_running)
-            
+
             lane_ID = lane.get_lane_ID()
             iterables = [[lane_ID], ['time', 'ground-truth', 'estimated hybrid', 'estimated pure liu']]
             index = pd.MultiIndex.from_product(iterables, names=['lane', 'values'])
@@ -217,20 +217,20 @@ class LiuIntersection(object):
             df_lane[lane_ID, 'ground-truth'] = real_queue
             df_lane[lane_ID, 'estimated hybrid'] = estimated_queue
             df_lane[lane_ID, 'estimated pure liu'] = estimated_queue_pure_liu
-                        
+
 
 #            self.parent.df_estimation_results = self.parent.df_estimation_results.merge(
 #                    df_lane, how='outer', left_index=True, right_index=True)
-            
+
             self.parent.df_estimation_results = pd.concat([self.parent.df_estimation_results, df_lane], axis = 1)
-        
+
         pass
-    
+
     def unload_data(self):
         for lane in self.liu_lanes:
             lane.unload_data()
             del lane
-            
+
 
 class LiuLane(object):
     def __init__(self, sumolib_in_lane, out_lane, parent):
@@ -249,7 +249,7 @@ class LiuLane(object):
         self.df_traffic_lights = pd.DataFrame()
         self.graph = parent.parent.graph
 
-        columns_e1_adv = ['time', 'occupancy', 'nVehEntered', 'nVehContrib'] 
+        columns_e1_adv = ['time', 'occupancy', 'nVehEntered', 'nVehContrib']
         columns_e1_stopbar = ['time', 'nVehContrib']
         self.curr_e1_adv_detector = pd.DataFrame(columns=columns_e1_adv)
         self.curr_e1_stopbar = pd.DataFrame(columns=columns_e1_stopbar)
@@ -699,21 +699,21 @@ class LiuLane(object):
 
     def get_phase_length(self):
         return self.phase_length
-    
+
     def get_estimation_data(self, while_running):
         if while_running == True:
             return(self.arr_estimated_time_max_queue[len(self.arr_estimated_time_max_queue)-1],
-                   self.arr_real_max_queue_length[len(self.arr_real_max_queue_length)-1], 
-                   self.arr_estimated_max_queue_length[len(self.arr_estimated_max_queue_length)-1], 
+                   self.arr_real_max_queue_length[len(self.arr_real_max_queue_length)-1],
+                   self.arr_estimated_max_queue_length[len(self.arr_estimated_max_queue_length)-1],
                    self.arr_estimated_max_queue_length_pure_liu[len(self.arr_estimated_max_queue_length_pure_liu)-1])
         else:
             return (self.arr_estimated_time_max_queue, self.arr_real_max_queue_length,
                     self.arr_estimated_max_queue_length,
                     self.arr_estimated_max_queue_length_pure_liu)
-        
+
     def get_lane_ID(self):
         return self.sumolib_in_lane.getID()
-    
+
     def unload_data(self):
         self.parsed_xml_e1_stopbar_detector = None
         self.parsed_xml_e1_adv_detector = None
