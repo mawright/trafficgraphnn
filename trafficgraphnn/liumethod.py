@@ -94,10 +94,9 @@ class LiuEtAlRunner(object):
         return final_MAPE_IO, final_MAPE_liu
 
     def get_max_num_phase(self, end_time):
-        max_phase_length = 0
-        for intersection in self.liu_intersections:
-            if intersection.get_max_phase_length() > max_phase_length:
-                max_phase_length = intersection.get_max_phase_length()
+        max_phase_length = max(
+            [i.get_max_phase_length() for i in self.liu_intersections],
+            default=0)
 
         max_num_phase = int((end_time/max_phase_length) -2)
         #-2 because estimation for first and last phase is not possible
@@ -122,8 +121,8 @@ class LiuEtAlRunner(object):
         pass
 
     def append_results(self, num_phase):
-       
-        if num_phase ==1: 
+
+        if num_phase ==1:
             self.df_estimation_results.to_hdf(os.path.join(os.path.dirname(
                     self.sumo_network.netfile), 'liu_estimation_results.h5'),
                     key = 'df_estimation_results', format='table')
@@ -151,7 +150,7 @@ class LiuIntersection(object):
         self.time_window = time_window
 
         self.liu_lanes = []
-        liu_lanes_id = []
+        self.liu_lanes_id = []
         for conn in self.sumolib_tls.getConnections():
             in_lane, out_lane, conn_id = conn
             # create a LiuLane for each in-lane
@@ -159,11 +158,10 @@ class LiuIntersection(object):
             # eg dataframes
             in_lane_id = in_lane.getID()
             if (
-                in_lane_id not in liu_lanes_id
+                in_lane_id not in self.liu_lanes_id
                 and self.parent.graph.nodes('detectors')[in_lane.getID()] is not None
             ):
-                liu_lanes_id.append(in_lane_id)
-                #print('Creating Liu lane with in_lane = ', in_lane_id, 'and out_lane = ', out_lane_id)
+                self.liu_lanes_id.append(in_lane_id)
                 lane = LiuLane(in_lane, out_lane, self)
                 self.liu_lanes.append(lane)
 
@@ -194,17 +192,16 @@ class LiuIntersection(object):
         return sum_MAPE_IO, sum_MAPE_liu
 
     def get_max_phase_length(self):
-        max_phase_length = 0
-        for current_lane in self.liu_lanes:
-            if current_lane.get_phase_length() > max_phase_length:
-                max_phase_length = current_lane.get_phase_length()
+        max_phase_length = max(
+            [lane.get_phase_length() for lane in self.liu_lanes],
+            default=0)
 
         return max_phase_length
 
     def add_estimation_to_df(self, while_running, phase_cnt):
         for lane in self.liu_lanes:
             time, real_queue, estimated_queue, estimated_queue_pure_liu, phase_start, phase_end = lane.get_estimation_data(while_running)
-            
+
             lane_ID = lane.get_lane_ID()
             iterables = [[lane_ID], ['time', 'ground-truth', 'estimated hybrid', 'estimated pure liu', 'phase start', 'phase end']]
             index = pd.MultiIndex.from_product(iterables, names=['lane', 'values'])
@@ -219,14 +216,17 @@ class LiuIntersection(object):
             df_lane[lane_ID, 'estimated pure liu'] = estimated_queue_pure_liu
             df_lane[lane_ID, 'phase start'] = phase_start
             df_lane[lane_ID, 'phase end'] = phase_end
-            
-            self.parent.df_estimation_results = pd.concat([self.parent.df_estimation_results, df_lane], axis = 1)       
-        pass
+
+            self.parent.df_estimation_results = pd.concat([self.parent.df_estimation_results, df_lane], axis = 1)
 
     def unload_data(self):
         for lane in self.liu_lanes:
             lane.unload_data()
             del lane
+
+    def get_tls_output_filenames_for_lane(self):
+        return {lane.sumolib_in_lane.getID(): lane.tls_output_filename
+                for lane in self.liu_lanes}
 
 
 class LiuLane(object):
@@ -288,15 +288,14 @@ class LiuLane(object):
         self.parent = parent
         #self.time_window = time_window
 
+        self.tls_output_filename = self.parse_tls_output_filename()
+
         #estimating tls data!
         if self.parent.parent.parsed_xml_tls == None:
-            self.parent.parent.parsed_xml_tls = et.parse(
-                    os.path.join(os.path.dirname(self.parent.parent.sumo_network.netfile),
-                        self.graph.edges[lane_id, out_lane_id]['tls_output_info']['dest']))
-            
+            self.parent.parent.parsed_xml_tls = et.parse(self.tls_output_filename) # TODO move to own function that constructor calls
+
             (self.phase_start, self.phase_length, self.duration_green_light
                      ) = get_tls_data(self.parent.parent.parsed_xml_tls, lane_id)
-
 
         self.parent.parent.parsed_xml_tls = None
 
@@ -306,6 +305,21 @@ class LiuLane(object):
 
         # we would like to be able to have each lane's calculation of its Liu
         # state be entirely local to its instance of this class
+
+    def get_runner(self):
+        return self.parent.parent
+
+    def parse_tls_output_filename(self):
+        return os.path.join(os.path.dirname(self.get_runner().sumo_network.netfile),
+                            self.graph.edges[self.sumolib_in_lane.getID(),
+                                             self.sumolib_out_lane.getID()
+                                            ]['tls_output_info']['dest'])
+
+    def get_tls_switch_times(self, xml_etree=None):
+        if xml_etree is None:
+            xml_etree = self.get_runner().parsed_xml_tls
+        assert xml_etree is not None
+
 
     def run_next_phase(self, num_phase):
         # run one iteration of the liu method for the next phase in the
@@ -519,7 +533,7 @@ class LiuLane(object):
     def queue_estimate(self, num_phase, start, end, curr_e1_adv_detector, curr_e1_stopbar):
 
         self.arr_phase_start.append(start)
-        self.arr_phase_end.append(end)        
+        self.arr_phase_end.append(end)
         #check if breakpoint A exists
         if self.arr_breakpoint_A[len(self.arr_breakpoint_A)-1] == -1:
 
@@ -686,19 +700,19 @@ class LiuLane(object):
     def get_estimation_data(self, while_running):
         if while_running == True:
             return(self.arr_estimated_time_max_queue[len(self.arr_estimated_time_max_queue)-1],
-                   self.arr_real_max_queue_length[len(self.arr_real_max_queue_length)-1], 
-                   self.arr_estimated_max_queue_length[len(self.arr_estimated_max_queue_length)-1], 
+                   self.arr_real_max_queue_length[len(self.arr_real_max_queue_length)-1],
+                   self.arr_estimated_max_queue_length[len(self.arr_estimated_max_queue_length)-1],
                    self.arr_estimated_max_queue_length_pure_liu[len(self.arr_estimated_max_queue_length_pure_liu)-1],
                    self.arr_phase_start[len(self.arr_phase_start)-1],
                    self.arr_phase_end[len(self.arr_phase_end)-1])
-            
+
         else:
             return (self.arr_estimated_time_max_queue, self.arr_real_max_queue_length,
                     self.arr_estimated_max_queue_length,
                     self.arr_estimated_max_queue_length_pure_liu,
-                    self.arr_phase_start, 
+                    self.arr_phase_start,
                     self.arr_phase_end)
-        
+
     def get_lane_ID(self):
         return self.sumolib_in_lane.getID()
 
