@@ -16,7 +16,11 @@ _logger = logging.getLogger(__name__)
 JAM_DENSITY = 0.13333  # hardcoded jam density value (veh/meter)
 
 class LiuEtAlRunner(object):
-    def __init__(self, sumo_network, lane_subset=None, time_window=None, store_while_running = True):
+    def __init__(self, sumo_network, 
+                 lane_subset=None, 
+                 time_window=None, 
+                 store_while_running = True, 
+                 use_started_halts = False):
         self.sumo_network = sumo_network
         #self.sumo_network.load_data_to_graph()
         self.graph = self.sumo_network.get_graph()
@@ -24,6 +28,7 @@ class LiuEtAlRunner(object):
         self.parsed_xml_tls = None
         self.df_estimation_results = pd.DataFrame()
         self.store_while_running = store_while_running
+        self.use_started_halts = use_started_halts
         # verify all lanes requested are actually in the network
         if lane_subset is None:
             # process all lanes
@@ -267,6 +272,8 @@ class LiuLane(object):
         self.arr_estimated_max_queue_length_pure_liu = []
         self.arr_estimated_time_max_queue = []
         self.arr_real_max_queue_length = []
+        self.arr_maxJamLengthInVehicles = []
+        self.arr_maxJamLengthInVehiclesSum = []
         self.used_method = []
         self.arr_phase_start = []
         self.arr_phase_end = []
@@ -392,6 +399,8 @@ class LiuLane(object):
 
         list_time_e2 = []
         list_startedHalts_e2 = []
+        list_max_jam_length_e2 = []
+        list_jam_length_sum_e2 = []
 
         for node in self.parsed_xml_e2_detector.getroot():
             begin = float(node.attrib.get('begin'))
@@ -399,11 +408,15 @@ class LiuLane(object):
             if begin >= start and begin < end+self.phase_length and det_id == e2_detector_id:
                 list_time_e2.append(begin)
                 list_startedHalts_e2.append(float(node.attrib.get('startedHalts')))
+                list_max_jam_length_e2.append(float(node.attrib.get('maxJamLengthInMeters')))
+                list_jam_length_sum_e2.append(float(node.attrib.get('jamLengthInMetersSum')))               
 
         self.curr_e2_detector = pd.DataFrame(
-                {'time': list_time_e2, 'startedHalts': list_startedHalts_e2})
+                {'time': list_time_e2, 
+                 'startedHalts': list_startedHalts_e2,
+                 'maxJamLengthInMeters': list_max_jam_length_e2,
+                 'jamLengthInMetersSum': list_jam_length_sum_e2})
         self.curr_e2_detector.set_index('time', inplace=True)
-
 
         return start, end, self.curr_e1_stopbar, self.curr_e1_adv_detector, self.curr_e2_detector
 
@@ -580,7 +593,8 @@ class LiuLane(object):
 
     def get_last_queue_estimate(self):
         # return last-estimated queue
-        return self.arr_estimated_max_queue_length[len(self.arr_estimated_max_queue_length)-1], self.arr_estimated_time_max_queue[len(self.arr_estimated_time_max_queue)-1]
+        return (self.arr_estimated_max_queue_length[len(self.arr_estimated_max_queue_length)-1],
+                self.arr_estimated_time_max_queue[len(self.arr_estimated_time_max_queue)-1])
 
     def get_queue_estimate(self):
         # return  whole estimated queue until now
@@ -588,7 +602,10 @@ class LiuLane(object):
 
     def get_ground_truth_queue(self, num_phase, start, end, curr_e2_detector):
         #calculate ground truth data for queue and store in self arrays
-        self.arr_real_max_queue_length.append(sum(curr_e2_detector['startedHalts'][start:end])/self.k_j)
+        self.arr_real_max_queue_length.append(
+                sum(curr_e2_detector['startedHalts'][start:end])/self.k_j)
+        self.arr_maxJamLengthInVehicles.append(
+                max(np.array(curr_e2_detector['maxJamLengthInMeters'][start:end])))
         return sum(curr_e2_detector['startedHalts'][start:end])/self.k_j
 
     def get_MAPE(self):
@@ -596,8 +613,14 @@ class LiuLane(object):
         #calculating MAPE for liu + IO
         sum_mape_IO = 0
         cnt = 0
+        
+        if self.parent.parent.use_started_halts == True:
+            arr_real_queue = self.arr_real_max_queue_length
+        else:
+            arr_real_queue = self.arr_maxJamLengthInVehicles
+        
         if len(self.arr_estimated_max_queue_length) > 2:
-            for estimation_queue, real_queue in zip(self.arr_estimated_max_queue_length, self.arr_real_max_queue_length):
+            for estimation_queue, real_queue in zip(self.arr_estimated_max_queue_length, arr_real_queue):
                 if estimation_queue != 0 and real_queue != 0:
                     sum_mape_IO = sum_mape_IO + abs((real_queue-estimation_queue)/real_queue)
                     cnt += 1
@@ -609,7 +632,7 @@ class LiuLane(object):
             sum_mape_liu = 0
             cnt = 0
 
-            for estimation_queue, real_queue in zip(self.arr_estimated_max_queue_length_pure_liu, self.arr_real_max_queue_length):
+            for estimation_queue, real_queue in zip(self.arr_estimated_max_queue_length_pure_liu, arr_real_queue):
                 if estimation_queue != 0 and real_queue != 0:
                     sum_mape_liu = sum_mape_liu + abs((real_queue-estimation_queue)/real_queue)
                     cnt += 1
@@ -618,7 +641,7 @@ class LiuLane(object):
 
             # in some cases the MAPE is 0 because the estimation is perfect
             # we have to count this cases into the MAPE; check if lane is used
-            if sum(self.arr_real_max_queue_length)>0:
+            if sum(arr_real_queue) >0:
                 used = True
             else:
                 used = False
@@ -632,22 +655,24 @@ class LiuLane(object):
             start = 0
             fig = plt.figure()
             fig.set_figheight(5)
-            fig.set_figwidth(5)
+            fig.set_figwidth(12)
 
             estimation, = plt.plot(self.arr_estimated_time_max_queue, self.arr_estimated_max_queue_length, c='r', label= 'hybrid model')
-            ground_truth, = plt.plot(self.arr_estimated_time_max_queue, self.arr_real_max_queue_length, c='b', label= 'ground-truth')
-            estimation_pure_liu, = plt.plot(self.arr_estimated_time_max_queue, self.arr_estimated_max_queue_length_pure_liu, c='m', label= 'basic model', linestyle='--')
+            ground_truth, = plt.plot(self.arr_estimated_time_max_queue, self.arr_real_max_queue_length, c='b', label= 'sum started halts')
+            estimation_pure_liu, = plt.plot(self.arr_estimated_time_max_queue, self.arr_estimated_max_queue_length_pure_liu, c='m', label= 'expansion model', linestyle='--')
+            max_length_queue, = plt.plot(self.arr_estimated_time_max_queue, self.arr_maxJamLengthInVehicles, c='k', label= 'maxJamLength e2 detector', linestyle='--')
+            
 
-            plt.legend(handles=[estimation, ground_truth, estimation_pure_liu], fontsize = 18)
+            plt.legend(handles=[estimation, ground_truth, estimation_pure_liu, max_length_queue], fontsize = 18)
 
             plt.xticks(np.arange(0, 6000, 250))
             plt.xticks(fontsize=18)
-            plt.yticks(np.arange(0, 550, 50))
+            plt.yticks(np.arange(0, 800, 50))
             plt.yticks(fontsize=18)
             plt.xlim(420,1400)
             plt.ylim(0, 200)
-            if self.sumolib_in_lane.getID()== '1/0to0/0_0':
-                plt.ylim(0, 350)
+            if self.sumolib_in_lane.getID()== 'bottom2to2/0_2':
+                plt.ylim(0, 700)
             plt.xlabel('time [s]', fontsize = 18)
             plt.ylabel('queue length [m]', fontsize = 18)
 
@@ -666,8 +691,10 @@ class LiuLane(object):
             lane_id = self.sumolib_in_lane.getID()
             dash_lane_id = lane_id.replace('/', '-')
             #just to save plots, delete after writing
-            if self.sumolib_in_lane.getID()== '2/2to2/1_2' or self.sumolib_in_lane.getID()== 'top1to1/2_2' or self.sumolib_in_lane.getID()== '1/0to0/0_0':
-                fig.savefig("grid_network_"+dash_lane_id+".pdf", bbox_inches='tight')
+            if self.sumolib_in_lane.getID()== 'bottom2to2/0_2':
+                fig.savefig("simonnet_"+dash_lane_id+".pdf", bbox_inches='tight')
+#            if self.sumolib_in_lane.getID()== '1/0to1/1_0' or self.sumolib_in_lane.getID()== '1/0to1/1_1' or self.sumolib_in_lane.getID()== '1/0to1/1_2':
+#                fig.savefig("simonnet_"+dash_lane_id+".pdf", bbox_inches='tight')
 
         if show_infos == True:
             #show some stats for debug
@@ -675,6 +702,7 @@ class LiuLane(object):
             print('out lane id:', self.sumolib_out_lane.getID())
             print('Estimated queue length: ', self.arr_estimated_max_queue_length)
             print('real queue length: ', self.arr_real_max_queue_length)
+            print('e2 detector maxJamLengthInMeters: ', self.arr_maxJamLengthInVehicles)
             print('phase length:', self.phase_length)
             print('phase start:', self.phase_start)
             print('-----------')
