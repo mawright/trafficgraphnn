@@ -128,8 +128,11 @@ class SumoNetwork(object):
     def start(self):
         traci.start(self.get_sumo_command())
 
-    def run(self):
-        return subprocess.call(self.get_sumo_command())
+    def run(self, return_output=False):
+        out = subprocess.check_output(self.get_sumo_command())
+        _logger.info('sumo returned: %s', out)
+        if return_output:
+            return out
 
     def sorted_lanes_for_edge(self, edge_id):
         lanes = self.net.getEdge(edge_id).getLanes()
