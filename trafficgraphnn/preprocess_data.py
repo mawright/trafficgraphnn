@@ -9,6 +9,7 @@ import logging
 import os
 import sys
 import xml.etree.cElementTree as et
+import networkx as nx
 
 import numpy as np
 import pandas as pd
@@ -16,6 +17,7 @@ from matplotlib import pyplot as plt
 
 from trafficgraphnn.utils import iterfy
 from trafficgraphnn.get_tls_data import get_tls_data
+from trafficgraphnn.sumo_network import SumoNetwork
 
 _logger = logging.getLogger(__name__)
 
@@ -35,9 +37,7 @@ class PreprocessData(object):
             print('An error occured trying to read the hdf file.')
         
         self.parsed_xml_tls = None
-                
-
-        
+       
     def get_liu_results(self, lane_ID, phase):
         series_results = self.df_liu_results.loc[phase, lane_ID]        
         # return series with parameter time, ground-truth,
@@ -49,16 +49,14 @@ class PreprocessData(object):
         time_lane = self.df_liu_results.loc[:, (lane_ID, 'time')] 
                
         for phase in range(1, len(time_lane)):
-            if (phase > 2 and 
-                point_of_time <= time_lane[phase] and 
-                point_of_time > time_lane[phase-1]
-                ):                
+            phase_start = self.df_liu_results.loc[phase, (lane_ID, 'phase start')]
+            phase_end = self.df_liu_results.loc[phase, (lane_ID, 'phase end')]
+            if point_of_time >= phase_start and point_of_time < phase_end:
                 return phase
             
-            if (point_of_time <= time_lane[1]):
-                return 1
-            
-    
+        print('Point of time out of time window!')
+        return np.nan
+        
     def preprocess_detector_data(self, average_intervals, average_over_cycle = False):
         #code that is averaging over specific intervals 
         #(eg. 5s, 15s, 30s; given in a list) and an option to average 
@@ -101,9 +99,7 @@ class PreprocessData(object):
                             [self.df_interval_results, df_detector], axis = 1)
             self.df_interval_results.to_hdf(os.path.join(os.path.dirname(self.sumo_network.netfile),
                 'e1_detector_data_tls_interval.h5'), key = 'preprocessed e1_detector_data')         
-                
-                    
-                
+               
     def process_e1_data(self, filename, interval, start_time = 0,  average_over_cycle = False):
         append_cnt=0    #counts how often new data were appended
         phase_cnt=0 #counts the phases
@@ -218,6 +214,103 @@ class PreprocessData(object):
         index_end = filename.find(search_str_end) - 2
         lane_id = filename[index_start:index_end]
         return lane_id.replace('-', '/')
+    
+    def preprocess_for_gat(self, 
+                           average_interval = 1, 
+                           train_start = 200, 
+                           train_end = 700, 
+                           test_start = 700, 
+                           test_end = 1200, 
+                           val_start = 1200, 
+                           val_end = 1700):
+        """
+        -Returns the adjacency matrix in SciPy sparse matrix.
+        -Returns X_train, X_test and X_val, that are all differrent time series 
+        of an interval of all advanced e1 detectors in the network
+        -Returns Y_train, Y_test, Y_val, that are the appropriate ground-truth 
+        length data for each lane        
+        """       
+        if not os.path.isfile(os.path.join(os.path.dirname(self.sumo_network.netfile),
+            'e1_detector_data_'+ str(average_interval) + '_seconds.h5')):
+                self.preprocess_detector_data([average_interval])
+        
+        df_detector = pd.read_hdf(os.path.join(os.path.dirname(self.sumo_network.netfile),
+            'e1_detector_data_' + str(average_interval) + '_seconds.h5'))
+        
+        try: 
+            df_liu_results = pd.read_hdf(os.path.join(os.path.dirname(self.sumo_network.netfile),
+                    'liu_estimation_results.h5'))
+        except IOError:
+            print('No file for liu estimation results found.')
+            
+        subgraph = self.get_subgraph(self.graph)
+        
+        X_train, Y_train = self.calc_X_and_Y(subgraph, df_detector, df_liu_results,
+                                             train_start, train_end)
+        X_test, Y_test = self.calc_X_and_Y(subgraph, df_detector, df_liu_results,
+                                             test_start, test_end)
+        X_val, Y_val = self.calc_X_and_Y(subgraph, df_detector, df_liu_results,
+                                     val_start, val_end)
+#        print('Shape X_train:', X_train.shape) #debug
+#        print('Shape Y_train:', Y_train.shape)
+#        print('Shape X_test:', X_test.shape)
+#        print('Shape Y_test:', Y_test.shape)
+#        print('Shape X_val:', X_val.shape)
+#        print('Shape Y_val:', Y_val.shape)
+#        
+        A = nx.adjacency_matrix(subgraph)
+        
+        return A, X_train, Y_train, X_test, Y_test, X_val, Y_val
+
+         
+    def calc_X_and_Y(self, subgraph, df_detector, df_liu_results, start_time, end_time):
+        X = np.array([])
+        Y = np.array([])
+        for lane in subgraph.nodes:        
+            lane_id = lane.replace('/', '-')
+            adv_detector_id = 'e1_' + str(lane_id) + '_1'
+            arr_detector_data = np.array(
+                    [df_detector[adv_detector_id]['nVehContrib'][start_time:end_time]])
+            if X.size == 0:
+                X = arr_detector_data
+            else:
+                X = np.vstack((X, arr_detector_data))
+            
+            arr_liu_results = np.array(
+                    [df_liu_results[lane]['ground-truth']
+                    [self.get_phase_for_time(lane, start_time):self.get_phase_for_time(lane, end_time)]])
+#            print('lane:', lane) #debug
+#            print('arr_liu_results:', arr_liu_results)
+#            print('start_phase:', self.get_phase_for_time(lane, start_time))
+#            print('end_phase:', self.get_phase_for_time(lane, end_time))
+            
+            """
+            Idea: check for every new lane which size the array has and 
+            maybe append a column np.nan to the Y matix that the size matches 
+            again
+            """  
+            if Y.size == 0:
+                Y = arr_liu_results
+            else:
+                diff = arr_liu_results.shape[1] - Y.shape[1]
+                if diff > 0: #(use shape?)
+                    #hstack on Y
+                    fillup = np.empty([Y.shape[0], diff])
+                    fillup[:] = -1
+                    Y = np.hstack((Y, fillup))                 
+                elif diff < 0:
+                    fillup = np.empty([1, abs(diff)])
+                    fillup[:] = -1
+                    arr_liu_results = np.hstack((arr_liu_results, fillup))
+                    # hstack on arr_liu_results
+                Y = np.vstack((Y, arr_liu_results))
+            np.set_printoptions(threshold=np.nan)
+        return X, Y
+    
+    def get_subgraph(self, graph):       
+        node_sublist = [lane[0] for lane in self.graph.nodes(data=True) if lane[1] != {}]
+        sub_graph = graph.subgraph(node_sublist)
+        return sub_graph
         
     def unload_data(self):
         #this code should unload all the data and give memory free
