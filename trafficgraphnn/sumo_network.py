@@ -51,20 +51,6 @@ class SumoNetwork(object):
         self.tls_list = self.net.getTrafficLights()
         # tl.getLinks() returns a dict with a consistent ordering of movements
 
-        if not lanewise:
-            self.A = get_edge_adj_matrix(netfile, undirected_graph)
-            self.tls_to_controlled_dict = {
-                tl.getID(): [e.getID() for e in tl.getEdges()]
-                for tl in self.net.getTrafficLights()
-            }
-        else:
-            self.A = get_lane_adj_matrix(netfile, undirected_graph)
-            self.tls_to_controlled_dict = {
-                tl.getID(): list(OrderedDict.fromkeys(
-                    [conn[0].getID() for conn in tl.getConnections()]))
-                for tl in self.net.getTrafficLights()
-            }
-
         self.config_gen = self.get_config_generator()
 
         self.binfile = checkBinary(binfile)
@@ -295,12 +281,6 @@ class SumoNetwork(object):
         A = nx.adjacency_matrix(graph)
         return A
 
-    def get_edge_adj_matrix(self, undirected=False):
-        return get_edge_adj_matrix(self.netfile, undirected)
-
-    def get_lane_adj_matrix(self, undirected=False):
-        return get_lane_adj_matrix(self.netfile, undirected)
-
     def get_config_generator(self):
         config_gen = ConfigGenerator(
             os.path.splitext(
@@ -412,24 +392,6 @@ class SumoNetwork(object):
 
         return det_to_node
 
-    def get_data(self, nodes, features):
-        """Returns the network's data in ndarray format for a particular node
-        ordering and feature ordering.
-
-        Given a node and feature ordering, returns the data in the shape
-        [Time x Node x Feature]
-        :param nodes: Iterable containing node names from the networkx
-        graph.
-        :type nodes: Iterable
-        :param features: Iterable containing feature names
-        """
-        raise NotImplementedError
-
-    def generate_datasets(
-        self, num_simulations=20, simulation_length=3600,
-        routefile_period=None, routefile_binomial=None
-    ):
-        raise NotImplementedError
 
 def get_lane_graph(netfile,
                    undirected=False,
@@ -577,61 +539,6 @@ def get_edge_graph(netfile, undirected=False, additional_files=None):
         nx.set_node_attributes(graph, edge_info)
 
     return graph
-
-
-def get_edge_adj_matrix(netfile, undirected=False):
-    net = readNet(netfile)
-
-    # net.getEdges() returns a set...make sure it has stable ordering
-    edge_list = list(net.getEdges())
-    num_edges = len(edge_list)
-
-    edge_ids = [e.getID() for e in edge_list]
-
-    A = scipy.sparse.lil_matrix((num_edges, num_edges))
-
-    for from_index, edge in enumerate(edge_list):
-        assert from_index == edge_ids.index(edge.getID())
-        for out in edge.getOutgoing().keys():
-            to_index = edge_ids.index(out.getID())
-            A[from_index, to_index] = 1
-
-    # for node in net.getNodes():
-        # for conn in node.getConnections():
-            # from_index = edge_ids.index(conn.getFrom().getID())
-            # to_index = edge_ids.index(conn.getTo().getID())
-            # A[from_index, to_index] = 1
-
-    if undirected:
-        A = make_undirected(A)
-
-    if type(A) is not scipy.sparse.csr.csr_matrix:
-        A = scipy.sparse.csr_matrix(A)
-    return A
-
-
-def get_lane_adj_matrix(netfile, undirected=False):
-    net = readNet(netfile)
-
-    lane_list = [l for e in net.getEdges() for l in e.getLanes()]
-    num_lanes = len(lane_list)
-
-    lane_ids = [l.getID() for l in lane_list]
-
-    A = scipy.sparse.lil_matrix((num_lanes, num_lanes))
-
-    for idx, lane in enumerate(lane_list):
-        assert idx == lane_ids.index(lane.getID())
-        for conn in lane.getOutgoing():
-            to_index = lane_ids.index(conn.getToLane().getID())
-            A[idx, to_index] = 1
-
-    if undirected:
-        A = make_undirected(A)
-
-    if type(A) is not scipy.sparse.csr.csr_matrix:
-        A = scipy.sparse.csr_matrix(A)
-    return A
 
 
 def make_undirected(A):
