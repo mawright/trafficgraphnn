@@ -39,9 +39,14 @@ class SumoNetwork(object):
         self.seed = seed
         self.data_dfs = []
 
+        self.detector_def_files = []
+        self.tls_output_def_files = []
+        self.other_addl_files = []
+
         if isinstance(addlfiles, six.string_types):
             addlfiles = [addlfiles]
         self.additional_files = addlfiles or []
+        self.classify_additional_files()
 
         self.tls_list = self.net.getTrafficLights()
         # tl.getLinks() returns a dict with a consistent ordering of movements
@@ -76,8 +81,27 @@ class SumoNetwork(object):
             undirected_graph=undirected_graph, routefile=config_gen.routefile,
             addlfiles=(
                 list(iterfy(config_gen.detector_def_files))
-                + list(iterfy(config_gen.non_detector_addl_files)))
+                + list(iterfy(config_gen.non_detector_addl_files))),
+            seed=seed
         )
+
+    def classify_additional_files(self):
+        for addlfile in self.additional_files:
+            tree = etree.iterparse(addlfile, tag=['e1Detector', 'inductionLoop',
+                                                  'e2Detector', 'laneAreaDetector',
+                                                  'timedEvent',])
+            _, element = next(tree)
+            if element.tag in ['e1Detector', 'inductionLoop',
+                               'e2Detector', 'laneAreaDetector']:
+                if addlfile not in self.detector_def_files:
+                    self.detector_def_files.append(addlfile)
+            elif element.tag == 'timedEvent' and element.get('type') == 'SaveTLSSwitchTimes':
+                if addlfile not in self.tls_output_def_files:
+                    self.tls_output_def_files.append(addlfile)
+            else:
+                if addlfile not in self.other_addl_files:
+                    self.other_addl_files.append(addlfile)
+            element.clear()
 
     def set_routefile(self, routefile):
         assert os.path.exists(routefile)
@@ -89,9 +113,13 @@ class SumoNetwork(object):
     def add_additional_file(self, addlfile):
         assert os.path.exists(addlfile)
         self.additional_files.append(addlfile)
+        self.classify_additional_files()
 
     def clear_additional_files(self):
         self.additional_files = []
+        self.detector_def_files = []
+        self.tls_output_def_files = []
+        self.other_addl_files = []
 
     def get_sumo_command(self, with_bin_file=True, queue_output_file=None):
         if self.routefile is None:
@@ -139,9 +167,6 @@ class SumoNetwork(object):
         lanes.sort(key=lambda x: x.getIndex())
         return [lane.getID() for lane in lanes]
 
-    def get_edges_at_junction(self, node_id):
-        pass
-
     def reset_graph(self, undirected=None, lanewise=None):
         if undirected is not None:
             self.undirected_graph = undirected
@@ -152,7 +177,8 @@ class SumoNetwork(object):
         if self.lanewise:
             self.graph = get_lane_graph(
                 self.netfile, undirected=self.undirected_graph,
-                additional_files=self.additional_files)
+                detector_def_files=self.detector_def_files,
+                tls_output_def_files=self.tls_output_def_files)
         else:
             self.graph = get_edge_graph(
                 self.netfile, undirected=self.undirected_graph,
@@ -174,7 +200,7 @@ class SumoNetwork(object):
         :rtype: list
         """
         if not isinstance(lane_id, str):
-            raise TypeError('Expected str, got %', type(lane_id))
+            raise TypeError('Expected str, got %s', type(lane_id))
         try:
             sumolib_lane = self.net.getLane(lane_id)
         except:
@@ -405,14 +431,10 @@ class SumoNetwork(object):
     ):
         raise NotImplementedError
 
-        config_gen = self.get_config_generator()
-
-        # if not hasattr
-
-        # for i in range(num_simulations):
-
-
-def get_lane_graph(netfile, undirected=False, additional_files=None):
+def get_lane_graph(netfile,
+                   undirected=False,
+                   detector_def_files=None,
+                   tls_output_def_files=None):
     net = readNet(netfile)
 
     if undirected:
@@ -439,32 +461,50 @@ def get_lane_graph(netfile, undirected=False, additional_files=None):
                 tls=tls_id)
             tls_to_edges[tls_id].append(edge_from_to)
 
-    if additional_files is not None:
-        if isinstance(additional_files, six.string_types):
-            additional_files = [additional_files]
-        for addl_file in additional_files:
-            tree = etree.parse(addl_file)
-            for element in tree.iter():
-                if element.tag in [
-                    'e1Detector', 'inductionLoop',
-                    'e2Detector', 'laneAreaDetector'
-                ]:
-                    lane_id = element.get('lane')
-                    if lane_id in graph.nodes:
-                        if 'detectors' not in graph.node[lane_id]:
-                            graph.node[lane_id]['detectors'] = {}
+    # sanity check
+    tls_to_edges_2 = {
+        tl.getID():
+        [tuple([lane.getID() for lane in conn[:-1]]) for conn in tl.getConnections()]
+        for tl in net.getTrafficLights()
+    }
 
-                        detector_info_dict = dict(element.items())
-                        detector_info_dict['type'] = element.tag
-                        graph.node[lane_id]['detectors'][
-                            element.get('id')] = detector_info_dict
+    assert tls_to_edges == tls_to_edges_2
 
-                elif (element.tag == 'timedEvent' and
-                      element.get('type') == 'SaveTLSSwitchTimes'):
+    if detector_def_files is not None:
+        if isinstance(detector_def_files, six.string_types):
+            detector_def_files = [detector_def_files]
+        for detfile in detector_def_files:
+            tree = etree.iterparse(detfile, tag=['e1Detector', 'inductionLoop',
+                                                 'e2Detector', 'laneAreaDetector'])
+            for _, element in tree:
+                lane_id = element.get('lane')
+                if lane_id in graph.nodes:
+                    if 'detectors' not in graph.node[lane_id]:
+                        graph.node[lane_id]['detectors'] = {}
+
+                    detector_info_dict = dict(element.items())
+                    detector_info_dict['type'] = element.tag
+                    graph.node[lane_id]['detectors'][
+                        element.get('id')] = detector_info_dict
+                element.clear()
+
+    if tls_output_def_files is not None:
+        if isinstance(tls_output_def_files, six.string_types):
+            tls_output_def_files = [tls_output_def_files]
+        for tlsfile in tls_output_def_files:
+            tree = etree.iterparse(tlsfile, tag='timedEvent')
+
+            for _, element in tree:
+                if element.get('type') == 'SaveTLSSwitchTimes':
                     tls_id = element.get('source')
                     for edge in tls_to_edges[tls_id]:
                         graph.edges[edge].update(
                             {'tls_output_info': dict(element.items())})
+                        in_lane = edge[0]
+                        if 'tls_output_info' not in graph.nodes[in_lane]:
+                            graph.nodes[in_lane].update(
+                                {'tls_output_info': dict(element.items())})
+                element.clear()
 
     return graph
 
