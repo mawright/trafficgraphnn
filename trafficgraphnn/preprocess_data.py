@@ -13,11 +13,13 @@ import networkx as nx
 
 import numpy as np
 import pandas as pd
+import tensorflow as tf
 from matplotlib import pyplot as plt
 
 from trafficgraphnn.utils import iterfy
 from trafficgraphnn.get_tls_data import get_tls_data
 from trafficgraphnn.sumo_network import SumoNetwork
+
 
 _logger = logging.getLogger(__name__)
 
@@ -245,12 +247,12 @@ class PreprocessData(object):
             
         subgraph = self.get_subgraph(self.graph)
         
-        X_train, Y_train = self.calc_X_and_Y(subgraph, df_detector, df_liu_results,
-                                             train_start, train_end)
-        X_test, Y_test = self.calc_X_and_Y(subgraph, df_detector, df_liu_results,
-                                             test_start, test_end)
-        X_val, Y_val = self.calc_X_and_Y(subgraph, df_detector, df_liu_results,
-                                     val_start, val_end)
+        X_train = self.calc_X_and_Y(subgraph, df_detector, df_liu_results,
+                                             train_start, train_end, average_interval)
+        X_test = self.calc_X_and_Y(subgraph, df_detector, df_liu_results,
+                                             test_start, test_end, average_interval)
+        X_val = self.calc_X_and_Y(subgraph, df_detector, df_liu_results,
+                                     val_start, val_end, average_interval)
 #        print('Shape X_train:', X_train.shape) #debug
 #        print('Shape Y_train:', Y_train.shape)
 #        print('Shape X_test:', X_test.shape)
@@ -260,52 +262,77 @@ class PreprocessData(object):
 #        
         A = nx.adjacency_matrix(subgraph)
         
-        return A, X_train, Y_train, X_test, Y_test, X_val, Y_val
+        return A, X_train, X_test, X_val
 
          
-    def calc_X_and_Y(self, subgraph, df_detector, df_liu_results, start_time, end_time):
-        X = np.array([])
-        Y = np.array([])
-        for lane in subgraph.nodes:        
-            lane_id = lane.replace('/', '-')
-            adv_detector_id = 'e1_' + str(lane_id) + '_1'
-            arr_detector_data = np.array(
-                    [df_detector[adv_detector_id]['nVehContrib'][start_time:end_time]])
-            if X.size == 0:
-                X = arr_detector_data
-            else:
-                X = np.vstack((X, arr_detector_data))
+    def calc_X_and_Y(self, subgraph, df_detector, df_liu_results, start_time, end_time, average_interval):
+        #X = tf.Variable([[len(subgraph.nodes)], [8], [end_time-start_time]])
+        #X = tf.Variable([])
+        X_tensor = np.array([]) # 3D array ->later convert with tf.convert_to_tensor
+        #Y = np.array([])
+        
+        
+        
+        for timestep in range(start_time, end_time, average_interval):
+            X = np.array([])
+            for lane in subgraph.nodes: 
+                # faster solution: just access df once and store data in arrays or lists
+                lane_id = lane.replace('/', '-')
+                stopbar_detector_id = 'e1_' + str(lane_id) + '_0'
+                adv_detector_id = 'e1_' + str(lane_id) + '_1'
+                arr_detector_data = np.zeros((1, 1, 8))      
             
-            arr_liu_results = np.array(
-                    [df_liu_results[lane]['ground-truth']
-                    [self.get_phase_for_time(lane, start_time):self.get_phase_for_time(lane, end_time)]])
-#            print('lane:', lane) #debug
-#            print('arr_liu_results:', arr_liu_results)
-#            print('start_phase:', self.get_phase_for_time(lane, start_time))
-#            print('end_phase:', self.get_phase_for_time(lane, end_time))
-            
+                arr_detector_data[0][0][0] = df_detector[stopbar_detector_id]['nVehContrib'][timestep]
+                arr_detector_data[0][0][1] = df_detector[stopbar_detector_id]['flow'][timestep]
+                arr_detector_data[0][0][2] = df_detector[stopbar_detector_id]['occupancy'][timestep]
+                arr_detector_data[0][0][3] = df_detector[stopbar_detector_id]['speed'][timestep]
+                arr_detector_data[0][0][4] = df_detector[adv_detector_id]['nVehContrib'][timestep]
+                arr_detector_data[0][0][5] = df_detector[adv_detector_id]['flow'][timestep]
+                arr_detector_data[0][0][6] = df_detector[adv_detector_id]['occupancy'][timestep]
+                arr_detector_data[0][0][7] = df_detector[adv_detector_id]['speed'][timestep]
+                    
+                if X.size == 0:
+                    X = arr_detector_data
+                else:
+                    X = np.vstack((X, arr_detector_data))
+                
+    #            arr_liu_results = np.array(
+    #                    [df_liu_results[lane]['ground-truth']
+    #                    [self.get_phase_for_time(lane, start_time):self.get_phase_for_time(lane, end_time)]])
+    ##            print('lane:', lane) #debug
+    ##            print('arr_liu_results:', arr_liu_results)
+    ##            print('start_phase:', self.get_phase_for_time(lane, start_time))
+    ##            print('end_phase:', self.get_phase_for_time(lane, end_time))
+    #            
+    #            """
+    #            Idea: check for every new lane which size the array has and 
+    #            maybe append a column np.nan to the Y matix that the size matches 
+    #            again
+    #            """  
+    #            if Y.size == 0:
+    #                Y = arr_liu_results
+    #            else:
+    #                diff = arr_liu_results.shape[1] - Y.shape[1]
+    #                if diff > 0: #(use shape?)
+    #                    #hstack on Y
+    #                    fillup = np.empty([Y.shape[0], diff])
+    #                    fillup[:] = 0
+    #                    Y = np.hstack((Y, fillup))                 
+    #                elif diff < 0:
+    #                    fillup = np.empty([1, abs(diff)])
+    #                    fillup[:] = 0
+    #                    arr_liu_results = np.hstack((arr_liu_results, fillup))
+    #                    # hstack on arr_liu_results
+    #                Y = np.vstack((Y, arr_liu_results))
+    #            np.set_printoptions(threshold=np.nan)
             """
-            Idea: check for every new lane which size the array has and 
-            maybe append a column np.nan to the Y matix that the size matches 
-            again
-            """  
-            if Y.size == 0:
-                Y = arr_liu_results
+            attach here for every timestep the X matrix to X_tensor
+            """
+            if X_tensor.size == 0:
+                X_tensor = X
             else:
-                diff = arr_liu_results.shape[1] - Y.shape[1]
-                if diff > 0: #(use shape?)
-                    #hstack on Y
-                    fillup = np.empty([Y.shape[0], diff])
-                    fillup[:] = -1
-                    Y = np.hstack((Y, fillup))                 
-                elif diff < 0:
-                    fillup = np.empty([1, abs(diff)])
-                    fillup[:] = -1
-                    arr_liu_results = np.hstack((arr_liu_results, fillup))
-                    # hstack on arr_liu_results
-                Y = np.vstack((Y, arr_liu_results))
-            np.set_printoptions(threshold=np.nan)
-        return X, Y
+                X_tensor = np.hstack((X_tensor, X))
+        return X_tensor
     
     def get_subgraph(self, graph):       
         node_sublist = [lane[0] for lane in self.graph.nodes(data=True) if lane[1] != {}]
