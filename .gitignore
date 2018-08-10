@@ -124,3 +124,4 @@ run sumo-gui with simulation
 *.code-workspace
 
 *.IdeaPad
+logs/
