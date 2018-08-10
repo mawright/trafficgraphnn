@@ -1,7 +1,9 @@
 import logging
 import os
 import sys
-import xml.etree.cElementTree as et
+from collections import defaultdict, OrderedDict, namedtuple
+from lxml import etree as et
+# import xml.etree.cElementTree as et
 
 import numpy as np
 import pandas as pd
@@ -16,10 +18,10 @@ _logger = logging.getLogger(__name__)
 JAM_DENSITY = 0.13333  # hardcoded jam density value (veh/meter)
 
 class LiuEtAlRunner(object):
-    def __init__(self, sumo_network, 
-                 lane_subset=None, 
-                 time_window=None, 
-                 store_while_running = True, 
+    def __init__(self, sumo_network,
+                 lane_subset=None,
+                 time_window=None,
+                 store_while_running = True,
                  use_started_halts = False):
         self.sumo_network = sumo_network
         self.graph = self.sumo_network.get_graph()
@@ -49,11 +51,41 @@ class LiuEtAlRunner(object):
                     if lane in self.sumo_network.nodes
                 ]
 
-        # create Intersection objects for each intersection
-        self.liu_intersections = []
-        for tls in self.net.getTrafficLights():
-            intersection = LiuIntersection(tls, self, time_window=time_window)
-            self.liu_intersections.append(intersection)
+        # create LiuIntersection objects for each intersection
+        self.liu_intersections = [
+            LiuIntersection(tls, self, time_window=time_window)
+            for tls in self.net.getTrafficLights()
+        ]
+        _logger.info('Created %s LiuIntersection objects',
+                     len(self.liu_intersections))
+
+        list_of_lane_dicts = [i.liu_lanes for i in self.liu_intersections]
+        self.liu_lanes = {lane_id: lane for lane_dict in list_of_lane_dicts
+                          for lane_id, lane in lane_dict.items()}
+
+        self.parse_phase_timings()
+
+    def parse_phase_timings(self):
+        tls_output_files = {lane.tls_output_filename for lane
+                            in self.liu_lanes.values()}
+
+        for xmlfile in tls_output_files:
+            parsed = et.iterparse(xmlfile, tag='tlsSwitch')
+            for _, element in parsed:
+                try:
+                    lane_id = element.attrib['fromLane']
+                    start = int(float(element.attrib['begin']))
+                    end = int(float(element.attrib['end']))
+                    lane = self.liu_lanes[lane_id]
+                    lane.add_green_interval(start, end)
+                except KeyError:
+                    _logger.warning(
+                        'Could not parse XML element %s. expected a "tlsSwitch"',
+                        element)
+                finally:
+                    element.clear()
+        for lane in self.liu_lanes.values():
+            lane.union_green_intervals()
 
     def run_up_to_phase(self, max_num_phase):
         # iterate on the single-step methods for each intersection until
@@ -70,8 +102,6 @@ class LiuEtAlRunner(object):
 
         if self.store_while_running == False:
             self.store_results(unload_data = True)
-
-        pass
 
     def run_next_phase(self, num_phase):
         # run the single-phase method for each intersection
@@ -123,7 +153,6 @@ class LiuEtAlRunner(object):
                 del intersection
             self.df_estimation_results = None
             print('Unload data from liu-method')
-        pass
 
     def append_results(self, num_phase):
 
@@ -143,8 +172,6 @@ class LiuEtAlRunner(object):
             #store.close()
             print('Appended results in hdf file')
 
-        pass
-
 
 class LiuIntersection(object):
     # LiuLane objects corresponding to its component
@@ -154,30 +181,28 @@ class LiuIntersection(object):
         self.parent = parent
         self.time_window = time_window
 
-        self.liu_lanes = []
-        self.liu_lanes_id = []
+        self.liu_lanes = OrderedDict()
         for conn in self.sumolib_tls.getConnections():
-            in_lane, out_lane, conn_id = conn
+            in_lane, out_lane, _ = conn
             # create a LiuLane for each in-lane
             # update this call if the instance lane needs more references to
             # eg dataframes
             in_lane_id = in_lane.getID()
-            if (
-                in_lane_id not in self.liu_lanes_id
-                and self.parent.graph.nodes('detectors')[in_lane.getID()] is not None
-            ):
-                self.liu_lanes_id.append(in_lane_id)
-                lane = LiuLane(in_lane, out_lane, self)
-                self.liu_lanes.append(lane)
-
+            if self.parent.graph.nodes('detectors')[in_lane_id] is not None:
+                if in_lane_id not in self.liu_lanes:
+                    lane = LiuLane(in_lane, out_lane, self)
+                    self.liu_lanes[in_lane_id] = lane
+                else:
+                    lane = self.liu_lanes[in_lane_id]
+                lane.add_out_lane(out_lane.getID())
 
     def run_next_phase(self, num_phase):
         #run the single-phase calculation for each lane
-        for lane in self.liu_lanes:
+        for lane in self.liu_lanes.values():
             lane.run_next_phase(num_phase)
 
     def plot_results(self, show_plot, show_infos):
-        for lane in self.liu_lanes:
+        for lane in self.liu_lanes.values():
             lane.plot(show_plot, show_infos)
             print('MAPE: ', lane.get_MAPE())
 
@@ -185,7 +210,7 @@ class LiuIntersection(object):
         sum_MAPE_IO = 0
         sum_MAPE_liu = 0
         cnt = 0
-        for lane in self.liu_lanes:
+        for lane in self.liu_lanes.values():
             MAPE_IO, MAPE_liu, used = lane.get_MAPE()
             if used == True:
                 sum_MAPE_IO += MAPE_IO
@@ -198,16 +223,16 @@ class LiuIntersection(object):
 
     def get_max_phase_length(self):
         max_phase_length = max(
-            [lane.get_phase_length() for lane in self.liu_lanes],
+            [lane.get_phase_length() for lane in self.liu_lanes.values()],
             default=0)
 
         return max_phase_length
 
     def add_estimation_to_df(self, while_running, phase_cnt):
-        for lane in self.liu_lanes:
+        for lane in self.liu_lanes.values():
             time, real_queue, estimated_queue, estimated_queue_pure_liu, phase_start, phase_end = lane.get_estimation_data(while_running)
 
-            lane_ID = lane.get_lane_ID()
+            lane_ID = lane.lane_id
             iterables = [[lane_ID], ['time', 'ground-truth', 'estimated hybrid', 'estimated pure liu', 'phase start', 'phase end']]
             index = pd.MultiIndex.from_product(iterables, names=['lane', 'values'])
             if while_running == False:
@@ -225,13 +250,16 @@ class LiuIntersection(object):
             self.parent.df_estimation_results = pd.concat([self.parent.df_estimation_results, df_lane], axis = 1)
 
     def unload_data(self):
-        for lane in self.liu_lanes:
+        for lane in self.liu_lanes.values():
             lane.unload_data()
-            del lane
+        self.liu_lanes = dict()
 
-    def get_tls_output_filenames_for_lane(self):
-        return {lane.sumolib_in_lane.getID(): lane.tls_output_filename
-                for lane in self.liu_lanes}
+    def get_tls_output_filenames_for_lanes(self):
+        return {lane_id: lane.tls_output_filename
+                for lane_id, lane in self.liu_lanes.items()}
+
+
+_DetInfo = namedtuple('det_info', ['id', 'info'])
 
 
 class LiuLane(object):
@@ -243,6 +271,7 @@ class LiuLane(object):
         # any steps)
         self.sumolib_in_lane = sumolib_in_lane
         self.sumolib_out_lane = out_lane
+        self.out_lane_ids = []
 
         #dataframes that are loaded once at the beginning
         self.df_e1_adv_detector = pd.DataFrame()
@@ -262,8 +291,47 @@ class LiuLane(object):
         self.parsed_xml_e1_adv_detector = None
         self.parsed_xml_e2_detector = None
 
+        self._init_result_arrays()
 
-        #arrays for store results
+        # lane info and references to networkx objects
+        self.runner = parent.parent
+        self.lane_id = self.sumolib_in_lane.getID()
+        self.networkx_node = self.graph.nodes[self.lane_id]
+        self.dash_lane_id = self.lane_id.replace('/', '-')
+        # self.adv_detector_id = "e1_" + self.dash_lane_id + "_1"
+        # self.stopbar_detector_id = "e1_" + self.dash_lane_id + "_0"
+        # self.e2_detector_id = "e2_" + self.dash_lane_id + "_0"
+
+        self._parse_detector_info()
+
+        self.L_d = float(self.graph.nodes('detectors')[self.lane_id][self.stopbar_detector_id]['pos']
+            )-float(self.graph.nodes('detectors')[self.lane_id][self.adv_detector_id]['pos'])
+        self.k_j = JAM_DENSITY #jam density
+        self.v_2 = -6.5 #just for initialization
+
+        self.parent = parent
+        #self.time_window = time_window
+
+        self.tls_output_filename = self.parse_tls_output_filename()
+
+        #estimating tls data!
+        if self.parent.parent.parsed_xml_tls == None:
+            self.parent.parent.parsed_xml_tls = et.parse(self.tls_output_filename) # TODO move to own function that constructor calls
+
+            (self.phase_start, self.phase_length, self.duration_green_light
+                     ) = get_tls_data(self.parent.parent.parsed_xml_tls, self.lane_id)
+
+        self.parent.parent.parsed_xml_tls = None
+
+        # initialize value (empirical), but will be estimated during simulation run
+        self.max_veh_leaving_on_green = int(0.5*self.duration_green_light) # 1 vehicle every 2 sec
+
+
+        # we would like to be able to have each lane's calculation of its Liu
+        # state be entirely local to its instance of this class
+
+
+    def _init_result_arrays(self):
         self.arr_breakpoint_A = []
         self.arr_breakpoint_B = []
         self.arr_breakpoint_C = []
@@ -278,91 +346,123 @@ class LiuLane(object):
         self.used_method = []
         self.arr_phase_start = []
         self.arr_phase_end = []
-
-        #parameters for lane
-        lane_id = self.sumolib_in_lane.getID()
-        dash_lane_id = lane_id.replace('/', '-')
-        adv_detector_id = "e1_" + dash_lane_id + "_1"
-        stopbar_detector_id = "e1_" + dash_lane_id + "_0"
-
-        out_lane_id = self.sumolib_out_lane.getID()
-
-        self.L_d = float(self.graph.nodes('detectors')[self.sumolib_in_lane.getID()][stopbar_detector_id]['pos']
-            )-float(self.graph.nodes('detectors')[self.sumolib_in_lane.getID()][adv_detector_id]['pos'])
-        self.k_j = JAM_DENSITY #jam density
-        self.v_2 = -6.5 #just for initialization
-
-        self.parent = parent
-        #self.time_window = time_window
-
-        self.tls_output_filename = self.parse_tls_output_filename()
-
-        #estimating tls data!
-        if self.parent.parent.parsed_xml_tls == None:
-            self.parent.parent.parsed_xml_tls = et.parse(self.tls_output_filename) # TODO move to own function that constructor calls
-
-            (self.phase_start, self.phase_length, self.duration_green_light
-                     ) = get_tls_data(self.parent.parent.parsed_xml_tls, lane_id)
-
-        self.parent.parent.parsed_xml_tls = None
-
-        # initialize value (empirical), but will be estimated during simulation run
-        self.max_veh_leaving_on_green = int(0.5*self.duration_green_light)
+        self.green_intervals = []
 
 
-        # we would like to be able to have each lane's calculation of its Liu
-        # state be entirely local to its instance of this class
+    def _parse_detector_info(self):
+        det_dict = self.networkx_node['detectors']
+        # loop (e1) detectors
+        e1_detectors = [_DetInfo(k, v) for k, v in det_dict.items()
+                        if v['type'] == 'e1Detector']
+        if len(e1_detectors) < 2:
+            raise NotImplementedError(
+                "Cannot use Liu method on a lane without at least two loop detectors")
+        # stopbar detector is the one with the largest "pos" (position) value
+        e1_by_pos = sorted(e1_detectors, key=lambda x: x.info['pos'])
 
-    def get_runner(self):
-        return self.parent.parent
+        stopbar_detector = e1_by_pos[-1]
+        adv_detector = e1_by_pos[-2]
+
+        self.stopbar_detector_id = stopbar_detector.id
+        self.adv_detector_id = adv_detector.id
+
+        # lane area (e2) detectors
+        e2_detectors = [_DetInfo(k, v) for k, v in det_dict.items()
+                        if v['type'] == 'e2Detector']
+        if len(e2_detectors) > 1:
+            e2_detector = max(e2_detectors, key=lambda x: x.info['length'])
+            _logger.warning(
+                'Lane %s seems to have more than one lane-area (e2) detector. '
+                'Using %s for Liu implementation', self.lane_id, e2_detector)
+        else:
+            e2_detector = e2_detectors[0]
+        self.e2_detector_id = e2_detector.id
+
+        # assert stopbar_detector_id == self.stopbar_detector_id
+        # assert adv_detector_id == self.adv_detector_id
+        # assert e2_detector_id == self.e2_detector_id
+
+        net_dir = os.path.dirname(self.runner.sumo_network.netfile)
+
+        self.stopbar_output_file = os.path.join(net_dir,
+                                                stopbar_detector.info['file'])
+        self.adv_output_file = os.path.join(net_dir,
+                                            adv_detector.info['file'])
+        self.e2_output_file = os.path.join(net_dir,
+                                           e2_detector.info['file'])
+
+    def add_out_lane(self, out_lane_id):
+        self.out_lane_ids.append(out_lane_id)
+
+    def add_green_interval(self, start_time, end_time):
+        self.green_intervals.append((start_time, end_time))
+
+    def union_green_intervals(self):
+        intervals = []
+        for begin, end in sorted(self.green_intervals):
+            if intervals and intervals[-1][1] >= begin - 1:
+                intervals[-1][1] = max(intervals[-1][1], end)
+            else:
+                intervals.append([begin, end])
+        self.green_intervals = intervals
+
+    def nth_cycle_interval(self, n):
+        """Returns the nth cycle time interval for this lane: (start, end)
+
+        "start" corresponds to start of red phase (end of previous green phase).
+        "end" corresponds to end of green phase
+        If n == 0, there is no previous green phase, and `start` will be 0.
+
+        :param n: Index of desired cycle time interval
+        :type n: int
+        :return: Start and end of cycle time interval
+        :rtype: Tuple of ints
+        """
+        assert n <= len(self.green_intervals)
+        if n == 0:
+            start = 0
+        else:
+            start = self.green_intervals[n - 1][1]
+        end = self.green_intervals[n][0]
+        return start, end
+
 
     def parse_tls_output_filename(self):
-        return os.path.join(os.path.dirname(self.get_runner().sumo_network.netfile),
-                            self.graph.edges[self.sumolib_in_lane.getID(),
+        return os.path.join(os.path.dirname(self.runner.sumo_network.netfile),
+                            self.graph.edges[self.lane_id,
                                              self.sumolib_out_lane.getID()
                                             ]['tls_output_info']['dest'])
 
-    def get_tls_switch_times(self, xml_etree=None):
-        if xml_etree is None:
-            xml_etree = self.get_runner().parsed_xml_tls
-        assert xml_etree is not None
-
-
     def run_next_phase(self, num_phase):
-        # run one iteration of the liu method for the next phase in the
-        # data history
+        """Run the Liu method for the given phase.
+
+        :param num_phase: phase index
+        :type num_phase: int
+        """
         start, end, curr_e1_stopbar, curr_e1_adv_detector, curr_e2_detector = self.parse_cycle_data(num_phase)
         self.breakpoint_identification(num_phase, start, end, curr_e1_stopbar, curr_e1_adv_detector)
         self.C_identification_short_queue(start, end, curr_e1_stopbar)
         self.queue_estimate(num_phase, start, end, curr_e1_adv_detector, curr_e1_stopbar)
         self.get_ground_truth_queue(num_phase, start, end, curr_e2_detector)
 
-    def next_phase_ready_to_be_run(self):
-        # return True if we can run liu for the next as-yet-unrun phase and
-        # False otherwise: use to make sure we don't get ahead of ourselves
-        # when running in real time
-        pass
-
     def parse_cycle_data(self, num_phase):
         #parse the data from the dataframes and write to the arrays in every cycle
 
-        lane_id = self.sumolib_in_lane.getID()
-        dash_lane_id = lane_id.replace('/', '-')
-        adv_detector_id = "e1_" + dash_lane_id + "_1"
-        stopbar_detector_id = "e1_" + dash_lane_id + "_0"
-
-        start = int(self.phase_start + num_phase*self.phase_length) #seconds #start begins with red phase
-        end = start + self.phase_length #seconds #end is end of green phase
+        start, end = self.nth_cycle_interval(num_phase)
 
         #using the last THREE phases, because they are needed to estimate breakpoints from the second last one!
         #one in future for Berakpoint C, one in past for simple input-output method
 
         ###  parse e1 andvanced and stopbar detector from xml file ####
-
         if self.parsed_xml_e1_stopbar_detector == None:
-            self.parsed_xml_e1_stopbar_detector = et.parse(
-                    os.path.join(os.path.dirname(self.parent.parent.sumo_network.netfile),
-                                 self.graph.nodes('detectors')[lane_id][stopbar_detector_id]['file']))
+            stopbarfile = os.path.join(
+                os.path.dirname(self.parent.parent.sumo_network.netfile),
+                self.graph.nodes('detectors')[self.lane_id][
+                    self.stopbar_detector_id]['file']
+            )
+            self.parsed_xml_e1_stopbar_detector = et.parse(self.stopbar_output_file)
+
+            assert self.stopbar_output_file == stopbarfile
 
         list_time_stop = []     #for stop bar detector
         list_nVehContrib_stop = []
@@ -370,7 +470,7 @@ class LiuLane(object):
         for node in self.parsed_xml_e1_stopbar_detector.getroot():
             begin = float(node.attrib.get('begin'))
             det_id = node.attrib.get('id')
-            if begin >= start-self.phase_length and begin < end+self.phase_length and det_id == stopbar_detector_id:
+            if begin >= start-self.phase_length and begin < end+self.phase_length and det_id == self.stopbar_detector_id:
                 list_time_stop.append(begin)
                 list_nVehContrib_stop.append(float(node.attrib.get('nVehContrib')))
 
@@ -380,7 +480,7 @@ class LiuLane(object):
         if self.parsed_xml_e1_adv_detector == None:
             self.parsed_xml_e1_adv_detector = et.parse(
                     os.path.join(os.path.dirname(self.parent.parent.sumo_network.netfile),
-                                 self.graph.nodes('detectors')[lane_id][adv_detector_id]['file']))
+                                 self.graph.nodes('detectors')[self.lane_id][self.adv_detector_id]['file']))
 
         list_time = []       #for advanced detector
         list_occupancy = []
@@ -389,7 +489,7 @@ class LiuLane(object):
         for node in self.parsed_xml_e1_adv_detector.getroot():
             begin = float(node.attrib.get('begin'))
             det_id = node.attrib.get('id')
-            if begin >= start-self.phase_length and begin < end+self.phase_length and det_id == adv_detector_id:
+            if begin >= start-self.phase_length and begin < end+self.phase_length and det_id == self.adv_detector_id:
                 list_time.append(begin)
                 list_occupancy.append(float(node.attrib.get('occupancy')))
                 list_nVehEntered.append(float(node.attrib.get('nVehEntered')))
@@ -403,14 +503,10 @@ class LiuLane(object):
         self.curr_e1_stopbar.set_index('time', inplace=True)
 
         ### parse e2 detector from xml file ###
-
-        e2_detector_id = "e2_" + dash_lane_id + "_0"
-
-
         if self.parsed_xml_e2_detector == None:
             self.parsed_xml_e2_detector = et.parse(
                     os.path.join(os.path.dirname(self.parent.parent.sumo_network.netfile),
-                                 self.graph.nodes('detectors')[lane_id][e2_detector_id]['file']))
+                                 self.graph.nodes('detectors')[self.lane_id][self.e2_detector_id]['file']))
 
         list_time_e2 = []
         list_startedHalts_e2 = []
@@ -420,14 +516,14 @@ class LiuLane(object):
         for node in self.parsed_xml_e2_detector.getroot():
             begin = float(node.attrib.get('begin'))
             det_id = node.attrib.get('id')
-            if begin >= start and begin < end+self.phase_length and det_id == e2_detector_id:
+            if begin >= start and begin < end+self.phase_length and det_id == self.e2_detector_id:
                 list_time_e2.append(begin)
                 list_startedHalts_e2.append(float(node.attrib.get('startedHalts')))
                 list_max_jam_length_e2.append(float(node.attrib.get('maxJamLengthInMeters')))
-                list_jam_length_sum_e2.append(float(node.attrib.get('jamLengthInMetersSum')))               
+                list_jam_length_sum_e2.append(float(node.attrib.get('jamLengthInMetersSum')))
 
         self.curr_e2_detector = pd.DataFrame(
-                {'time': list_time_e2, 
+                {'time': list_time_e2,
                  'startedHalts': list_startedHalts_e2,
                  'maxJamLengthInMeters': list_max_jam_length_e2,
                  'jamLengthInMetersSum': list_jam_length_sum_e2})
@@ -438,8 +534,7 @@ class LiuLane(object):
     def breakpoint_identification(self, num_phase, start, end, curr_e1_stopbar, curr_e1_adv_detector):
 
         #Calculate binary occupancy
-        binary_occ_t = pd.Series()
-        binary_occ_t = curr_e1_adv_detector['occupancy'].apply(lambda x: (1 if x >= 100 else 0))
+        binary_occ_t = (curr_e1_adv_detector['occupancy'] >= 100).astype(np.int)
 
         #Calculating the time gap between vehicles
         #I am assuming that there is maximum only one vehicle per second on the detector
@@ -628,12 +723,12 @@ class LiuLane(object):
         #calculating MAPE for liu + IO
         sum_mape_IO = 0
         cnt = 0
-        
+
         if self.parent.parent.use_started_halts == True:
             arr_real_queue = self.arr_real_max_queue_length
         else:
             arr_real_queue = self.arr_maxJamLengthInVehicles
-        
+
         if len(self.arr_estimated_max_queue_length) > 2:
             for estimation_queue, real_queue in zip(self.arr_estimated_max_queue_length, arr_real_queue):
                 if estimation_queue != 0 and real_queue != 0:
@@ -676,7 +771,7 @@ class LiuLane(object):
             ground_truth, = plt.plot(self.arr_estimated_time_max_queue, self.arr_real_max_queue_length, c='b', label= 'sum started halts')
             estimation_pure_liu, = plt.plot(self.arr_estimated_time_max_queue, self.arr_estimated_max_queue_length_pure_liu, c='m', label= 'expansion model', linestyle='--')
             max_length_queue, = plt.plot(self.arr_estimated_time_max_queue, self.arr_maxJamLengthInVehicles, c='k', label= 'maxJamLength e2 detector', linestyle='--')
-            
+
 
             plt.legend(handles=[estimation, ground_truth, estimation_pure_liu, max_length_queue], fontsize = 18)
 
@@ -703,11 +798,9 @@ class LiuLane(object):
 
             plt.show()
 
-            lane_id = self.sumolib_in_lane.getID()
-            dash_lane_id = lane_id.replace('/', '-')
             #just to save plots, delete after writing
             if self.sumolib_in_lane.getID()== 'bottom2to2/0_2':
-                fig.savefig("simonnet_"+dash_lane_id+".pdf", bbox_inches='tight')
+                fig.savefig("simonnet_"+self.dash_lane_id+".pdf", bbox_inches='tight')
 #            if self.sumolib_in_lane.getID()== '1/0to1/1_0' or self.sumolib_in_lane.getID()== '1/0to1/1_1' or self.sumolib_in_lane.getID()== '1/0to1/1_2':
 #                fig.savefig("simonnet_"+dash_lane_id+".pdf", bbox_inches='tight')
 
@@ -748,12 +841,4 @@ class LiuLane(object):
         self.parsed_xml_e1_stopbar_detector = None
         self.parsed_xml_e1_adv_detector = None
         self.parsed_xml_e2_detector = None
-        self.arr_breakpoint_A = None
-        self.arr_breakpoint_B = None
-        self.arr_breakpoint_C = None
-        self.arr_breakpoint_C_stopbar = None
-        self.arr_estimated_max_queue_length = None
-        self.arr_estimated_max_queue_length_pure_liu = None
-        self.arr_estimated_time_max_queue = None
-        self.arr_real_max_queue_length = None
-        self.used_method = None
+        self._init_result_arrays()
