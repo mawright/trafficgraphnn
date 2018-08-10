@@ -131,3 +131,4 @@ logs/
 
 *.IdeaPad
 keras-gat/
+logs/
