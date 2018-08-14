@@ -3,7 +3,7 @@ from __future__ import absolute_import
 from keras import backend as K
 from keras import activations, constraints, initializers, regularizers
 from keras.layers import Layer, Dropout, LeakyReLU
-
+import tensorflow as tf
 
 class BatchGraphAttention(Layer):
 
@@ -54,7 +54,6 @@ class BatchGraphAttention(Layer):
         super(BatchGraphAttention, self).__init__(**kwargs)
 
     def build(self, input_shape):
-        print(input_shape)
         assert len(input_shape) >= 3 # dimensions: batch, node, features
         F = input_shape[-1]
 
@@ -100,7 +99,10 @@ class BatchGraphAttention(Layer):
             attn_for_neighs = K.dot(linear_transf_X, attention_kernel[1])  # (N x 1), [a_2]^T [Wh_j]
 
             # Attention head a(Wh_i, Wh_j) = a^T [[Wh_i], [Wh_j]]
-            dense = attn_for_self + K.transpose(attn_for_neighs)  # (N x N) via broadcasting
+            
+            #transpose just dimension 1 and 2, not batches
+            trans_attn_for_neighs = tf.transpose(attn_for_neighs, perm=[0, 2, 1])           
+            dense = attn_for_self + trans_attn_for_neighs  # (N x N) via broadcasting
 
             # Add nonlinearty
             dense = LeakyReLU(alpha=0.2)(dense)
