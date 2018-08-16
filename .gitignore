@@ -71,6 +71,7 @@ target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+*.ipynb
 
 # pyenv
 .python-version
@@ -121,3 +122,13 @@ run sumo-gui with simulation
 !.vscode/tasks.json
 !.vscode/extensions.json
 *.code-workspace
+
+.idea/
+__pycache__/
+logs/
+*.egg-info
+*.pyc
+
+*.IdeaPad
+keras-gat/
+logs/

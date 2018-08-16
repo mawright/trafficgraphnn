@@ -173,6 +173,9 @@ class SumoNetwork(object):
     def get_graph(self):
         assert self.graph is not None
         return self.graph
+    
+    def set_new_graph(self, new_graph):
+        self.graph = new_graph
 
     def get_neighboring_lanes(self, lane_id, include_input_lane=False):
         """Get ids of lanes in the same edge as the passed one.
@@ -546,3 +549,5 @@ def make_undirected(A):
     A_und = A - A.multiply(no_double_edge) + A.T.multiply(no_double_edge)
     assert np.abs(A_und - A_und.T).max() < 1e-10
     return A_und
+
+
