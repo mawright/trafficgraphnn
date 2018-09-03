@@ -5,6 +5,7 @@ import xml.etree.cElementTree as et
 
 import numpy as np
 import pandas as pd
+import math
 from matplotlib import pyplot as plt
 
 from trafficgraphnn.utils import iterfy
@@ -97,6 +98,26 @@ class LiuEtAlRunner(object):
         final_MAPE_liu = sum_MAPE_liu/cnt
 
         return final_MAPE_IO, final_MAPE_liu
+    
+    def get_total_standard_deviation_MAPE(self, final_MAPE_IO, final_MAPE_liu):
+        sum_SD_IO = 0
+        sum_SD_liu = 0
+        n = 0
+        for intersection in self.liu_intersections:
+            SD_IO, SD_liu, num_lanes = intersection.get_sum_SD_per_intersection(final_MAPE_IO, final_MAPE_liu)
+            sum_SD_IO += SD_IO
+            sum_SD_liu += SD_liu
+            n += num_lanes
+        print('n:', n)
+        SD_IO = math.sqrt(sum_SD_IO/n)
+        SD_liu = math.sqrt(sum_SD_liu/n)
+        
+        print('SD_IO:', SD_IO)
+        print('SD_liu:', SD_liu)
+        
+        return SD_IO, SD_liu, n
+        
+        
 
     def get_max_num_phase(self, end_time):
         max_phase_length = max(
@@ -195,6 +216,16 @@ class LiuIntersection(object):
             sum_MAPE_IO = sum_MAPE_IO/cnt
             sum_MAPE_liu = sum_MAPE_liu/cnt
         return sum_MAPE_IO, sum_MAPE_liu
+    
+    def get_sum_SD_per_intersection(self, final_MAPE_IO, final_MAPE_liu):
+        sum_SD_IO = 0
+        sum_SD_liu = 0      
+        for lane in self.liu_lanes:
+            MAPE_IO, MAPE_liu, used = lane.get_MAPE()
+            if used == True:
+                sum_SD_IO += (MAPE_IO - final_MAPE_IO)**2
+                sum_SD_liu += (MAPE_liu - final_MAPE_liu)**2  
+        return sum_SD_IO, sum_SD_liu, len(self.liu_lanes)
 
     def get_max_phase_length(self):
         max_phase_length = max(

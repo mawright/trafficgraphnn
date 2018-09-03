@@ -132,3 +132,4 @@ logs/
 *.IdeaPad
 keras-gat/
 logs/
+*.png
