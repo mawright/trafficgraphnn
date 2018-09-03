@@ -3,10 +3,14 @@ from __future__ import absolute_import, print_function, division
 import os
 import sys
 import collections
+import logging
 
 import six
 import pandas as pd
 from lxml import etree
+
+
+_logger = logging.getLogger(__name__)
 
 
 def get_sumo_dir():
@@ -42,6 +46,49 @@ def get_net_dir(netfile):
 
 def load_data(network_name, output_tag):
     pass
+
+
+class IterParseWrapper(object):
+    _tag = None
+    _schema_file = None
+    def __init__(self, xml_file, validate=False):
+        if validate:
+            try:
+                schema_file = self._schema_file
+                schema = etree.XMLSchema(file=schema_file)
+                tree = etree.iterparse(xml_file, schema=schema, tag=self._tag)
+            except etree.XMLSchemaParseError:
+                _logger.warning(
+                    'Error in xml validation of %s, skipping validation.',
+                    xml_file,
+                    exc_info=True)
+                tree = etree.iterparse(xml_file, tag=self._tag)
+        else:
+            tree = etree.iterparse(xml_file, tag=self._tag)
+        self.tree = tree
+        self.get_next()
+
+    def get_next(self):
+        _, self.item = six.next(self.tree)
+
+    def iterate_until(self, stop_time):
+        while self._interval_end() <= stop_time:
+            yield self.item
+            self.item.clear()
+            self.get_next()
+
+    def _interval_end(self):
+        return float(self.item.attrib.get('end'))
+
+
+class E1IterParseWrapper(IterParseWrapper):
+    _tag = 'interval'
+    _schema_file = os.path.join(get_sumo_dir(), 'data', 'xsd', 'det_e1_file.xsd')
+
+
+class E2IterParseWrapper(IterParseWrapper):
+    _tag = 'interval'
+    _schema_file = os.path.join(get_sumo_dir(), 'data', 'xsd' 'det_e2_file.xsd')
 
 
 def xml_to_list_of_dicts(
@@ -126,6 +173,11 @@ def verify_xml_schema(xml_file):
 
     # schemaCheck.py errors when you send it a valid tls output file?
     raise NotImplementedError
+
+
+def in_interval(value, interval):
+    assert(len(interval)) == 2
+    return interval[0] <= value <= interval[1]
 
 
 def iterfy(x):
