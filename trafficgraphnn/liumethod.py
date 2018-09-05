@@ -128,7 +128,7 @@ class LiuEtAlRunner(object):
         final_MAPE_liu = sum_MAPE_liu/cnt
 
         return final_MAPE_IO, final_MAPE_liu
-    
+
     def get_total_standard_deviation_MAPE(self, final_MAPE_IO, final_MAPE_liu):
         sum_SD_IO = 0
         sum_SD_liu = 0
@@ -141,13 +141,11 @@ class LiuEtAlRunner(object):
         print('n:', n)
         SD_IO = math.sqrt(sum_SD_IO/n)
         SD_liu = math.sqrt(sum_SD_liu/n)
-        
+
         print('SD_IO:', SD_IO)
         print('SD_liu:', SD_liu)
-        
+
         return SD_IO, SD_liu, n
-        
-        
 
     def get_max_num_phase(self, end_time=np.inf):
         """Return the maximum number of phases for all LiuLanes in the network
@@ -160,13 +158,13 @@ class LiuEtAlRunner(object):
         max_num_phase = max(
             [lane.num_queueing_intervals_before(end_time)
              for lane in self.liu_lanes.values()])
+        max_num_phase = max_num_phase - 2
+        # -2 because estimation for first and last phase is not possible
+
         max_phase_length = max(
             [i.get_max_phase_length() for i in self.liu_intersections], default=0)
 
         max_num_phase_old = int((end_time/max_phase_length) - 2)
-
-        max_num_phase = max_num_phase - 2
-        # -2 because estimation for first and last phase is not possible
 
         if not max_num_phase == max_num_phase_old:
             _logger.info(f'max_num_phase = {max_num_phase}, max_num_phase_old = {max_num_phase_old}')
@@ -255,15 +253,15 @@ class LiuIntersection(object):
             sum_MAPE_IO = sum_MAPE_IO/cnt
             sum_MAPE_liu = sum_MAPE_liu/cnt
         return sum_MAPE_IO, sum_MAPE_liu
-    
+
     def get_sum_SD_per_intersection(self, final_MAPE_IO, final_MAPE_liu):
         sum_SD_IO = 0
-        sum_SD_liu = 0      
+        sum_SD_liu = 0
         for lane in self.liu_lanes:
             MAPE_IO, MAPE_liu, used = lane.get_MAPE()
             if used == True:
                 sum_SD_IO += (MAPE_IO - final_MAPE_IO)**2
-                sum_SD_liu += (MAPE_liu - final_MAPE_liu)**2  
+                sum_SD_liu += (MAPE_liu - final_MAPE_liu)**2
         return sum_SD_IO, sum_SD_liu, len(self.liu_lanes)
 
     def get_max_phase_length(self):
