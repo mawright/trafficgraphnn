@@ -173,7 +173,7 @@ class SumoNetwork(object):
     def get_graph(self):
         assert self.graph is not None
         return self.graph
-    
+
     def set_new_graph(self, new_graph):
         self.graph = new_graph
 
@@ -289,7 +289,8 @@ class SumoNetwork(object):
             os.path.splitext(
                 os.path.splitext(
                     os.path.basename(self.netfile))[0])[0],
-            net_config_dir=os.path.dirname(self.netfile),
+            net_config_dir=os.path.dirname(
+                os.path.dirname(self.netfile)),
         )
         return config_gen
 
@@ -549,5 +550,3 @@ def make_undirected(A):
     A_und = A - A.multiply(no_double_edge) + A.T.multiply(no_double_edge)
     assert np.abs(A_und - A_und.T).max() < 1e-10
     return A_und
-
-
