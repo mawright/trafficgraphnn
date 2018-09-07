@@ -259,7 +259,7 @@ class LiuIntersection(object):
     def get_sum_SD_per_intersection(self, final_MAPE_IO, final_MAPE_liu):
         sum_SD_IO = 0
         sum_SD_liu = 0      
-        for lane in self.liu_lanes:
+        for lane in self.liu_lanes.values():
             MAPE_IO, MAPE_liu, used = lane.get_MAPE()
             if used == True:
                 sum_SD_IO += (MAPE_IO - final_MAPE_IO)**2
