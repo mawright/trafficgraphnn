@@ -85,6 +85,7 @@ liu_runner = LiuEtAlRunner(sn, store_while_running = True, use_started_halts = u
 
 # caluclating the maximum number of phases and run the estimation
 max_num_phase = liu_runner.get_max_num_phase(end_time)
+print('ready with max num phase')
 liu_runner.run_up_to_phase(max_num_phase)
 
 # show results for every lane

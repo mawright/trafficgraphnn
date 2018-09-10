@@ -91,6 +91,7 @@ class LiuEtAlRunner(object):
     def run_up_to_phase(self, max_num_phase):
         # iterate on the single-step methods for each intersection until
         # reaching the given time
+        print('before for loop in run_up_to_phase method')
         for num_phase in range(1, max_num_phase):
             print('Running estimation for every lane in every intersection in phase', num_phase)
             self.df_estimation_results = pd.DataFrame() #reset df for case of online storage

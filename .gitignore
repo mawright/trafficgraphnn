@@ -133,3 +133,4 @@ logs/
 keras-gat/
 logs/
 *.png
+savio_ws/

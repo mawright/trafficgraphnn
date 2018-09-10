@@ -85,6 +85,7 @@ liu_runner = LiuEtAlRunner(sn, store_while_running = True, use_started_halts = u
 
 # caluclating the maximum number of phases and run the estimation
 max_num_phase = liu_runner.get_max_num_phase(end_time)
+print('ready with max num phase')
 liu_runner.run_up_to_phase(max_num_phase)
 
 # show results for every lane
@@ -325,3 +326,36 @@ print('Y_hat.shape:', Y_hat.shape)
 prediction = K.reshape(Y_hat, (int(Y_hat.shape[0])//N, timesteps_per_sample, N, 1))
 print('prediction.shape:', prediction.shape)
 
+#save models with architecture, weights, training config
+train_model.save('models/train_model_all.h5')
+encoder_model.save('models/encoder_model_all.h5')
+decoder_model.save('models/decoder_model_all.h5')
+
+#save train model as JSON
+# serialize model to JSON
+train_model_json = train_model.to_json()
+with open("models/train_model.json", "w") as json_file:
+    json_file.write(train_model_json)
+# serialize weights to HDF5
+train_model.save_weights("models/train_model_weights.h5")
+print("Saved train model to disk")
+
+#save encoder model as JSON
+# serialize model to JSON
+encoder_model_json = encoder_model.to_json()
+with open("models/encoder_model.json", "w") as json_file:
+    json_file.write(encoder_model_json)
+# serialize weights to HDF5
+encoder_model.save_weights("models/encoder_model_weights.h5")
+print("Saved encoder model to disk")
+
+#save decoder model as JSON
+# serialize model to JSON
+decoder_model_json = decoder_model.to_json()
+with open("models/decoder_model.json", "w") as json_file:
+    json_file.write(decoder_model_json)
+# serialize weights to HDF5
+decoder_model.save_weights("models/decoder_model_weights.h5")
+print("Saved decoder model to disk")
+
+#TODO: Implement postprocessing of data with reorder lanes and resample time and store in a pandas file
