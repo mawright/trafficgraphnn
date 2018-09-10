@@ -88,7 +88,7 @@ class E1IterParseWrapper(IterParseWrapper):
 
 class E2IterParseWrapper(IterParseWrapper):
     _tag = 'interval'
-    _schema_file = os.path.join(get_sumo_dir(), 'data', 'xsd' 'det_e2_file.xsd')
+    _schema_file = os.path.join(get_sumo_dir(), 'data', 'xsd', 'det_e2_file.xsd')
 
 
 def xml_to_list_of_dicts(

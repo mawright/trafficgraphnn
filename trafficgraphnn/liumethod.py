@@ -93,7 +93,9 @@ class LiuEtAlRunner(object):
         # reaching the given time
         print('before for loop in run_up_to_phase method')
         for num_phase in range(1, max_num_phase):
-            print('Running estimation for every lane in every intersection in phase', num_phase)
+            _logger.info(
+                'Running estimation for every lane in every intersection in phase %g',
+                num_phase)
             self.df_estimation_results = pd.DataFrame() #reset df for case of online storage
             for intersection in self.liu_intersections:
                 intersection.run_next_phase(num_phase)
@@ -129,7 +131,7 @@ class LiuEtAlRunner(object):
         final_MAPE_liu = sum_MAPE_liu/cnt
 
         return final_MAPE_IO, final_MAPE_liu
-    
+
     def get_total_standard_deviation_MAPE(self, final_MAPE_IO, final_MAPE_liu):
         sum_SD_IO = 0
         sum_SD_liu = 0
@@ -147,8 +149,8 @@ class LiuEtAlRunner(object):
         print('SD_liu:', SD_liu)
 
         return SD_IO, SD_liu, n
-        
-        
+
+
 
     def get_max_num_phase(self, end_time=np.inf):
         """Return the maximum number of phases for all LiuLanes in the network
@@ -263,15 +265,15 @@ class LiuIntersection(object):
             sum_MAPE_IO = sum_MAPE_IO/cnt
             sum_MAPE_liu = sum_MAPE_liu/cnt
         return sum_MAPE_IO, sum_MAPE_liu
-    
+
     def get_sum_SD_per_intersection(self, final_MAPE_IO, final_MAPE_liu):
         sum_SD_IO = 0
-        sum_SD_liu = 0      
+        sum_SD_liu = 0
         for lane in self.liu_lanes:
             MAPE_IO, MAPE_liu, used = lane.get_MAPE()
             if used == True:
                 sum_SD_IO += (MAPE_IO - final_MAPE_IO)**2
-                sum_SD_liu += (MAPE_liu - final_MAPE_liu)**2  
+                sum_SD_liu += (MAPE_liu - final_MAPE_liu)**2
         return sum_SD_IO, sum_SD_liu, len(self.liu_lanes)
 
     def get_max_phase_length(self):

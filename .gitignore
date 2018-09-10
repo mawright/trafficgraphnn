@@ -133,4 +133,5 @@ logs/
 keras-gat/
 logs/
 *.png
-savio ws/
+savio\ ws/
+models/

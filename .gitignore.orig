@@ -123,7 +123,6 @@ run sumo-gui with simulation
 !.vscode/extensions.json
 *.code-workspace
 
-<<<<<<< HEAD
 .idea/
 __pycache__/
 logs/
@@ -134,8 +133,9 @@ logs/
 keras-gat/
 logs/
 *.png
-savio_ws/
+<<<<<<< HEAD
+savio ws/
 =======
-*.IdeaPad
-logs/
->>>>>>> ae9b6e7f0b0acbf7c4c1bae21074cb72f52f5902
+savio\ ws/
+models/
+>>>>>>> 9af1bb7f45ddb0c34521e16001f0d9462712e73d
