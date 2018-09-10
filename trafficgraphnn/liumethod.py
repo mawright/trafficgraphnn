@@ -178,6 +178,7 @@ class LiuEtAlRunner(object):
             _logger.debug('max_num_phase = %g, max_num_phase_old = %g',
                           max_num_phase, max_num_phase_old)
 
+
         return max_num_phase
 
     def store_results(self, unload_data = False):
