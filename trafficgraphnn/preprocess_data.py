@@ -361,11 +361,8 @@ class PreprocessData(object):
     
     def get_ground_truth_array(self, start_time, end_time, lane_id, average_interval):
         #ATTENTION!!! What to do when average interval is not 1??
-        print('self.df_liu_results')
-        print(self.df_liu_results)
         time_lane = self.df_liu_results.loc[:, (lane_id, 'time')] 
-        arr_ground_truth = np.array([])
-        print('time_lane:', time_lane)       
+        arr_ground_truth = np.array([])     
         for phase in range(1, len(time_lane)+1):
             phase_start = self.df_liu_results.loc[phase, (lane_id, 'phase start')]
             if phase == 1:
@@ -376,21 +373,10 @@ class PreprocessData(object):
             if arr_ground_truth.size == 0:
                 arr_ground_truth = temp_arr_ground_truth
             else:
-                arr_ground_truth = np.vstack((arr_ground_truth, temp_arr_ground_truth))
-            print('first_phase_start:', first_phase_start)
-            print('ground_truth:', ground_truth)
-            #print('temp_arr_ground_truth:', temp_arr_ground_truth)
-            print('arr_ground_truth.shape:', arr_ground_truth.shape)
-            print('temp_arr_ground_truth.shape:', temp_arr_ground_truth.shape)
-            #print('arr_ground_truth:', arr_ground_truth)  
-            print('--------')             
+                arr_ground_truth = np.vstack((arr_ground_truth, temp_arr_ground_truth))           
             
         #crop the right time-window in seconds
-        print('start_time:', start_time)
-        print('first_phase_start:', first_phase_start)
-        print('end_time:', end_time)
         arr_ground_truth_1second = arr_ground_truth[int(start_time-first_phase_start):int(end_time-first_phase_start), 0]
-        print('arr_ground_truth_1second.shape', arr_ground_truth_1second.shape)
         #just take the points of data from the average -interval
         #example: average interval 5 sec -> take one value every five seconds!
         arr_ground_truth_average_interval = arr_ground_truth_1second[0::average_interval]
@@ -403,13 +389,9 @@ class PreprocessData(object):
     
     def get_preprocessing_end_time(self, liu_lanes):
         list_end_time = []
-        print('liu_lanes:', liu_lanes)
         for lane in liu_lanes:
             df_last_row = self.df_liu_results.iloc[-1, :]  
-            print('df_last_row:', df_last_row)
             list_end_time.append(df_last_row.loc[(lane,'phase end')])
-        print('list_end_time:', list_end_time)
-        print('minimum of list_end_time:', min(list_end_time))
         return min(list_end_time)
         
         
