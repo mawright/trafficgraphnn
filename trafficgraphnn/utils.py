@@ -72,13 +72,16 @@ class IterParseWrapper(object):
         _, self.item = six.next(self.tree)
 
     def iterate_until(self, stop_time):
-        while self._interval_end() <= stop_time:
+        while self.interval_end() <= stop_time:
             yield self.item
             self.item.clear()
             self.get_next()
 
-    def _interval_end(self):
+    def interval_end(self):
         return float(self.item.attrib.get('end'))
+
+    def interval_begin(self):
+        return float(self.item.attrib.get('begin'))
 
 
 class E1IterParseWrapper(IterParseWrapper):
