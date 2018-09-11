@@ -988,7 +988,10 @@ class LiuLane(object):
             return -1, -1
 
     def get_hybrid_MAPE(self):
-        true = np.array(self.arr_real_max_queue_length)
+        if self.parent.parent.use_started_halts:
+            true = np.array(self.arr_real_max_queue_length)
+        else:
+            true = np.array(self.arr_maxJamLengthInVehicles)
         est = np.array(self.arr_estimated_max_queue_length)
 
         mape = np.zeros_like(true)
