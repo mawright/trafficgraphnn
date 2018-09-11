@@ -23,7 +23,8 @@ class LiuEtAlRunner(object):
                  lane_subset=None,
                  time_window=None,
                  store_while_running = True,
-                 use_started_halts = False):
+                 use_started_halts = False, 
+                 simu_num = 0):
         self.sumo_network = sumo_network
         self.graph = self.sumo_network.get_graph()
         self.net = sumo_network.net
@@ -31,6 +32,7 @@ class LiuEtAlRunner(object):
         self.df_estimation_results = pd.DataFrame()
         self.store_while_running = store_while_running
         self.use_started_halts = use_started_halts
+        self.simu_num = simu_num
         # verify all lanes requested are actually in the network
         if lane_subset is None:
             # process all lanes
@@ -189,7 +191,7 @@ class LiuEtAlRunner(object):
             intersection.add_estimation_to_df(self.store_while_running, 0)
 
         self.df_estimation_results.to_hdf(os.path.join(os.path.dirname(
-                self.sumo_network.netfile), 'liu_estimation_results.h5'), key = 'df_estimation_results')
+                self.sumo_network.netfile), 'liu_estimation_results' + str(self.simu_num) + '.h5'), key = 'df_estimation_results')
         print('Saved all results in hdf file')
 
         if unload_data == True: #unload data and delete everything to save memory
@@ -203,7 +205,7 @@ class LiuEtAlRunner(object):
 
         if num_phase ==1:
             self.df_estimation_results.to_hdf(os.path.join(os.path.dirname(
-                    self.sumo_network.netfile), 'liu_estimation_results.h5'),
+                    self.sumo_network.netfile), 'liu_estimation_results' + str(self.simu_num) + '.h5'),
                     key = 'df_estimation_results', format='table')
             print('Created new hdf file')
         else:
@@ -211,11 +213,17 @@ class LiuEtAlRunner(object):
             #ohlcv_candle.to_hdf(os.path.join(os.path.dirname(self.sumo_network.netfile), 'liu_estimation_results.h5'))
             #store.append('df_estimation_results', self.df_estimation_results, format='t',  data_columns=True)
             self.df_estimation_results.to_hdf(os.path.join(os.path.dirname(
-                    self.sumo_network.netfile), 'liu_estimation_results.h5'),
+                    self.sumo_network.netfile), 'liu_estimation_results' + str(self.simu_num) + '.h5'),
                     key = 'df_estimation_results', format='table', append = True)
             #print(store.info())
             #store.close()
             print('Appended results in hdf file')
+            
+    def get_liu_lane_IDs(self):
+        liu_lane_IDs = []
+        for lane in self.liu_lanes.values():
+            liu_lane_IDs.append(lane.lane_id)
+        return liu_lane_IDs
 
 
 class LiuIntersection(object):
@@ -1025,3 +1033,4 @@ class LiuLane(object):
         self.parsed_xml_e1_adv_detector = None
         self.parsed_xml_e2_detector = None
         self._init_result_arrays()
+        

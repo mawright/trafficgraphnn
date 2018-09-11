@@ -100,7 +100,7 @@ class BatchGraphAttention(Layer):
             # Attention head a(Wh_i, Wh_j) = a^T [[Wh_i], [Wh_j]]
 
             #transpose just dimension 1 and 2, not batches
-            trans_attn_for_neighs = K.permute_dimensions(attn_for_neighs, perm=[0, 2, 1])
+            trans_attn_for_neighs = K.permute_dimensions(attn_for_neighs, (0, 2, 1))
             dense = attn_for_self + trans_attn_for_neighs  # (N x N) via broadcasting
 
             # Add nonlinearty

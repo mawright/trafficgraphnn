@@ -33,7 +33,7 @@ grid_length = 600 #meters
 num_lanes =3
 
 ### Configuration of the Simulation ###
-end_time = 2300 #seconds
+end_time = 1000 #seconds
 period = 0.4
 binomial = 2
 seed = 50
@@ -75,28 +75,49 @@ config.gen_e2_detectors(distance_to_tls=0, frequency=1)
 config.define_tls_output_file()
 
 # run the simulation to create output files
-sn = SumoNetwork.from_gen_config(config, lanewise=True)
-sn.run()
+list_X = []
+list_Y = []
+list_A = []
+
+for simu_num in range(3):
+    config.gen_rand_trips(period = period, binomial = binomial, seed = seed, end_time = end_time, fringe_factor = fringe_factor)
+    sn = SumoNetwork.from_gen_config(config, lanewise=True)
+    sn.run()
+    print('Simulation run number', simu_num, 'finished')
 
 
-### Running the Liu Estimation
-#creating liu runner object
-liu_runner = LiuEtAlRunner(sn, store_while_running = True, use_started_halts = use_started_halts)
+    ### Running the Liu Estimation
+    #creating liu runner object
+    liu_runner = LiuEtAlRunner(sn, store_while_running = True, use_started_halts = use_started_halts, simu_num = simu_num)
+    
+    # caluclating the maximum number of phases and run the estimation
+    max_num_phase = liu_runner.get_max_num_phase(end_time)
+    liu_runner.run_up_to_phase(max_num_phase)
+    
+    # show results for every lane
+    liu_runner.plot_results_every_lane(show_plot = show_plot, show_infos = show_infos)
+    
+    
+    ### preprocess data for deep learning model
+    preprocess = PreprocessData(sn, simu_num)
+    preproccess_end_time = preprocess.get_preprocessing_end_time(liu_runner.get_liu_lane_IDs())
+    A, X, Y = preprocess.preprocess_X_Y(
+            average_interval = average_interval, sample_size = sample_size, start = 200, end = preproccess_end_time, simu_num = simu_num)
+    A = np.eye(120,120) + A
+    
+    list_A.append(A)
+    list_X.append(X)
+    list_Y.append(Y)
+    
+X_train_tens = list_X[0]
+X_val_tens = list_X[1]
+X_test_tens = list_X[2]
 
-# caluclating the maximum number of phases and run the estimation
-max_num_phase = liu_runner.get_max_num_phase(end_time)
-print('ready with max num phase')
-liu_runner.run_up_to_phase(max_num_phase)
+Y_train_tens = list_Y[0]
+Y_val_tens = list_Y[1]
+Y_test_tens = list_Y[2]
 
-# show results for every lane
-liu_runner.plot_results_every_lane(show_plot = show_plot, show_infos = show_infos)
-
-
-### preprocess data for deep learning model
-### preprocess data for deep learning model
-preprocess = PreprocessData(sn)
-A, X_train_tens, Y_train_tens, X_test_tens, Y_test_tens, X_val_tens, Y_val_tens = preprocess.preprocess_for_gat(average_interval = average_interval, sample_size = sample_size)
-A = np.eye(120,120) + A
+A = list_A[0] # A does not change 
 
 
 print('X_train_tens.shape:', X_train_tens.shape)
