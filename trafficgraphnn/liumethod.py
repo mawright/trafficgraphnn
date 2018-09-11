@@ -97,7 +97,6 @@ class LiuEtAlRunner(object):
     def run_up_to_phase(self, max_num_phase):
         # iterate on the single-step methods for each intersection until
         # reaching the given time
-        print('before for loop in run_up_to_phase method')
         # for num_phase in range(1, max_num_phase):
         for num_phase in range(0, max_num_phase):
             _logger.info(
