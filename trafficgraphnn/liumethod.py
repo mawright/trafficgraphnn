@@ -324,7 +324,8 @@ _Queueing_Period_Data = namedtuple(
     ['num_period', 'start_time', 'end_time',
      'list_time_stop', 'list_nVehContrib_stop',
      'list_time', 'list_occupancy', 'list_nVehEntered', 'list_nVehContrib',
-     'list_time_e2', 'list_startedHalts_e2', 'list_max_jam_length_e2',
+     'list_time_e2', 'list_startedHalts_e2', 'list_max_jam_length_m_e2',
+     'list_max_jam_length_veh_e2',
      'list_jam_length_sum_e2'])
 
 
@@ -394,8 +395,8 @@ class LiuLane(object):
         self.arr_estimated_max_queue_length_pure_liu = []
         self.arr_estimated_time_max_queue = []
         self.arr_real_max_queue_length = []
+        self.arr_maxJamLengthInMeters = []
         self.arr_maxJamLengthInVehicles = []
-        self.arr_maxJamLengthInVehiclesSum = []
         self.used_method = []
         self.arr_phase_start = []
         self.arr_phase_end = []
@@ -675,13 +676,15 @@ class LiuLane(object):
         ### parse e2 detector data from xml file ###
         list_time_e2 = list(chain(*[per.list_time_e2 for per in three_periods]))
         list_startedHalts_e2 = list(chain(*[per.list_startedHalts_e2 for per in three_periods]))
-        list_max_jam_length_e2 = list(chain(*[per.list_max_jam_length_e2 for per in three_periods]))
+        list_max_jam_length_m_e2 = list(chain(*[per.list_max_jam_length_m_e2 for per in three_periods]))
+        list_max_jam_length_veh_e2 = list(chain(*[per.list_max_jam_length_veh_e2 for per in three_periods]))
         list_jam_length_sum_e2 = list(chain(*[per.list_jam_length_sum_e2 for per in three_periods]))
 
         self.curr_e2_detector = pd.DataFrame(
                 {'time': list_time_e2,
                  'startedHalts': list_startedHalts_e2,
-                 'maxJamLengthInMeters': list_max_jam_length_e2,
+                 'maxJamLengthInMeters': list_max_jam_length_m_e2,
+                 'maxJamLengthInVehicles': list_max_jam_length_veh_e2,
                  'jamLengthInMetersSum': list_jam_length_sum_e2})
         self.curr_e2_detector.set_index('time', inplace=True)
 
@@ -717,7 +720,8 @@ class LiuLane(object):
         # e2 detector
         list_time_e2 = []
         list_startedHalts_e2 = []
-        list_max_jam_length_e2 = []
+        list_max_jam_length_m_e2 = []
+        list_max_jam_length_veh_e2 = []
         list_jam_length_sum_e2 = []
 
         for interval in self.parsed_xml_e2_detector.iterate_until(end_time):
@@ -726,7 +730,8 @@ class LiuLane(object):
             if det_id == self.e2_detector_id:
                 list_time_e2.append(interval_begin)
                 list_startedHalts_e2.append(float(interval.attrib.get('startedHalts')))
-                list_max_jam_length_e2.append(float(interval.attrib.get('maxJamLengthInMeters')))
+                list_max_jam_length_m_e2.append(float(interval.attrib.get('maxJamLengthInMeters')))
+                list_max_jam_length_veh_e2.append(float(interval.attrib.get('maxJamLengthInVehicles')))
                 list_jam_length_sum_e2.append(float(interval.attrib.get('jamLengthInMetersSum')))
 
         interval_data = _Queueing_Period_Data(
@@ -735,7 +740,8 @@ class LiuLane(object):
             list_time=list_time, list_occupancy=list_occupancy,
             list_nVehEntered=list_nVehEntered, list_nVehContrib=list_nVehContrib,
             list_time_e2=list_time_e2, list_startedHalts_e2=list_startedHalts_e2,
-            list_max_jam_length_e2=list_max_jam_length_e2,
+            list_max_jam_length_m_e2=list_max_jam_length_m_e2,
+            list_max_jam_length_veh_e2=list_max_jam_length_veh_e2,
             list_jam_length_sum_e2=list_jam_length_sum_e2)
 
         return interval_data
@@ -941,8 +947,10 @@ class LiuLane(object):
         #calculate ground truth data for queue and store in self arrays
         self.arr_real_max_queue_length.append(
                 sum(curr_e2_detector['startedHalts'][start:end])/self.k_j)
-        self.arr_maxJamLengthInVehicles.append(
+        self.arr_maxJamLengthInMeters.append(
                 max(np.array(curr_e2_detector['maxJamLengthInMeters'][start:end])))
+        self.arr_maxJamLengthInVehicles.append(
+                max(np.array(curr_e2_detector['maxJamLengthInVehicles'][start:end])))
         return sum(curr_e2_detector['startedHalts'][start:end])/self.k_j
 
     def get_MAPE(self):
@@ -954,7 +962,7 @@ class LiuLane(object):
         if self.parent.parent.use_started_halts == True:
             arr_real_queue = self.arr_real_max_queue_length
         else:
-            arr_real_queue = self.arr_maxJamLengthInVehicles
+            arr_real_queue = self.arr_maxJamLengthInMeters
 
         if len(self.arr_estimated_max_queue_length) > 2:
             for estimation_queue, real_queue in zip(self.arr_estimated_max_queue_length, arr_real_queue):
@@ -987,19 +995,31 @@ class LiuLane(object):
         else:
             return -1, -1
 
-    def get_hybrid_MAPE(self):
+    def get_hybrid_MAPE_meters(self):
         if self.parent.parent.use_started_halts:
             true = np.array(self.arr_real_max_queue_length)
         else:
-            true = np.array(self.arr_maxJamLengthInVehicles)
+            true = np.array(self.arr_maxJamLengthInMeters)
         est = np.array(self.arr_estimated_max_queue_length)
 
+        return self._mape_from_lists(true, est)
+
+    def _mape_from_lists(self, true, est):
         mape = np.zeros_like(true)
         where = np.nonzero(true)
         mape[where] = np.abs(true[where] - est[where]) / true[where]
         mape[not(where) and est != 0] = 1.
 
-        return mape
+        return np.mean(mape)
+
+    def get_hybrid_MAPE_veh(self):
+        if self.parent.parent.use_started_halts:
+            true = np.array(self.arr_real_max_queue_length) * self.k_j
+        else:
+            true = np.array(self.arr_maxJamLengthInVehicles)
+        est = np.array(self.arr_estimated_max_queue_length) * self.k_j
+
+        return self._mape_from_lists(true, est)
 
     def plot(self, show_graph, show_infos):
         if show_graph == True:
@@ -1011,7 +1031,7 @@ class LiuLane(object):
             estimation, = plt.plot(self.arr_estimated_time_max_queue, self.arr_estimated_max_queue_length, c='r', label= 'hybrid model')
             ground_truth, = plt.plot(self.arr_estimated_time_max_queue, self.arr_real_max_queue_length, c='b', label= 'sum started halts')
             estimation_pure_liu, = plt.plot(self.arr_estimated_time_max_queue, self.arr_estimated_max_queue_length_pure_liu, c='m', label= 'expansion model', linestyle='--')
-            max_length_queue, = plt.plot(self.arr_estimated_time_max_queue, self.arr_maxJamLengthInVehicles, c='k', label= 'maxJamLength e2 detector', linestyle='--')
+            max_length_queue, = plt.plot(self.arr_estimated_time_max_queue, self.arr_maxJamLengthInMeters, c='k', label= 'maxJamLength e2 detector', linestyle='--')
 
 
             plt.legend(handles=[estimation, ground_truth, estimation_pure_liu, max_length_queue], fontsize = 18)
@@ -1051,7 +1071,7 @@ class LiuLane(object):
             print('out lane id:', self.sumolib_out_lane.getID())
             print('Estimated queue length: ', self.arr_estimated_max_queue_length)
             print('real queue length: ', self.arr_real_max_queue_length)
-            print('e2 detector maxJamLengthInMeters: ', self.arr_maxJamLengthInVehicles)
+            print('e2 detector maxJamLengthInMeters: ', self.arr_maxJamLengthInMeters)
             print('phase length:', self.phase_length)
             print('phase start:', self.phase_start)
             print('-----------')
