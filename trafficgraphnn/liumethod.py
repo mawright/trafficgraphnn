@@ -180,9 +180,6 @@ class LiuEtAlRunner(object):
             end_time = 1e7
         max_num_phase_old = int((end_time/max_phase_length) - 2)
 
-        max_num_phase = max_num_phase - 2
-        # -2 because estimation for first and last phase is not possible
-
         if not max_num_phase == max_num_phase_old:
             _logger.debug('max_num_phase = %g, max_num_phase_old = %g',
                           max_num_phase, max_num_phase_old)
