@@ -113,7 +113,9 @@ class SumoNetwork(object):
         sumo_args = [
             '--net-file', self.netfile,
             '--route-files', self.routefile,
-            '--no-step-log'
+            '--no-step-log', # remove progress bar
+            '--collision.action', 'none', # don't don't teleport vehicles when they collide
+            '--time-to-teleport', '-1', # remove teleporting when vehicles queue for extended periods
         ]
 
         if len(self.additional_files) > 0:
