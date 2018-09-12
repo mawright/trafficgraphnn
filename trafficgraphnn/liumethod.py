@@ -222,6 +222,12 @@ class LiuEtAlRunner(object):
             #print(store.info())
             #store.close()
             _logger.debug('Appended results in hdf file')
+            
+    def get_liu_lane_IDs(self):
+        list_lane_names = []
+        for lane in self.liu_lanes.values():
+            list_lane_names.append(lane.lane_id)
+        return list_lane_names
 
 
 class LiuIntersection(object):

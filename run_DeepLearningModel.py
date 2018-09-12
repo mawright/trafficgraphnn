@@ -33,7 +33,7 @@ grid_length = 600 #meters
 num_lanes =3
 
 ### Configuration of the Simulation ###
-end_time = 1000 #seconds
+end_time = 1500 #seconds
 period = 0.4
 binomial = 2
 seed = 50

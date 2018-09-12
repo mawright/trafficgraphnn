@@ -363,7 +363,7 @@ class PreprocessData(object):
         #ATTENTION!!! What to do when average interval is not 1??
         time_lane = self.df_liu_results.loc[:, (lane_id, 'time')] 
         arr_ground_truth = np.array([])     
-        for phase in range(1, len(time_lane)+1):
+        for phase in range(len(time_lane)):
             phase_start = self.df_liu_results.loc[phase, (lane_id, 'phase start')]
             if phase == 1:
                 first_phase_start = phase_start
