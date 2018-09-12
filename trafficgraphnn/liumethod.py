@@ -182,8 +182,6 @@ class LiuEtAlRunner(object):
             end_time = 1e7
         max_num_phase_old = int((end_time/max_phase_length) - 2)
 
-        max_num_phase = max_num_phase - 2
-        # -2 because estimation for first and last phase is not possible
 
         if not max_num_phase == max_num_phase_old:
             _logger.debug('max_num_phase = %g, max_num_phase_old = %g',
@@ -330,7 +328,8 @@ _Queueing_Period_Data = namedtuple(
     ['num_period', 'start_time', 'end_time',
      'list_time_stop', 'list_nVehContrib_stop',
      'list_time', 'list_occupancy', 'list_nVehEntered', 'list_nVehContrib',
-     'list_time_e2', 'list_startedHalts_e2', 'list_max_jam_length_e2',
+     'list_time_e2', 'list_startedHalts_e2', 'list_max_jam_length_m_e2',
+     'list_max_jam_length_veh_e2',
      'list_jam_length_sum_e2'])
 
 
@@ -400,6 +399,7 @@ class LiuLane(object):
         self.arr_estimated_max_queue_length_pure_liu = []
         self.arr_estimated_time_max_queue = []
         self.arr_real_max_queue_length = []
+        self.arr_maxJamLengthInMeters = []
         self.arr_maxJamLengthInVehicles = []
         self.arr_maxJamLengthInVehiclesSum = []
         self.used_method = []
@@ -452,7 +452,6 @@ class LiuLane(object):
                                             adv_detector.info['file'])
         self.e2_output_file = os.path.join(net_dir,
                                            e2_detector.info['file'])
-        self._init_detector_xml_parsers()
 
     def _init_detector_xml_parsers(self, start_cycle=0):
         self.parsed_xml_e1_stopbar_detector = E1IterParseWrapper(
@@ -562,7 +561,6 @@ class LiuLane(object):
 
         "start" corresponds to start of red phase (end of previous green phase).
         "end" corresponds to end of green phase
-        If n == 0, there is no previous green phase, and `start` will be 0.
 
         :param n: Index of desired cycle time interval
         :type n: int
@@ -674,14 +672,6 @@ class LiuLane(object):
         list_time_stop = list(chain(*[per.list_time_stop for per in three_periods]))
         list_nVehContrib_stop = list(chain(*[per.list_nVehContrib_stop for per in three_periods]))
 
-        for interval in self.parsed_xml_e1_stopbar_detector.iterate_until(next_green):
-            interval_begin = float(interval.attrib.get('begin'))
-            det_id = interval.attrib.get('id')
-            if det_id == self.stopbar_detector_id:
-                assert interval_begin < next_green
-                # _logger.info('detector %s begin %s', det_id, interval_begin)
-                list_time_stop.append(interval_begin)
-                list_nVehContrib_stop.append(float(interval.attrib.get('nVehContrib')))
         self.curr_e1_stopbar = pd.DataFrame(
             {'time': list_time_stop, 'nVehContrib': list_nVehContrib_stop})
 
@@ -691,13 +681,15 @@ class LiuLane(object):
         ### parse e2 detector data from xml file ###
         list_time_e2 = list(chain(*[per.list_time_e2 for per in three_periods]))
         list_startedHalts_e2 = list(chain(*[per.list_startedHalts_e2 for per in three_periods]))
-        list_max_jam_length_e2 = list(chain(*[per.list_max_jam_length_e2 for per in three_periods]))
+        list_max_jam_length_m_e2 = list(chain(*[per.list_max_jam_length_m_e2 for per in three_periods]))
+        list_max_jam_length_veh_e2 = list(chain(*[per.list_max_jam_length_veh_e2 for per in three_periods]))
         list_jam_length_sum_e2 = list(chain(*[per.list_jam_length_sum_e2 for per in three_periods]))
 
         self.curr_e2_detector = pd.DataFrame(
                 {'time': list_time_e2,
                  'startedHalts': list_startedHalts_e2,
-                 'maxJamLengthInMeters': list_max_jam_length_e2,
+                 'maxJamLengthInMeters': list_max_jam_length_m_e2,
+                 'maxJamLengthInVehicles': list_max_jam_length_veh_e2,
                  'jamLengthInMetersSum': list_jam_length_sum_e2})
         self.curr_e2_detector.set_index('time', inplace=True)
 
@@ -711,57 +703,60 @@ class LiuLane(object):
         list_occupancy = []
         list_nVehEntered = []
         list_nVehContrib = []
-        for _ in self.parsed_xml_e1_adv_detector.iterate_until(prev_red):
-            continue
-
-        for interval in self.parsed_xml_e1_adv_detector.iterate_until(next_green):
+        for interval in self.parsed_xml_e1_adv_detector.iterate_until(end_time):
             interval_begin = float(interval.attrib.get('begin'))
             det_id = interval.attrib.get('id')
             if det_id == self.adv_detector_id:
-                assert interval_begin < next_green
                 list_time.append(interval_begin)
                 list_occupancy.append(float(interval.attrib.get('occupancy')))
                 list_nVehEntered.append(float(interval.attrib.get('nVehEntered')))
                 list_nVehContrib.append(float(interval.attrib.get('nVehContrib')))
-        self.curr_e1_adv_detector = pd.DataFrame(
-                {'time': list_time, 'occupancy': list_occupancy,
-                 'nVehEntered': list_nVehEntered, 'nVehContrib': list_nVehContrib})
 
-        self.curr_e1_adv_detector.set_index('time', inplace=True)
-        self.curr_e1_stopbar.set_index('time', inplace=True)
+        # stopbar detector
+        list_time_stop = []
+        list_nVehContrib_stop = []
+        for interval in self.parsed_xml_e1_stopbar_detector.iterate_until(end_time):
+            interval_begin = float(interval.attrib.get('begin'))
+            det_id = interval.attrib.get('id')
+            if det_id == self.stopbar_detector_id:
+                list_time_stop.append(interval_begin)
+                list_nVehContrib_stop.append(float(interval.attrib.get('nVehContrib')))
 
-        ### parse e2 detector data from xml file ###
+        # e2 detector
         list_time_e2 = []
         list_startedHalts_e2 = []
-        list_max_jam_length_e2 = []
+        list_max_jam_length_m_e2 = []
+        list_max_jam_length_veh_e2 = []
         list_jam_length_sum_e2 = []
-        for _ in self.parsed_xml_e2_detector.iterate_until(prev_red):
-            continue
 
-        for interval in self.parsed_xml_e2_detector.iterate_until(next_green):
+        for interval in self.parsed_xml_e2_detector.iterate_until(end_time):
             interval_begin = float(interval.attrib.get('begin'))
             det_id = interval.attrib.get('id')
             if det_id == self.e2_detector_id:
-                assert interval_begin < next_green
                 list_time_e2.append(interval_begin)
                 list_startedHalts_e2.append(float(interval.attrib.get('startedHalts')))
-                list_max_jam_length_e2.append(float(interval.attrib.get('maxJamLengthInMeters')))
+                list_max_jam_length_m_e2.append(float(interval.attrib.get('maxJamLengthInMeters')))
+                list_max_jam_length_veh_e2.append(float(interval.attrib.get('maxJamLengthInVehicles')))
                 list_jam_length_sum_e2.append(float(interval.attrib.get('jamLengthInMetersSum')))
 
-        self.curr_e2_detector = pd.DataFrame(
-                {'time': list_time_e2,
-                 'startedHalts': list_startedHalts_e2,
-                 'maxJamLengthInMeters': list_max_jam_length_e2,
-                 'jamLengthInMetersSum': list_jam_length_sum_e2})
-        self.curr_e2_detector.set_index('time', inplace=True)
+        interval_data = _Queueing_Period_Data(
+            num_cycle, start_time=start_time, end_time=end_time,
+            list_time_stop=list_time_stop, list_nVehContrib_stop=list_nVehContrib_stop,
+            list_time=list_time, list_occupancy=list_occupancy,
+            list_nVehEntered=list_nVehEntered, list_nVehContrib=list_nVehContrib,
+            list_time_e2=list_time_e2, list_startedHalts_e2=list_startedHalts_e2,
+            list_max_jam_length_m_e2=list_max_jam_length_m_e2,
+            list_max_jam_length_veh_e2=list_max_jam_length_veh_e2,
+            list_jam_length_sum_e2=list_jam_length_sum_e2)
 
-        return start, end, self.curr_e1_stopbar, self.curr_e1_adv_detector, self.curr_e2_detector
+        return interval_data
+
 
     def breakpoint_identification(self, num_phase, start, end, curr_e1_stopbar, curr_e1_adv_detector):
 
         #Calculate binary occupancy
         # binary occupancy = 1 iff a car is on the detector for a full sim step (meaning it is stopped)
-        binary_occ_t = (curr_e1_adv_detector['occupancy'] >= 100).astype(np.int)
+        binary_occ_t = (curr_e1_adv_detector['occupancy'] >= 100).astype(np.bool)
 
         #Calculating the time gap between vehicles
         #I am assuming that there is maximum only one vehicle per second on the detector
@@ -792,22 +787,22 @@ class LiuLane(object):
 
         ### Characterize the Breakpoints A,B ###
         ### A & B ### use the binary occupancy:
-        bool_A_found = 0
-        bool_B_found = 0
-        breakpoint_A = 0
-        breakpoint_B = 0
+        bool_A_found = False
+        bool_B_found = False
+        breakpoint_A = False
+        breakpoint_B = False
 
         for t in range(start, end):
 
-            if bool_A_found == 0 and binary_occ_t[t] == 0 and binary_occ_t[t+1] == 1 and binary_occ_t[t+2] == 1 and binary_occ_t[t+3] == 1:
+            if not bool_A_found and not binary_occ_t[t] and binary_occ_t[t+1] and binary_occ_t[t+2] and binary_occ_t[t+3]:
                 breakpoint_A = t
-                bool_A_found = 1
+                bool_A_found = True
 
-            if bool_A_found == 1 and bool_B_found == 0 and binary_occ_t[t-3] == 1 and binary_occ_t[t-2] == 1 and binary_occ_t[t-1] == 1 and binary_occ_t[t] == 0:
+            if bool_A_found and not bool_B_found and binary_occ_t[t-3] and binary_occ_t[t-2] and binary_occ_t[t-1] and not binary_occ_t[t]:
                 breakpoint_B = t
-                bool_B_found = 1
+                bool_B_found = True
 
-        if bool_A_found == 1 and bool_B_found == 1:
+        if bool_A_found and bool_B_found:
             self.arr_breakpoint_A.append(breakpoint_A)  #store breakpoints
             self.arr_breakpoint_B.append(breakpoint_B)  #store breakpoints
 
@@ -821,7 +816,7 @@ class LiuLane(object):
             self.arr_breakpoint_B.append(-1)  #store breakpoints
 
         ### Characterizing Breakpoint C ### using time gap between consecutive vehicles
-        bool_C_found = 0
+        bool_C_found = False
         breakpoint_C = 0
         start_search = breakpoint_B + 10 #start searching for C after the breakpoint B + 10 seconds and until end; little offset of 10 sec is necessary to avoid influence from breakpoint B
         end_search = end + 50
@@ -833,13 +828,14 @@ class LiuLane(object):
                 and time_gap_vehicles[k] >= 4
                 and time_gap_vehicles[k] >= time_gap_vehicles[k-1]
                 and point_of_time[k-1] >= breakpoint_B
-                and bool_C_found == 0 and bool_B_found == 1):
+                and not bool_C_found and bool_B_found
+            ):
 
                 breakpoint_C = point_of_time[k-1]
-                bool_C_found = 1
+                bool_C_found = True
                 self.arr_breakpoint_C.append(breakpoint_C)  #store breakpoints
 
-        if bool_C_found == 0:
+        if not bool_C_found:
             self.arr_breakpoint_C.append(-1)  #store breakpoints
 
     def C_identification_short_queue(self, start, end, curr_e1_stopbar):
@@ -859,7 +855,7 @@ class LiuLane(object):
                 time_cnt= time_cnt+1
 
         ### Characterizing Breakpoint C ### using time gap between consecutive vehicles
-        bool_C_found = 0
+        bool_C_found = False
         breakpoint_C = 0
         start_search = end-self.duration_green_light + 2 #start searching for C after the green start + 2 seconds and until end
         end_search = end
@@ -869,10 +865,10 @@ class LiuLane(object):
             if point_of_time[k] >= start_search and point_of_time[k] <= end_search and time_gap_vehicles[k] >= 4 and time_gap_vehicles[k] >= time_gap_vehicles[k-1]:
 
                 breakpoint_C = point_of_time[k-1]
-                bool_C_found = 1
+                bool_C_found = True
                 self.arr_breakpoint_C_stopbar.append(breakpoint_C)  #store breakpoints
 
-        if bool_C_found == 0:
+        if not bool_C_found:
             self.arr_breakpoint_C_stopbar.append(-1)  #store breakpoints
 
 
@@ -885,7 +881,7 @@ class LiuLane(object):
 
 
             #simple input-output method
-            if num_phase == 1:
+            if len(self.arr_estimated_max_queue_length) == 0:
                 old_estimated_queue_nVeh = 0
             else:
                 old_estimated_queue_nVeh = self.arr_estimated_max_queue_length[len(self.arr_estimated_max_queue_length)-1]*self.k_j
@@ -918,7 +914,7 @@ class LiuLane(object):
             breakpoint_B = self.arr_breakpoint_B[len(self.arr_breakpoint_B)-1]
 
             if self.arr_breakpoint_C[len(self.arr_breakpoint_C)-1] == -1 or self.arr_breakpoint_C[len(self.arr_breakpoint_A)-2] == self.arr_breakpoint_A[len(self.arr_breakpoint_A)-1]:
-                if num_phase == 1:
+                if len(self.arr_estimated_max_queue_length) == 0:
                     self.arr_estimated_max_queue_length.append(self.L_d)
                 else:
                     self.arr_estimated_max_queue_length.append(self.arr_estimated_max_queue_length[len(self.arr_estimated_max_queue_length)-1])
@@ -956,8 +952,10 @@ class LiuLane(object):
         #calculate ground truth data for queue and store in self arrays
         self.arr_real_max_queue_length.append(
                 sum(curr_e2_detector['startedHalts'][start:end])/self.k_j)
-        self.arr_maxJamLengthInVehicles.append(
+        self.arr_maxJamLengthInMeters.append(
                 max(np.array(curr_e2_detector['maxJamLengthInMeters'][start:end])))
+        self.arr_maxJamLengthInVehicles.append(
+                max(np.array(curr_e2_detector['maxJamLengthInVehicles'][start:end])))
         return sum(curr_e2_detector['startedHalts'][start:end])/self.k_j
 
     def get_MAPE(self):
@@ -969,7 +967,7 @@ class LiuLane(object):
         if self.parent.parent.use_started_halts == True:
             arr_real_queue = self.arr_real_max_queue_length
         else:
-            arr_real_queue = self.arr_maxJamLengthInVehicles
+            arr_real_queue = self.arr_maxJamLengthInMeters
 
         if len(self.arr_estimated_max_queue_length) > 2:
             for estimation_queue, real_queue in zip(self.arr_estimated_max_queue_length, arr_real_queue):
@@ -1002,6 +1000,32 @@ class LiuLane(object):
         else:
             return -1, -1
 
+    def get_hybrid_MAPE_meters(self):
+        if self.parent.parent.use_started_halts:
+            true = np.array(self.arr_real_max_queue_length)
+        else:
+            true = np.array(self.arr_maxJamLengthInMeters)
+        est = np.array(self.arr_estimated_max_queue_length)
+
+        return self._mape_from_lists(true, est)
+
+    def _mape_from_lists(self, true, est):
+        mape = np.zeros_like(true)
+        where = np.nonzero(true)
+        mape[where] = np.abs(true[where] - est[where]) / true[where]
+        mape[not(where) and est != 0] = 1.
+
+        return np.mean(mape)
+
+    def get_hybrid_MAPE_veh(self):
+        if self.parent.parent.use_started_halts:
+            true = np.array(self.arr_real_max_queue_length) * self.k_j
+        else:
+            true = np.array(self.arr_maxJamLengthInVehicles)
+        est = np.array(self.arr_estimated_max_queue_length) * self.k_j
+
+        return self._mape_from_lists(true, est)
+
     def plot(self, show_graph, show_infos):
         if show_graph == True:
             start = 0
@@ -1012,7 +1036,7 @@ class LiuLane(object):
             estimation, = plt.plot(self.arr_estimated_time_max_queue, self.arr_estimated_max_queue_length, c='r', label= 'hybrid model')
             ground_truth, = plt.plot(self.arr_estimated_time_max_queue, self.arr_real_max_queue_length, c='b', label= 'sum started halts')
             estimation_pure_liu, = plt.plot(self.arr_estimated_time_max_queue, self.arr_estimated_max_queue_length_pure_liu, c='m', label= 'expansion model', linestyle='--')
-            max_length_queue, = plt.plot(self.arr_estimated_time_max_queue, self.arr_maxJamLengthInVehicles, c='k', label= 'maxJamLength e2 detector', linestyle='--')
+            max_length_queue, = plt.plot(self.arr_estimated_time_max_queue, self.arr_maxJamLengthInMeters, c='k', label= 'maxJamLength e2 detector', linestyle='--')
 
 
             plt.legend(handles=[estimation, ground_truth, estimation_pure_liu, max_length_queue], fontsize = 18)
@@ -1052,7 +1076,7 @@ class LiuLane(object):
             print('out lane id:', self.sumolib_out_lane.getID())
             print('Estimated queue length: ', self.arr_estimated_max_queue_length)
             print('real queue length: ', self.arr_real_max_queue_length)
-            print('e2 detector maxJamLengthInMeters: ', self.arr_maxJamLengthInVehicles)
+            print('e2 detector maxJamLengthInMeters: ', self.arr_maxJamLengthInMeters)
             print('phase length:', self.phase_length)
             print('phase start:', self.phase_start)
             print('-----------')
