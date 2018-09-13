@@ -24,7 +24,7 @@ class LiuEtAlRunner(object):
                  lane_subset=None,
                  time_window=None,
                  store_while_running = True,
-                 use_started_halts = False, 
+                 use_started_halts = False,
                  simu_num = 0):
         self.sumo_network = sumo_network
         self.graph = self.sumo_network.get_graph()
@@ -99,7 +99,6 @@ class LiuEtAlRunner(object):
     def run_up_to_phase(self, max_num_phase):
         # iterate on the single-step methods for each intersection until
         # reaching the given time
-        print('before for loop in run_up_to_phase method')
         # for num_phase in range(1, max_num_phase):
         for num_phase in range(0, max_num_phase):
             _logger.info(
@@ -222,7 +221,7 @@ class LiuEtAlRunner(object):
             #print(store.info())
             #store.close()
             _logger.debug('Appended results in hdf file')
-            
+
     def get_liu_lane_IDs(self):
         list_lane_names = []
         for lane in self.liu_lanes.values():
