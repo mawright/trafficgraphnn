@@ -370,8 +370,6 @@ class PreprocessData(object):
         #just take the points of data from the average -interval
         #example: average interval 5 sec -> take one value every five seconds!
         arr_tls_binary_average_interval = arr_tls_binary_1second[0::average_interval]
-        print('arr_tls_binary_average_interval:', arr_tls_binary_average_interval)
-        print('arr_tls_binary_average_interval.shape:', arr_tls_binary_average_interval.shape)
         return arr_tls_binary_average_interval
         
     def unload_data(self):
