@@ -14,7 +14,7 @@ import tensorflow as tf
 from keras import backend as K
 from keras import regularizers, constraints, initializers, activations
 from keras.layers.recurrent import Recurrent 
-from time_distributed_dense import _time_distributed_dense
+from trafficgraphnn.time_distributed_dense import _time_distributed_dense
 from keras.engine import InputSpec
 
 tfPrint = lambda d, T: tf.Print(input_=T, data=[T, tf.shape(T)], message=d)

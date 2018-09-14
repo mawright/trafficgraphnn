@@ -14,7 +14,7 @@
 
 ## Command(s) to run:
 module load python
-module load ml/tensorflow/1.7.0-py36
+module load tensorflow/1.10.0-py36-pip-gpu
 module load libpng gcc gdal proj glibc
 
-python run_DeepLearningModel.py > job.pyout
+python attention_encoder_decoder_test.py > job.pyout
