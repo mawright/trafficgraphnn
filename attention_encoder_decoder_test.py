@@ -24,7 +24,7 @@ from keras.optimizers import Adam, SGD, Adagrad
 from keras.regularizers import l2
 from trafficgraphnn.batch_graph_attention_layer import  BatchGraphAttention
 from keras.utils.vis_utils import plot_model
-from attention_decoder import AttentionDecoder
+from trafficgraphnn.attention_decoder import AttentionDecoder
 
 #------ Configuration of the whole simulation -------
 
