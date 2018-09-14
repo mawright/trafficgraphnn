@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Wed Sep  5 13:13:45 2018
+Created on Thu Sep 13 11:09:16 2018
 
 @author: simon
 """
+
 from __future__ import division
 from trafficgraphnn.genconfig import ConfigGenerator
 from trafficgraphnn.sumo_network import SumoNetwork
@@ -34,7 +35,7 @@ grid_length = 600 #meters
 num_lanes =3
 
 ### Configuration of the Simulation ###
-end_time = 800 #seconds
+end_time = 200 #seconds
 period = 0.4
 binomial = 2
 seed = 50
@@ -57,7 +58,7 @@ dropout_rate = 0            # Dropout rate applied to the input of GAT layers
 attn_dropout = 0            #Dropout of the adjacency matrix in the gat layer
 l2_reg = 5e-100               # Regularization rate for l2
 learning_rate = 5e-2       # Learning rate for SGD
-epochs = 3              # Number of epochs to run for
+epochs = 10              # Number of epochs to run for
 es_patience = 100             # Patience fot early stopping
 n_units = 128   #number of units of the LSTM cells
 
@@ -213,62 +214,22 @@ print('Y_test.shape:', Y_test.shape)
 
 A_tf = tf.convert_to_tensor(A, dtype=np.float32)
 
-#define the training model
-#define the training model
+#define the model
 X1_in = Input(batch_shape=(sample_size_train*N, timesteps_per_sample, F))
-X2_in = Input(batch_shape=(sample_size_train*N, timesteps_per_sample, 1))
 
-shaped_X1_in = Lambda(shape_X1)(X1_in)
-
-dropout1 = TimeDistributed(Dropout(dropout_rate))(shaped_X1_in)
-
-graph_attention_1 = TimeDistributed(BatchGraphAttention(width_1gat,
-                                   A_tf,
-                                   attn_heads=n_attn_heads,
-                                   attn_heads_reduction='average',
-                                   attn_dropout=attn_dropout,
-                                   activation='linear',
-                                   kernel_regularizer=l2(l2_reg)),
-                                   )(dropout1)
-
-dropout2 = TimeDistributed(Dropout(dropout_rate))(graph_attention_1)
-
-graph_attention_2 = TimeDistributed(BatchGraphAttention(F_,
-                                   A_tf,
-                                   attn_heads=n_attn_heads,
-                                   attn_heads_reduction='average',
-                                   attn_dropout=attn_dropout,
-                                   activation='linear',
-                                   kernel_regularizer=l2(l2_reg)))(dropout2)
-
-#make sure that the reshape is made correctly!
-encoder_inputs = Lambda(reshape_X1)(graph_attention_2)
-decoder_inputs = Lambda(reshape_X2)(X2_in)
-#X2_lstm_input = K.cast(X2, tf.float32)
-
-### defining seq2seq model ###
-# define training encoder
-encoder_outputs, state_h, state_c = LSTM(n_units, return_state=True)(encoder_inputs)
-encoder_states = [state_h, state_c]
-
-# define training decoder
-decoder_lstm = LSTM(n_units, return_sequences=True, return_state=True)
-decoder_outputs, _, _ = decoder_lstm(decoder_inputs, initial_state=encoder_states)
-decoder_dense = Dense(1, activation='softmax')
-decoder_outputs = decoder_dense(decoder_outputs)
-
-# define training model
-train_model = Model(inputs=[X1_in,X2_in], outputs=decoder_outputs)
+model = Sequential()
+model.add(LSTM(150, batch_input_shape=(sample_size_train*N, timesteps_per_sample, F), return_sequences=True))
+model.add(AttentionDecoder(150, 1))
 
 optimizer = Adagrad(lr=learning_rate)
-train_model.compile(optimizer=optimizer,
+model.compile(optimizer=optimizer,
               loss='mean_squared_error',
               weighted_metrics=['accuracy'])
-train_model.summary()
-plot_model(train_model, to_file='train_model_plot.png', show_shapes=True, show_layer_names=True)
-validation_data = ([X1_val, X2_val], Y_val)
+model.summary()
+plot_model(model, to_file='train_model_plot.png', show_shapes=True, show_layer_names=True)
+validation_data = (X1_val, Y_val)
 
-train_model.fit([X1_train, X2_train],
+model.fit(X1_train,
           Y_train,
           epochs=epochs,
           steps_per_epoch = 1,
@@ -280,104 +241,19 @@ train_model.fit([X1_train, X2_train],
 
 ### Predict results ###
 
-#define inference encoder model
-encoder_model = Model(X1_in, encoder_states)
-
-encoder_model.compile(optimizer=optimizer,
-              loss='mean_squared_error',
-              weighted_metrics=['accuracy'])
-encoder_model.summary()
-plot_model(encoder_model, to_file='encoder_model_plot.png', show_shapes=True, show_layer_names=True)
-
-#define inference decoder model
-inference_decoder_inputs = Input(batch_shape=(1, 1, 1))
-decoder_state_input_h = Input(batch_shape=(1, n_units))
-decoder_state_input_c = Input(batch_shape=(1, n_units))
-decoder_states_inputs = [decoder_state_input_h, decoder_state_input_c]
-decoder_outputs, state_h, state_c = decoder_lstm(inference_decoder_inputs, initial_state=decoder_states_inputs)
-decoder_states = [state_h, state_c]
-decoder_outputs = decoder_dense(decoder_outputs)
-decoder_model = Model([inference_decoder_inputs] + decoder_states_inputs, [decoder_outputs] + decoder_states)
-
-decoder_model.compile(optimizer=optimizer,
-              loss='mean_squared_error',
-              weighted_metrics=['accuracy'])
-decoder_model.summary()
-plot_model(decoder_model, to_file='decoder_model_plot.png', show_shapes=True, show_layer_names=True)
-
-def predict_sequence(infenc, infdec, source, n_steps, cardinality):
-    """    
-    infenc: Encoder model used when making a prediction for a new source sequence.
-    infdec: Decoder model use when making a prediction for a new source sequence.
-    source:Encoded source sequence.
-    n_steps: Number of time steps in the target sequence.
-    cardinality: The cardinality of the output sequence, e.g. the number of features, words, or characters for each time step.
-    """
-    sample_size = source.shape[0]
-    # encode
-    samples_state = infenc.predict(source, steps = 1)
-    print(samples_state[0].shape)
-    print(samples_state[1].shape)
-    Y_hat = np.zeros((sample_size, timesteps_per_sample, 1))
-    
-    # start of sequence input
-    target_seq = np.array([0.0 for _ in range(cardinality)]).reshape(1, 1, cardinality)
-    # collect predictions
-    
-    for sample in range(sample_size):
-        output = list() #clearing output
-        state_h = np.reshape(samples_state[0][sample], (1, 128))
-        state_c = np.reshape(samples_state[1][sample], (1, 128))
-        state = [state_h, state_c] #selecting the states (h,c) to pass to decoder
-        for t in range(n_steps):
-            # predict next queue length
-            yhat, h, c = infdec.predict([target_seq] + state)
-            # store prediction
-            output.append(yhat[0,0,:])
-            # update state
-            state = [h, c]
-            # update target sequence
-            target_seq = yhat
-        Y_hat[sample, :, :] = output
-    return Y_hat
-
-
-Y_hat = predict_sequence(encoder_model, decoder_model, X1_test, timesteps_per_sample, 1)
-print('X1_test.shape:', X1_test.shape)
+Y_hat = model.predict(X1_test, verbose = 1, steps = 1) 
 print('Y_hat.shape:', Y_hat.shape)
 prediction = K.reshape(Y_hat, (int(Y_hat.shape[0])//N, timesteps_per_sample, N, 1))
 print('prediction.shape:', prediction.shape)
 
-#save models with architecture, weights, training config
-train_model.save('models/train_model_all.h5')
-encoder_model.save('models/encoder_model_all.h5')
-decoder_model.save('models/decoder_model_all.h5')
-
-#save train model as JSON
+#save model as JSON
 # serialize model to JSON
-train_model_json = train_model.to_json()
-with open("models/train_model.json", "w") as json_file:
-    json_file.write(train_model_json)
+model_json = model.to_json()
+with open("models/attn_model.json", "w") as json_file:
+    json_file.write(model_json)
 # serialize weights to HDF5
-train_model.save_weights("models/train_model_weights.h5")
-print("Saved train model to disk")
+model.save_weights("models/attn_model_weights.h5")
+print("Saved attn model to disk")
 
-#save encoder model as JSON
-# serialize model to JSON
-encoder_model_json = encoder_model.to_json()
-with open("models/encoder_model.json", "w") as json_file:
-    json_file.write(encoder_model_json)
-# serialize weights to HDF5
-encoder_model.save_weights("models/encoder_model_weights.h5")
-print("Saved encoder model to disk")
-
-#save decoder model as JSON
-# serialize model to JSON
-decoder_model_json = decoder_model.to_json()
-with open("models/decoder_model.json", "w") as json_file:
-    json_file.write(decoder_model_json)
-# serialize weights to HDF5
-decoder_model.save_weights("models/decoder_model_weights.h5")
-print("Saved decoder model to disk")
 
 #TODO: Implement postprocessing of data with reorder lanes and resample time and store in a pandas file
