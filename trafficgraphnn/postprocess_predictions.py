@@ -24,13 +24,13 @@ def resample_predictions(predictions):
         for sample in range(num_samples):
             if sample == 0:
                 lane_series = lane_slice[sample, :]
-                lane_series = np.reshape(lane_series, (1,10))
+                lane_series = np.reshape(lane_series, (1,timesteps_per_sample))
                 #print('sample = 0!!; lane_series.shape:', lane_series.shape)
             else:
                 #print('lane_series.shape in first else:', lane_series.shape)
                 #print('sample != 0; lane_series_reshaped.shape:', np.reshape(lane_series, (1, lane_series.shape[0])).shape)
                 #print('lane_slice[sample, :].shape:', np.reshape(lane_slice[sample, :],(1, 10)).shape)
-                lane_series = np.hstack((lane_series, np.reshape(lane_slice[sample, :], (1,10))))
+                lane_series = np.hstack((lane_series, np.reshape(lane_slice[sample, :], (1,timesteps_per_sample))))
                 #print('lane_series.shape after hstack:',lane_series.shape)
         #print('lane_series.shape before reshape:', lane_series.shape)
         lane_series = np.reshape(lane_series, (1, num_samples*timesteps_per_sample))
@@ -40,7 +40,7 @@ def resample_predictions(predictions):
     
     return predictions_resampled
 
-def store_predictions_in_df(predictions, order_lanes, df_liu_results, start_time, end_time):
+def store_predictions_in_df(predictions, order_lanes, df_liu_results, start_time, end_time, average_interval):
     resampled_predictions = resample_predictions(predictions)
     resampled_predictions = np.transpose(resampled_predictions)
     #print('resampled_predictions.shape (transpose):', resampled_predictions.shape)
@@ -48,7 +48,7 @@ def store_predictions_in_df(predictions, order_lanes, df_liu_results, start_time
     #list_columns = df_liu_results.columns.unique(level = 'lane')
     #print('list_coumns:', list_columns)
     df_prediction_results = pd.DataFrame(data = resampled_predictions[:,:], 
-                                         index = range(start_time, resampled_predictions.shape[0]+start_time), 
+                                         index = range(start_time, resampled_predictions.shape[0] * average_interval + start_time, average_interval), 
                                          columns = order_lanes)
     df_prediction_results.to_hdf('nn_prediction_results.h5', key = 'prediciton_results')
     print('Stored prediction results in dataframe')

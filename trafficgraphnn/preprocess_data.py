@@ -262,22 +262,24 @@ class PreprocessData(object):
             
             if cnt_lane == 0:
                 #dimesion: time x nodes x features
-                duration_in_sec = len(df_detector[stopbar_detector_id]['nVehContrib'][start_time:end_time])
-                X_unsampled = np.zeros((int((duration_in_sec)/average_interval), len(subgraph.nodes), 9))
-                Y_unsampled = np.zeros((int((duration_in_sec)/average_interval), len(subgraph.nodes), 1))
+                num_rows = len(df_detector.loc[start_time:end_time, (stopbar_detector_id, 'nVehContrib')]) -1 # (-1):last row is belongs to the following average interval
+                duration_in_sec = end_time-start_time
+                X_unsampled = np.zeros((num_rows, len(subgraph.nodes), 9))
+                Y_unsampled = np.zeros((num_rows, len(subgraph.nodes), 1))
                 
-            X_unsampled[:, cnt_lane, 0] = df_detector[stopbar_detector_id]['nVehContrib'][start_time:end_time]
-            X_unsampled[:, cnt_lane, 1] = df_detector[stopbar_detector_id]['flow'][start_time:end_time]
-            X_unsampled[:, cnt_lane, 2] = df_detector[stopbar_detector_id]['occupancy'][start_time:end_time]
-            X_unsampled[:, cnt_lane, 3] = df_detector[stopbar_detector_id]['speed'][start_time:end_time]
-            X_unsampled[:, cnt_lane, 4] = df_detector[adv_detector_id]['nVehContrib'][start_time:end_time]
-            X_unsampled[:, cnt_lane, 5] = df_detector[adv_detector_id]['flow'][start_time:end_time]
-            X_unsampled[:, cnt_lane, 6] = df_detector[adv_detector_id]['occupancy'][start_time:end_time]
-            X_unsampled[:, cnt_lane, 7] = df_detector[adv_detector_id]['speed'][start_time:end_time]
+            X_unsampled[:, cnt_lane, 0] = df_detector.loc[start_time:end_time-average_interval, (stopbar_detector_id, 'nVehContrib')]
+            X_unsampled[:, cnt_lane, 1] = df_detector.loc[start_time:end_time-average_interval, (stopbar_detector_id, 'flow')]
+            X_unsampled[:, cnt_lane, 2] = df_detector.loc[start_time:end_time-average_interval, (stopbar_detector_id, 'occupancy')]
+            X_unsampled[:, cnt_lane, 3] = df_detector.loc[start_time:end_time-average_interval, (stopbar_detector_id, 'speed')]
+            X_unsampled[:, cnt_lane, 4] = df_detector.loc[start_time:end_time-average_interval, (adv_detector_id, 'nVehContrib')]
+            X_unsampled[:, cnt_lane, 5] = df_detector.loc[start_time:end_time-average_interval, (adv_detector_id, 'flow')]
+            X_unsampled[:, cnt_lane, 6] = df_detector.loc[start_time:end_time-average_interval, (adv_detector_id, 'occupancy')]
+            X_unsampled[:, cnt_lane, 7] = df_detector.loc[start_time:end_time-average_interval, (adv_detector_id, 'speed')]
             X_unsampled[:, cnt_lane, 8] = self.get_tls_binary_signal(start_time, duration_in_sec, lane, average_interval)
                   
             Y_unsampled[:, cnt_lane, 0] = self.get_ground_truth_array(start_time, duration_in_sec, lane, average_interval)
-
+            
+            
         num_samples = math.ceil(X_unsampled.shape[0]/sample_size)
         print('number of samples:', num_samples)
         X_sampled = np.zeros((num_samples, sample_size, len(subgraph.nodes), 9))
@@ -365,9 +367,11 @@ class PreprocessData(object):
         self.parsed_xml_tls = None
         pass
     
-    def get_preprocessing_end_time(self, liu_lanes):
+    def get_preprocessing_end_time(self, liu_lanes, average_interval):
         list_end_time = []
         for lane in liu_lanes:
             df_last_row = self.df_liu_results.iloc[-1, :]  
             list_end_time.append(df_last_row.loc[(lane,'phase end')])
-        return min(list_end_time)-10 #10seconds reserve, otherwise complications occur
+            end_time = min(list_end_time)-10 #10seconds reserve, otherwise complications occur
+            end_time = int(end_time/average_interval) * average_interval #make sure, that end time is matching with average_interval
+            return end_time

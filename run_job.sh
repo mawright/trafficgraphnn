@@ -17,4 +17,4 @@ module load python
 module load tensorflow/1.10.0-py36-pip-gpu
 module load libpng gcc gdal proj glibc
 
-python attention_encoder_decoder_test.py > job.pyout
+python gat_and_attn_seq2seq.py > job.pyout

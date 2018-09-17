@@ -50,8 +50,8 @@ show_plot = False
 show_infos = False
 
 ### Configuration for preprocessing the detector data
-average_interval = 1  #Attention -> right now no other average interval than 1 is possible  -> bugfix necessary!
-sample_size = 10
+average_interval = 10  #Attention -> right now no other average interval than 1 is possible  -> bugfix necessary!
+sample_size = 15     #number of steps per sample in size of average interval
 
 ### Configuration of the deep learning model
 width_1gat = 100 # Output dimension of first GraphAttention layer
@@ -60,8 +60,8 @@ n_attn_heads = 5              # Number of attention heads in first GAT layer
 dropout_rate = 0            # Dropout rate applied to the input of GAT layers
 attn_dropout = 0            #Dropout of the adjacency matrix in the gat layer
 l2_reg = 5e-100               # Regularization rate for l2
-learning_rate = 5e-3       # Learning rate for SGD
-epochs = 3             # Number of epochs to run for
+learning_rate = 0.001      # Learning rate for optimizer
+epochs = 2            # Number of epochs to run for
 es_patience = 100             # Patience fot early stopping
 n_units = 128   #number of units of the LSTM cells
 
@@ -79,7 +79,7 @@ config.gen_e1_detectors(distance_to_tls=[5, 125], frequency=1)
 config.gen_e2_detectors(distance_to_tls=0, frequency=1)
 config.define_tls_output_file()
 
-for train_num in range(1):
+for train_num in range(2):
 
     # run the simulation to create output files
     list_X = []
@@ -107,7 +107,7 @@ for train_num in range(1):
         
         ### preprocess data for deep learning model
         preprocess = PreprocessData(sn, simu_num)
-        preproccess_end_time = preprocess.get_preprocessing_end_time(liu_runner.get_liu_lane_IDs())
+        preproccess_end_time = preprocess.get_preprocessing_end_time(liu_runner.get_liu_lane_IDs(), average_interval)
         A, X, Y, order_lanes = preprocess.preprocess_A_X_Y(
                 average_interval = average_interval, sample_size = sample_size, start = 200, end = preproccess_end_time, simu_num = simu_num)
         
@@ -214,7 +214,7 @@ for train_num in range(1):
         decoder_output = AttentionDecoder(n_units, 1)(decoder_inputs)
         model = Model(inputs=X1_in, outputs=decoder_output)
 
-        optimizer = Adagrad(lr=learning_rate)
+        optimizer = Adam(lr=learning_rate)
         model.compile(optimizer=optimizer,
                       loss='mean_squared_error',
                       weighted_metrics=['accuracy'])
@@ -272,7 +272,7 @@ liu_runner.plot_results_every_lane(show_plot = show_plot, show_infos = show_info
 
 ### preprocess data for deep learning model
 preprocess = PreprocessData(sn, simu_num)
-preproccess_end_time = preprocess.get_preprocessing_end_time(liu_runner.get_liu_lane_IDs())
+preproccess_end_time = preprocess.get_preprocessing_end_time(liu_runner.get_liu_lane_IDs(), average_interval)
 A, X_test_tens, Y_test_tens, order_lanes_test = preprocess.preprocess_A_X_Y(
         average_interval = average_interval, sample_size = sample_size, start = 200, end = preproccess_end_time, simu_num = simu_num)
 A = np.eye(N,N) + A
@@ -313,4 +313,4 @@ print("Saved attn model to disk")
 
 df_liu_results_test = pd.read_hdf(liu_runner.get_liu_results_path())
 
-store_predictions_in_df(prediction, order_lanes_test, df_liu_results_test, 200, preproccess_end_time)
+store_predictions_in_df(prediction, order_lanes_test, df_liu_results_test, 200, preproccess_end_time, average_interval)
