@@ -229,11 +229,9 @@ class LiuEtAlRunner(object):
             list_lane_names.append(lane.lane_id)
         return list_lane_names
     
-    def tls_data_to_hdf(self):
-        for lane in self.liu_lanes.values():
-            for n in range(self.get_max_num_phase()):
-               start, end =  lane.nth_cycle_interval(n)
-               #use self.green_intervals, which has (start_time, end_time) as a tupel
+    def get_liu_results_path(self):
+        return os.path.join(os.path.dirname(
+            self.sumo_network.netfile), 'liu_estimation_results' + str(self.simu_num) + '.h5')
                
 
 

@@ -28,12 +28,12 @@ class PreprocessData(object):
     def __init__(self, sumo_network, simu_num):
         self.sumo_network = sumo_network
         self.graph = self.sumo_network.get_graph()
+        self.simu_num = simu_num
         self.liu_results_path = os.path.join(os.path.dirname(
-                self.sumo_network.netfile), 'liu_estimation_results'+ str(simu_num) + '.h5')
+                self.sumo_network.netfile), 'liu_estimation_results'+ str(self.simu_num) + '.h5')
         self.detector_data_path =  os.path.join(os.path.dirname(
                 self.sumo_network.netfile), 'output')
         self.df_liu_results = pd.DataFrame()
-        self.simu_num = simu_num
 
         try:
             self.df_liu_results = pd.read_hdf(self.liu_results_path)
@@ -220,7 +220,7 @@ class PreprocessData(object):
         lane_id = filename[index_start:index_end]
         return lane_id.replace('-', '/')
 
-    def preprocess_X_Y(self,
+    def preprocess_A_X_Y(self,
                        average_interval =1,
                        sample_size = 10,
                        start = 200,
@@ -246,17 +246,14 @@ class PreprocessData(object):
                             start, end, average_interval, sample_size)
 
         A = nx.adjacency_matrix(subgraph)
+        #get order of lanes for A, X, Y
+        ord_lanes = [lane for lane in subgraph.nodes]
 
-        return A, X, Y
+        return A, X, Y, ord_lanes
 
 
     def calc_X_and_Y(self, subgraph, df_detector, df_liu_results, start_time, end_time, average_interval, sample_size):
-        #X = tf.Variable([[len(subgraph.nodes)], [8], [end_time-start_time]])
-        #X = tf.Variable([])
-        #X_tensor = np.array([]) # 3D array ->later convert with tf.convert_to_tensor
-        #Y = np.array([])
-        
-        
+
         for lane, cnt_lane in zip(subgraph.nodes, range(len(subgraph.nodes))): 
             # faster solution: just access df once and store data in arrays or lists
             lane_id = lane.replace('/', '-')
@@ -281,12 +278,6 @@ class PreprocessData(object):
                   
             Y_unsampled[:, cnt_lane, 0] = self.get_ground_truth_array(start_time, duration_in_sec, lane, average_interval)
 
-        #print('X_unsampled:', X_unsampled)
-        #print('Y_unsampled:', Y_unsampled)
-
-        #sample X_unsampled and Y_unsampled
-        #sample_size is the NUMBER of time steps we want to sample
-        #math.ceil(float(X_unsampled.size[0]/sample_size))
         num_samples = math.ceil(X_unsampled.shape[0]/sample_size)
         print('number of samples:', num_samples)
         X_sampled = np.zeros((num_samples, sample_size, len(subgraph.nodes), 9))
@@ -307,9 +298,6 @@ class PreprocessData(object):
                            np.zeros((diff_samples, len(subgraph.nodes), 1))))
                 X_sampled[cnt_sample][:][:][:] = X_zero_padding
                 Y_sampled[cnt_sample][:][:][:] = Y_zero_padding
-
-        #print('X_sampled:', X_sampled)
-        #print('Y_sampled:', Y_sampled)
 
         return X_sampled, Y_sampled
 
