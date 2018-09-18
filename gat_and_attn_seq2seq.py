@@ -52,6 +52,7 @@ show_infos = False
 ### Configuration for preprocessing the detector data
 average_interval = 10  #Attention -> right now no other average interval than 1 is possible  -> bugfix necessary!
 sample_size = 15     #number of steps per sample in size of average interval
+interpolate_ground_truth = True #interpolate ground-truth data with np.linspace
 
 ### Configuration of the deep learning model
 width_1gat = 100 # Output dimension of first GraphAttention layer
@@ -61,7 +62,7 @@ dropout_rate = 0            # Dropout rate applied to the input of GAT layers
 attn_dropout = 0            #Dropout of the adjacency matrix in the gat layer
 l2_reg = 5e-100               # Regularization rate for l2
 learning_rate = 0.001      # Learning rate for optimizer
-epochs = 2            # Number of epochs to run for
+epochs = 10            # Number of epochs to run for
 es_patience = 100             # Patience fot early stopping
 n_units = 128   #number of units of the LSTM cells
 
@@ -109,7 +110,8 @@ for train_num in range(2):
         preprocess = PreprocessData(sn, simu_num)
         preproccess_end_time = preprocess.get_preprocessing_end_time(liu_runner.get_liu_lane_IDs(), average_interval)
         A, X, Y, order_lanes = preprocess.preprocess_A_X_Y(
-                average_interval = average_interval, sample_size = sample_size, start = 200, end = preproccess_end_time, simu_num = simu_num)
+                average_interval = average_interval, sample_size = sample_size, start = 200, end = preproccess_end_time, 
+                simu_num = simu_num, interpolate_ground_truth = interpolate_ground_truth)
         
         N = len(order_lanes)
         A = np.eye(N,N) + A
@@ -259,7 +261,7 @@ print('Simulation run number', simu_num, 'finished')
 
 ### Running the Liu Estimation
 #creating liu runner object
-simu_num = 100
+simu_num = 100 #100 stands for test data and will be stored in the main directory
 liu_runner = LiuEtAlRunner(sn, store_while_running = True, use_started_halts = use_started_halts, simu_num = simu_num)
 
 # caluclating the maximum number of phases and run the estimation
@@ -274,7 +276,8 @@ liu_runner.plot_results_every_lane(show_plot = show_plot, show_infos = show_info
 preprocess = PreprocessData(sn, simu_num)
 preproccess_end_time = preprocess.get_preprocessing_end_time(liu_runner.get_liu_lane_IDs(), average_interval)
 A, X_test_tens, Y_test_tens, order_lanes_test = preprocess.preprocess_A_X_Y(
-        average_interval = average_interval, sample_size = sample_size, start = 200, end = preproccess_end_time, simu_num = simu_num)
+        average_interval = average_interval, sample_size = sample_size, start = 200, end = preproccess_end_time, 
+        simu_num = simu_num, interpolate_ground_truth = interpolate_ground_truth)
 A = np.eye(N,N) + A
 
 #reduce batch size

@@ -84,7 +84,7 @@ def plot_predictions(df_predictions, df_liu_results):
         plt.yticks(np.arange(0, 800, 50))
         plt.yticks(fontsize=18)
         plt.xlim(time_predictions[0],time_predictions[-1])
-        plt.ylim(0, 200)
+        plt.ylim(0, 800)
         
         #TODO: implement background color by using tls data
         

@@ -225,7 +225,8 @@ class PreprocessData(object):
                        sample_size = 10,
                        start = 200,
                        end = 2000,
-                       simu_num = 0):
+                       simu_num = 0,
+                       interpolate_ground_truth = False):
 
         #if not os.path.isfile(os.path.join(os.path.dirname(self.sumo_network.netfile),
         #                                   'e1_detector_data_'+ str(average_interval) + '_seconds' + str(simu_num) + '.h5')):
@@ -243,7 +244,7 @@ class PreprocessData(object):
         subgraph = self.get_subgraph(self.graph)
 
         X, Y = self.calc_X_and_Y(subgraph, df_detector, df_liu_results,
-                            start, end, average_interval, sample_size)
+                            start, end, average_interval, sample_size, interpolate_ground_truth)
 
         A = nx.adjacency_matrix(subgraph)
         #get order of lanes for A, X, Y
@@ -252,7 +253,7 @@ class PreprocessData(object):
         return A, X, Y, ord_lanes
 
 
-    def calc_X_and_Y(self, subgraph, df_detector, df_liu_results, start_time, end_time, average_interval, sample_size):
+    def calc_X_and_Y(self, subgraph, df_detector, df_liu_results, start_time, end_time, average_interval, sample_size, interpolate_ground_truth):
 
         for lane, cnt_lane in zip(subgraph.nodes, range(len(subgraph.nodes))): 
             # faster solution: just access df once and store data in arrays or lists
@@ -275,9 +276,10 @@ class PreprocessData(object):
             X_unsampled[:, cnt_lane, 5] = df_detector.loc[start_time:end_time-average_interval, (adv_detector_id, 'flow')]
             X_unsampled[:, cnt_lane, 6] = df_detector.loc[start_time:end_time-average_interval, (adv_detector_id, 'occupancy')]
             X_unsampled[:, cnt_lane, 7] = df_detector.loc[start_time:end_time-average_interval, (adv_detector_id, 'speed')]
-            X_unsampled[:, cnt_lane, 8] = self.get_tls_binary_signal(start_time, duration_in_sec, lane, average_interval)
+            X_unsampled[:, cnt_lane, 8] = self.get_tls_binary_signal(start_time, duration_in_sec, lane, average_interval, num_rows)
                   
-            Y_unsampled[:, cnt_lane, 0] = self.get_ground_truth_array(start_time, duration_in_sec, lane, average_interval)
+            Y_unsampled[:, cnt_lane, 0] = self.get_ground_truth_array(start_time, 
+                       duration_in_sec, lane, average_interval, num_rows, interpolate_ground_truth = interpolate_ground_truth)
             
             
         num_samples = math.ceil(X_unsampled.shape[0]/sample_size)
@@ -309,7 +311,7 @@ class PreprocessData(object):
         sub_graph = graph.subgraph(node_sublist)
         return sub_graph
     
-    def get_ground_truth_array(self, start_time, duration_in_sec, lane_id, average_interval):
+    def get_ground_truth_array(self, start_time, duration_in_sec, lane_id, average_interval, num_rows, interpolate_ground_truth= False):
         #ATTENTION!!! What to do when average interval is not 1??
         time_lane = self.df_liu_results.loc[:, (lane_id, 'time')] 
         arr_ground_truth = np.array([])     
@@ -318,12 +320,21 @@ class PreprocessData(object):
             phase_end = self.df_liu_results.loc[phase, (lane_id, 'phase end')]
             if phase == 0:
                 first_phase_start = phase_start
-            ground_truth = self.df_liu_results.loc[phase, (lane_id, 'ground-truth')]            
-            temp_arr_ground_truth = np.full((int(phase_end-phase_start), 1), ground_truth)            
+                previous_ground_truth = 0
+                
+            ground_truth = self.df_liu_results.loc[phase, (lane_id, 'ground-truth')] 
+            if interpolate_ground_truth == False:
+                temp_arr_ground_truth = np.full((int(phase_end-phase_start), 1), ground_truth)
+            else:
+                temp_arr_ground_truth = np.linspace(previous_ground_truth, ground_truth, num = int(phase_end-phase_start))
+                temp_arr_ground_truth = np.reshape(temp_arr_ground_truth, (int(phase_end-phase_start), 1))
+                
             if arr_ground_truth.size == 0:
                 arr_ground_truth = temp_arr_ground_truth
             else:
                 arr_ground_truth = np.vstack((arr_ground_truth, temp_arr_ground_truth))
+            
+            previous_ground_truth = ground_truth
 
         #crop the right time-window in seconds
        
@@ -333,10 +344,12 @@ class PreprocessData(object):
         #just take the points of data from the average -interval
         #example: average interval 5 sec -> take one value every five seconds!
         arr_ground_truth_average_interval = arr_ground_truth_1second[0::average_interval]
+        arr_ground_truth_average_interval = arr_ground_truth_average_interval[0:num_rows] #make sure, that no dimension problems occur
         return arr_ground_truth_average_interval
     
+        
     
-    def get_tls_binary_signal(self, start_time, duration_in_sec, lane_id, average_interval):
+    def get_tls_binary_signal(self, start_time, duration_in_sec, lane_id, average_interval, num_rows):
         time_lane = self.df_liu_results.loc[:, (lane_id, 'time')] 
         arr_tls_binary = np.array([])     
         for phase in range(len(time_lane)):
@@ -360,6 +373,7 @@ class PreprocessData(object):
         #just take the points of data from the average -interval
         #example: average interval 5 sec -> take one value every five seconds!
         arr_tls_binary_average_interval = arr_tls_binary_1second[0::average_interval]
+        arr_tls_binary_average_interval = arr_tls_binary_average_interval[0:num_rows] #make sure, that no dimension problems occur
         return arr_tls_binary_average_interval
         
     def unload_data(self):
