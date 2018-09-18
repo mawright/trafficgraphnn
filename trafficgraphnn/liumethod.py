@@ -140,6 +140,9 @@ class LiuEtAlRunner(object):
 
         return final_MAPE_IO, final_MAPE_liu
 
+    def get_total_hybrid_mape_veh(self):
+        return np.mean([lane.get_hybrid_MAPE_veh() for lane in self.liu_lanes.values()])
+
     def get_total_standard_deviation_MAPE(self, final_MAPE_IO, final_MAPE_liu):
         sum_SD_IO = 0
         sum_SD_liu = 0
@@ -573,8 +576,7 @@ class LiuLane(object):
         :rtype: Tuple of ints
         """
 
-        ## TODO define this as nth red-to-red cycle
-        assert n <= len(self.green_intervals)
+        assert n < len(self.green_intervals)
         assert n >= 0
         # if n == 0:
         #     start = 0
@@ -584,6 +586,11 @@ class LiuLane(object):
         # return start, end
         return self.green_intervals[n][1], self.green_intervals[n + 1][1]
 
+    def nth_queueing_cycle_green_interval(self, n):
+        assert n < len(self.green_intervals)
+        assert n >= 0
+
+        return self.green_intervals[n + 1]
 
     def _estimate_fixed_cycle_timings(self):
         first_green, second_green = self.green_intervals[0], self.green_intervals[1]
@@ -771,6 +778,8 @@ class LiuLane(object):
 
         next_red = self.nth_cycle_interval(num_phase + 1)[1]
 
+        assert next_red == end + self.phase_length
+
         try:
             for t in range(start, end+self.phase_length):
                 if curr_e1_adv_detector['nVehEntered'][t] == 1: #new vehicle enters the detector: start timer new timer and save old measurements
@@ -882,14 +891,14 @@ class LiuLane(object):
         self.arr_phase_start.append(start)
         self.arr_phase_end.append(end)
         #check if breakpoint A exists
-        if self.arr_breakpoint_A[len(self.arr_breakpoint_A)-1] == -1:
+        if self.arr_breakpoint_A[-1] == -1:
 
 
             #simple input-output method
             if len(self.arr_estimated_max_queue_length) == 0:
                 old_estimated_queue_nVeh = 0
             else:
-                old_estimated_queue_nVeh = self.arr_estimated_max_queue_length[len(self.arr_estimated_max_queue_length)-1]*self.k_j
+                old_estimated_queue_nVeh = self.arr_estimated_max_queue_length[-1]*self.k_j
 
             speed = self.sumolib_in_lane.getSpeed()
             time_gap = int(self.L_d/speed)
@@ -927,7 +936,11 @@ class LiuLane(object):
                 self.used_method.append(2)
             else:
                 breakpoint_C = self.arr_breakpoint_C[len(self.arr_breakpoint_C)-1]
-                self.v_2 = self.L_d/(breakpoint_B-(end-self.duration_green_light))
+                try:
+                    v_2 = self.L_d/(breakpoint_B-(end-self.duration_green_light))
+                    self.v_2 = -abs(v_2)
+                except ZeroDivisionError: # if breakpoint_B is at the beginning of the green light
+                    pass
 
                 ### Expansion I
                 #n is the number of vehicles passing detector between T_ng(start red phase) and T_C (breakpoint C)
@@ -1039,19 +1052,25 @@ class LiuLane(object):
             fig.set_figwidth(12)
 
             estimation, = plt.plot(self.arr_estimated_time_max_queue, self.arr_estimated_max_queue_length, c='r', label= 'hybrid model')
-            ground_truth, = plt.plot(self.arr_estimated_time_max_queue, self.arr_real_max_queue_length, c='b', label= 'sum started halts')
-            estimation_pure_liu, = plt.plot(self.arr_estimated_time_max_queue, self.arr_estimated_max_queue_length_pure_liu, c='m', label= 'expansion model', linestyle='--')
+            # ground_truth, = plt.plot(self.arr_estimated_time_max_queue, self.arr_real_max_queue_length, c='b', label= 'sum started halts')
+            # estimation_pure_liu, = plt.plot(self.arr_estimated_time_max_queue, self.arr_estimated_max_queue_length_pure_liu, c='m', label= 'expansion model', linestyle='--')
             max_length_queue, = plt.plot(self.arr_estimated_time_max_queue, self.arr_maxJamLengthInMeters, c='k', label= 'maxJamLength e2 detector', linestyle='--')
 
+            y_lim = max(map(max, self.arr_estimated_max_queue_length, self.arr_maxJamLengthInMeters))
+            x_lim = max(self.arr_estimated_time_max_queue)
 
-            plt.legend(handles=[estimation, ground_truth, estimation_pure_liu, max_length_queue], fontsize = 18)
+            plt.legend(handles=[
+                estimation,
+                # ground_truth,
+                # estimation_pure_liu,
+                max_length_queue], fontsize = 18)
 
             plt.xticks(np.arange(0, 6000, 250))
             plt.xticks(fontsize=18)
-            plt.yticks(np.arange(0, 800, 50))
+            plt.yticks(np.arange(0, y_lim, 50))
             plt.yticks(fontsize=18)
-            plt.xlim(420,1400)
-            plt.ylim(0, 200)
+            plt.xlim(420, x_lim)
+            plt.ylim(0, y_lim)
             if self.sumolib_in_lane.getID()== 'bottom2to2/0_2':
                 plt.ylim(0, 700)
             plt.xlabel('time [s]', fontsize = 18)
