@@ -147,7 +147,10 @@ class SumoNetwork(object):
 
     def run(self, return_output=False):
         out = subprocess.check_output(self.get_sumo_command())
-        _logger.info('sumo returned: %s', out)
+        if out is not None and len(out) > 0:
+            _logger.info('sumo returned: %s', out)
+        elif len(out) == 0:
+            _logger.info('sumo completed.')
         if return_output:
             return out
 
