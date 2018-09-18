@@ -23,6 +23,7 @@ from keras.optimizers import Adam, SGD, Adagrad
 from keras.regularizers import l2
 from trafficgraphnn.batch_graph_attention_layer import  BatchGraphAttention
 from keras.utils.vis_utils import plot_model
+from trafficgraphnn.attention_decoder import AttentionDecoder
 
 #------ Configuration of the whole simulation -------
 
@@ -33,7 +34,7 @@ grid_length = 600 #meters
 num_lanes =3
 
 ### Configuration of the Simulation ###
-end_time = 1500 #seconds
+end_time = 800 #seconds
 period = 0.4
 binomial = 2
 seed = 50

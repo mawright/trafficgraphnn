@@ -231,6 +231,11 @@ class LiuEtAlRunner(object):
             list_lane_names.append(lane.lane_id)
         return list_lane_names
 
+    def get_liu_results_path(self):
+        return os.path.join(os.path.dirname(
+            self.sumo_network.netfile), 'liu_estimation_results' + str(self.simu_num) + '.h5')
+
+
 
 class LiuIntersection(object):
     # LiuLane objects corresponding to its component
@@ -299,10 +304,10 @@ class LiuIntersection(object):
 
     def add_estimation_to_df(self, while_running, phase_cnt):
         for lane in self.liu_lanes.values():
-            time, real_queue, estimated_queue, estimated_queue_pure_liu, phase_start, phase_end = lane.get_estimation_data(while_running)
+            time, real_queue, estimated_queue, estimated_queue_pure_liu, phase_start, phase_end, tls_start, tls_end = lane.get_estimation_data(while_running)
 
             lane_ID = lane.lane_id
-            iterables = [[lane_ID], ['time', 'ground-truth', 'estimated hybrid', 'estimated pure liu', 'phase start', 'phase end']]
+            iterables = [[lane_ID], ['time', 'ground-truth', 'estimated hybrid', 'estimated pure liu', 'phase start', 'phase end', 'tls start', 'tls end']]
             index = pd.MultiIndex.from_product(iterables, names=['lane', 'values'])
             if while_running == False:
                 df_lane = pd.DataFrame(index = np.arange(1, len(time)+1), columns = index)
@@ -315,6 +320,8 @@ class LiuIntersection(object):
             df_lane[lane_ID, 'estimated pure liu'] = estimated_queue_pure_liu
             df_lane[lane_ID, 'phase start'] = phase_start
             df_lane[lane_ID, 'phase end'] = phase_end
+            df_lane[lane_ID, 'tls start'] = tls_start
+            df_lane[lane_ID, 'tls end'] = tls_end
 
             self.parent.df_estimation_results = pd.concat([self.parent.df_estimation_results, df_lane], axis = 1)
 
@@ -414,6 +421,8 @@ class LiuLane(object):
         self.arr_phase_start = []
         self.arr_phase_end = []
         self.green_intervals = []
+        self.arr_green_phase_start = []
+        self.arr_green_phase_end = []
 
         self.prev_cycle_parsed = None
         self.this_cycle_parsed = None
@@ -585,6 +594,23 @@ class LiuLane(object):
         # end = self.green_intervals[n][0]
         # return start, end
         return self.green_intervals[n][1], self.green_intervals[n + 1][1]
+
+    def nth_green_phase_intervals(self, n):
+        """
+        Returns the nth time interval of green light for this lane: (start, end)
+
+        "start" corresponds to start of green phase
+        "end" corresponds to end of green phase
+
+        :param n: Index of desired cycle time interval
+        :type n: int
+        :return: Start and end of cycle time interval
+        :rtype: Tuple of ints
+        """
+        assert n <= len(self.green_intervals)
+        assert n >= 0
+
+        return self.green_intervals[n+1][0], self.green_intervals[n+1][1]
 
     def nth_queueing_cycle_green_interval(self, n):
         assert n < len(self.green_intervals)
@@ -890,6 +916,9 @@ class LiuLane(object):
 
         self.arr_phase_start.append(start)
         self.arr_phase_end.append(end)
+        green_phase_start, green_phase_end = self.nth_green_phase_intervals(num_phase)
+        self.arr_green_phase_start.append(green_phase_start)
+        self.arr_green_phase_end.append(green_phase_end)
         #check if breakpoint A exists
         if self.arr_breakpoint_A[-1] == -1:
 
@@ -1165,14 +1194,18 @@ class LiuLane(object):
                    self.arr_estimated_max_queue_length[len(self.arr_estimated_max_queue_length)-1],
                    self.arr_estimated_max_queue_length_pure_liu[len(self.arr_estimated_max_queue_length_pure_liu)-1],
                    self.arr_phase_start[len(self.arr_phase_start)-1],
-                   self.arr_phase_end[len(self.arr_phase_end)-1])
+                   self.arr_phase_end[len(self.arr_phase_end)-1],
+                   self.arr_green_phase_start[len(self.arr_green_phase_start)-1],
+                   self.arr_green_phase_end[len(self.arr_green_phase_end)-1])
 
         else:
             return (self.arr_estimated_time_max_queue, self.arr_real_max_queue_length,
                     self.arr_estimated_max_queue_length,
                     self.arr_estimated_max_queue_length_pure_liu,
                     self.arr_phase_start,
-                    self.arr_phase_end)
+                    self.arr_phase_end,
+                    self.arr_green_phase_start,
+                    self.arr_green_phase_end)
 
     def get_lane_ID(self):
         return self.sumolib_in_lane.getID()

@@ -136,3 +136,7 @@ logs/
 savio\ ws/
 models/
 pylintrc
+*.h5
+*.csv
+*.py.orig
+*.sh

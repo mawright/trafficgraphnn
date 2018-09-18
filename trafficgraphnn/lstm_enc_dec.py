@@ -3,7 +3,7 @@
 """
 Created on Wed Aug 15 09:59:45 2018
 Functions from "How to Develop an Encoder-Decoder Model for Sequence-to-Sequence
-Prediction in Keras" from Jason Brownlee. 
+Prediction in Keras" from Jason Brownlee.
 Link: https://machinelearningmastery.com/develop-encoder-decoder-model-sequence-sequence-prediction-keras/
 """
 import logging
@@ -18,13 +18,13 @@ _logger = logging.getLogger(__name__)
 def define_models(n_input, n_output, n_units):
     """
     The function takes 3 arguments, as follows:
-    
+
     n_input: The cardinality of the input sequence, e.g. number of features, words, or characters for each time step.
     n_output: The cardinality of the output sequence, e.g. number of features, words, or characters for each time step.
     n_units: The number of cells to create in the encoder and decoder models, e.g. 128 or 256.
-    
+
     The function then creates and returns 3 models, as follows:
-    
+
     train: Model that can be trained given source, target, and shifted target sequences.
     inference_encoder: Encoder model used when making a prediction for a new source sequence.
     inference_decoder Decoder model use when making a prediction for a new source sequence.
@@ -57,9 +57,9 @@ def define_models(n_input, n_output, n_units):
 # generate target given source sequence
 def predict_sequence(infenc, infdec, source, n_steps, cardinality):
     """
-    The function below named predict_sequence() can be used after the model 
+    The function below named predict_sequence() can be used after the model
     is trained to generate a target sequence given a source sequence.
-    
+
     This function takes 5 arguments as follows:
 
     infenc: Encoder model used when making a prediction for a new source sequence.
