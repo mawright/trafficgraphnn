@@ -40,20 +40,22 @@ def resample_predictions(predictions):
     
     return predictions_resampled
 
-def store_predictions_in_df(predictions, order_lanes, df_liu_results, start_time, end_time, average_interval):
+def store_predictions_in_df(predictions, order_lanes, start_time, end_time, average_interval, Aeye = False):
     resampled_predictions = resample_predictions(predictions)
     resampled_predictions = np.transpose(resampled_predictions)
-    #print('resampled_predictions.shape (transpose):', resampled_predictions.shape)
-    #print('resampled_predictions (transpose):', resampled_predictions)
-    #list_columns = df_liu_results.columns.unique(level = 'lane')
-    #print('list_coumns:', list_columns)
+
     df_prediction_results = pd.DataFrame(data = resampled_predictions[:,:], 
                                          index = range(start_time, resampled_predictions.shape[0] * average_interval + start_time, average_interval), 
                                          columns = order_lanes)
-    df_prediction_results.to_hdf('nn_prediction_results.h5', key = 'prediciton_results')
-    print('Stored prediction results in dataframe')
+    if Aeye == False:
+        df_prediction_results.to_hdf('nn_prediction_results.h5', key = 'prediciton_results')
+        print('Stored prediction results in dataframe')
     
-def plot_predictions(df_predictions, df_liu_results):
+    if Aeye == True:
+        df_prediction_results.to_hdf('nn_prediction_results_Aeye.h5', key = 'prediciton_results')
+        print('Stored prediction Aeye results in dataframe')        
+    
+def plot_predictions(df_predictions, df_liu_results, df_predictions_Aeye):
     list_lanes = df_predictions.columns
     time_predictions = df_predictions.index.values
     #print('time_predictions:', time_predictions)
@@ -77,14 +79,20 @@ def plot_predictions(df_predictions, df_liu_results):
         dl_prediction, = plt.plot(time_predictions, df_predictions.loc[:, lane],
                                    c='g', label= 'deep net')
         
-        plt.legend(handles=[ground_truth, liu_estimation, dl_prediction], fontsize = 18)
+
+        #if df_predictions_Aeye == None:
+        #    plt.legend(handles=[ground_truth, liu_estimation, dl_prediction], fontsize = 18)
+        #else:
+        dl_prediction_Aeye, = plt.plot(time_predictions, df_predictions_Aeye.loc[:, lane],
+                       c='k', label= 'deep net Aeye')        
+        plt.legend(handles=[ground_truth, liu_estimation, dl_prediction, dl_prediction_Aeye], fontsize = 18)
                 
         plt.xticks(np.arange(0, 6000, 100))
         plt.xticks(fontsize=18)
         plt.yticks(np.arange(0, 800, 50))
         plt.yticks(fontsize=18)
         plt.xlim(time_predictions[0],time_predictions[-1])
-        plt.ylim(0, 800)
+        plt.ylim(0, 600)
         
         #TODO: implement background color by using tls data
         

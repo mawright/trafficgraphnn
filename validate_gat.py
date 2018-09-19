@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Thu Sep 13 11:09:16 2018
+Created on Wed Sep 19 10:34:55 2018
 
 @author: simon
 """
@@ -31,8 +31,6 @@ from trafficgraphnn.attention_decoder import AttentionDecoder
 from trafficgraphnn.postprocess_predictions import store_predictions_in_df, resample_predictions
 
 #------ Configuration of the whole simulation -------
-
-
 ### Configuration of the Network ###
 grid_number = 3 #TODO: make num lanes adjustable
 #N = 120 #number of lanes after getting subgraph
@@ -76,81 +74,18 @@ n_units = 128   #number of units of the LSTM cells
 
 #----------------------------------------------------
 
-
-### Creating Network and running simulation
-config = ConfigGenerator(net_name='test_net')
-
-# Parameters for network, trips and sensors (binomial must be an integer!!!)
-config.gen_grid_network(grid_number = grid_number, grid_length = grid_length, num_lanes = num_lanes, simplify_tls = False)
-config.gen_rand_trips(period = period_1_2, binomial = binomial, seed = seed, end_time = end_time, fringe_factor = fringe_factor)
-
-config.gen_e1_detectors(distance_to_tls=[5, 125], frequency=1)
-config.gen_e2_detectors(distance_to_tls=0, frequency=1)
-config.define_tls_output_file()
-
 for train_num in range(6):
     
-    if train_num <= 1:
-        period = period_1_2
-    elif train_num >=2 and train_num <=3:
-        period = period_3_4
-    else:
-        period = period_5
-            
-
-    # run the simulation to create output files
-    list_X = []
-    list_Y = []
-    list_A = []
-    
-    for simu_num in range(2):
-        config.gen_rand_trips(period = period, binomial = binomial, seed = seed, end_time = end_time, fringe_factor = fringe_factor)
-        sn = SumoNetwork.from_gen_config(config, lanewise=True)
-        sn.run()
-        print('Simulation run number', simu_num, 'finished')
-    
-    
-        ### Running the Liu Estimation
-        #creating liu runner object
-        liu_runner = LiuEtAlRunner(sn, store_while_running = True, use_started_halts = use_started_halts, simu_num = simu_num)
-        
-        # caluclating the maximum number of phases and run the estimation
-        max_num_phase = liu_runner.get_max_num_phase(end_time)
-        liu_runner.run_up_to_phase(max_num_phase)
-        
-        # show results for every lane
-        liu_runner.plot_results_every_lane(show_plot = show_plot, show_infos = show_infos)
-        
-        
-        ### preprocess data for deep learning model
-        preprocess = PreprocessData(sn, simu_num)
-        preproccess_end_time = preprocess.get_preprocessing_end_time(liu_runner.get_liu_lane_IDs(), average_interval)
-        A, X, Y, order_lanes = preprocess.preprocess_A_X_Y(
-                average_interval = average_interval, sample_size = sample_size, start = 200, end = preproccess_end_time, 
-                simu_num = simu_num, interpolate_ground_truth = interpolate_ground_truth)
-        
-        N = len(order_lanes)
-        A = np.eye(N,N) + A
-        
-        list_A.append(A)
-        list_X.append(X)
-        list_Y.append(Y)
-        
-        
     ### ATTENTION: The arrangement of nodes can be shuffled between X_train_tens, X_val_tens and X_test_tens!!! Is this a problem???
-    X_train_tens = list_X[0]
-    X_val_tens = list_X[1]   
-    Y_train_tens = list_Y[0]
-    Y_val_tens = list_Y[1]    
-    A = list_A[0] # A does not change 
+    X_train_tens = np.load('X_train_tens' + str(train_num) + '.npy')
+    X_val_tens = np.load('X_val_tens' + str(train_num) + '.npy') 
+    Y_train_tens = np.load('Y_train_tens' + str(train_num) + '.npy')
+    Y_val_tens = np.load('Y_val_tens' + str(train_num) + '.npy')   
     
-        #-----------Store X, Y ----------------
-    np.save('X_train_tens' + str(train_num) + '.npy', X_train_tens)
-    np.save('Y_train_tens' + str(train_num) + '.npy', Y_train_tens)
-    np.save('X_val_tens' + str(train_num) + '.npy', X_val_tens)
-    np.save('Y_val_tens' + str(train_num) + '.npy', Y_val_tens)
-    print('save X and Y to npy file')
-    #--------------------------------------
+    print('loaded train data from train_num',  train_num)
+    
+    N = 120
+    A = np.eye(N,N) # A does not change 
     
     
     print('X_train_tens.shape:', X_train_tens.shape)
@@ -265,7 +200,6 @@ for train_num in range(6):
     #validation
     X1_val = K.reshape(X_val_tens, (sample_size_val*N, timesteps_per_sample, F))
     Y_val = K.reshape(Y_val_tens, (sample_size_val*N, timesteps_per_sample, 1))
-    
     print('X1_val.shape:', X1_val.shape)
     print('Y_val.shape:', Y_val.shape)
        
@@ -284,48 +218,20 @@ for train_num in range(6):
 
 ### Predict results ###
 
-#run simulation for generating test data
-config.gen_rand_trips(period = period_test, binomial = binomial, seed = seed, end_time = end_time, fringe_factor = fringe_factor)
-sn = SumoNetwork.from_gen_config(config, lanewise=True)
-sn.run()
-print('Simulation run number', simu_num, 'finished')
+X_test_tens = np.load('X_test_tens.npy')
+Y_test_tens = np.load('Y_test_tens.npy')
+preproccess_end_time = np.load('preproccess_end_time.npy')
 
+with open("order_lanes_test.txt", "rb") as fp:   # Unpickling
+    order_lanes_test = pickle.load(fp)
 
-### Running the Liu Estimation
-#creating liu runner object
-simu_num = 100 #100 stands for test data and will be stored in the main directory
-liu_runner = LiuEtAlRunner(sn, store_while_running = True, use_started_halts = use_started_halts, simu_num = simu_num)
+print('loaded test data from train_num')
 
-# caluclating the maximum number of phases and run the estimation
-max_num_phase = liu_runner.get_max_num_phase(end_time)
-liu_runner.run_up_to_phase(max_num_phase)
-
-# show results for every lane
-liu_runner.plot_results_every_lane(show_plot = show_plot, show_infos = show_infos)
-
-
-### preprocess data for deep learning model
-preprocess = PreprocessData(sn, simu_num)
-preproccess_end_time = preprocess.get_preprocessing_end_time(liu_runner.get_liu_lane_IDs(), average_interval)
-A, X_test_tens, Y_test_tens, order_lanes_test = preprocess.preprocess_A_X_Y(
-        average_interval = average_interval, sample_size = sample_size, start = 200, end = preproccess_end_time, 
-        simu_num = simu_num, interpolate_ground_truth = interpolate_ground_truth)
-A = np.eye(N,N) + A
+print('loaded order of lanes:', order_lanes_test)
 
 #reduce batch size
 X_test_tens = X_train_tens[0:16, :, :, :]
 Y_test_tens = Y_train_tens[0:16, :, :, :]
-
-#--store test data ----------
-np.save('X_test_tens.npy', X_test_tens)
-np.save('Y_test_tens.npy', Y_test_tens)
-np.save('preproccess_end_time.npy', preproccess_end_time)
-
-with open("order_lanes_test.txt", "wb") as fp:   #Pickling
-    pickle.dump(order_lanes_test, fp)
-
-print('save X,Y and order of lanes for testing to npy file')
-#------------------
     
 #test
 sample_size_test = int(X_test_tens.shape[0])  
@@ -333,7 +239,6 @@ X1_test = K.reshape(X_test_tens, (sample_size_test*N, timesteps_per_sample, F))
 Y_test = K.reshape(Y_test_tens, (sample_size_test*N, timesteps_per_sample, 1))
 print('X1_test.shape:', X1_test.shape)
 print('Y_test.shape:', Y_test.shape)
-
 
 Y_hat = model.predict(X1_test, verbose = 1, steps = 1) 
 print('Y_hat.shape:', Y_hat.shape)
@@ -358,6 +263,5 @@ with open("models/attn_model.json", "w") as json_file:
 model.save_weights("models/attn_model_weights.h5")
 print("Saved attn model to disk")
 
-df_liu_results_test = pd.read_hdf(liu_runner.get_liu_results_path())
 
-store_predictions_in_df(prediction, order_lanes_test, 200, preproccess_end_time, average_interval, Aeye = False)
+store_predictions_in_df(prediction, order_lanes_test, 200, preproccess_end_time, average_interval, Aeye = True)
