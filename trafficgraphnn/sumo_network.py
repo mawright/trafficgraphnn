@@ -115,7 +115,8 @@ class SumoNetwork(object):
             '--route-files', self.routefile,
             '--no-step-log', # remove progress bar
             '--collision.action', 'none', # don't don't teleport vehicles when they collide
-            '--time-to-teleport', '-1', # remove teleporting when vehicles queue for extended periods
+            '--time-to-teleport', '-1', # remove teleporting when vehicles queue for extended periods,
+            '--device.rerouting.probability', '.5', # give cars the ability to reroute themselves so queues won't grow unboundedly
         ]
 
         if len(self.additional_files) > 0:
@@ -146,7 +147,10 @@ class SumoNetwork(object):
 
     def run(self, return_output=False):
         out = subprocess.check_output(self.get_sumo_command())
-        _logger.info('sumo returned: %s', out)
+        if out is not None and len(out) > 0:
+            _logger.info('sumo returned: %s', out)
+        elif len(out) == 0:
+            _logger.info('sumo completed.')
         if return_output:
             return out
 

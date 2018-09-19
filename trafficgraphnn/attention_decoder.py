@@ -2,18 +2,18 @@
 # -*- coding: utf-8 -*-
 """
 Created on Thu Sep 13 11:02:57 2018
-Source: 
-https://github.com/datalogue/keras-attention 
+Source:
+https://github.com/datalogue/keras-attention
 (https://machinelearningmastery.com/encoder-decoder-attention-sequence-to-sequence-prediction-keras/)
 
-Description: 
+Description:
 https://medium.com/datalogue/attention-in-keras-1892773a4f22
 """
 
 import tensorflow as tf
 from keras import backend as K
 from keras import regularizers, constraints, initializers, activations
-from keras.layers.recurrent import Recurrent 
+from keras.layers.recurrent import Recurrent
 from trafficgraphnn.time_distributed_dense import _time_distributed_dense
 from keras.engine import InputSpec
 
@@ -287,7 +287,7 @@ class AttentionDecoder(Recurrent):
 #            + K.dot(stm, self.U_o)
 #            + K.dot(context, self.C_o)
 #            + self.b_o)
-        
+
         yt = activations.linear(
             K.dot(ytm, self.W_o)
             + K.dot(stm, self.U_o)

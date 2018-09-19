@@ -141,3 +141,4 @@ pylintrc
 *.npy
 *.sh
 *.txt
+*.py.orig

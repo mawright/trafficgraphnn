@@ -13,6 +13,7 @@ import sumolib
 
 from trafficgraphnn.utils import get_sumo_tools_dir, get_net_dir, get_net_name
 from trafficgraphnn.genconfig import detectors, tls_config
+from trafficgraphnn.gendata import RandTripGeneratorWrapper
 
 if six.PY2:
     try:
@@ -124,76 +125,20 @@ class ConfigGenerator(object):
         _logger.debug('Wrote random network to %s', self.net_output_file)
 
     def gen_rand_trips(
-        self, tripfile_name=None, routefile_name=None,
+        self, tag='rand',
         period=None, binomial=None, seed=None,
         start_time=0, end_time=3600, thru_only=True, fringe_factor=100,
-        trip_attrib="departLane=\"best\" departSpeed=\"max\" departPos=\"random\"",
+        trip_attrib=('departLane="best" departSpeed="max" departPos="random" '
+                     'speedFactor="normc(1,0.1,0.2,2)"')
     ):
-        if tripfile_name is None:
-            tripfile_name = '{}_rand_trips.trips.xml'.format(self.net_name)
-        if routefile_name is None:
-            routefile_name = '{}_rand_routes.routes.xml'.format(self.net_name)
-        if seed is None:
-            seed = 100
-        np.random.seed(seed)
+        rando = RandTripGeneratorWrapper(
+            self.net_output_file, period, binomial, start_time, end_time, seed,
+            thru_only, trip_attrib=trip_attrib)
 
-        self.tripfile = os.path.join(self.net_config_dir, tripfile_name)
-        self.routefile = os.path.join(self.net_config_dir, routefile_name)
+        rando.generate(tag)
 
-        tools_dir = get_sumo_tools_dir()
-        pyfile = os.path.join(tools_dir, 'randomTrips.py')
-
-        if binomial is None:
-            binomial = np.random.randint(1, 10)
-        if period is None:
-            period = np.random.uniform(0.2, 1.2)
-        # lower period leads to more cars
-
-        if thru_only:
-            trip_weights_prefix = os.path.join(
-                self.net_config_dir, 'trip-weights-temp')
-            weight_file_args = [
-                sys.executable, pyfile,
-                '--net-file', self.net_output_file,
-                '--output-trip-file', self.tripfile,
-                '--weights-output-prefix', trip_weights_prefix
-            ]
-            weight_file_proc = subprocess.Popen(weight_file_args,
-                                                stdout=subprocess.PIPE,
-                                                stderr=subprocess.STDOUT,
-                                                universal_newlines=True)
-            out, _ = weight_file_proc.communicate()
-            if out is not None:
-                _logger.debug('Returned %s', out)
-            set_non_fringe_weights_to_zero(
-                trip_weights_prefix, self.net_output_file)
-
-        randtrip_args = [
-            sys.executable, pyfile,
-            '--net-file', self.net_output_file,
-            '--output-trip-file', self.tripfile,
-            '--route-file', self.routefile,
-            '--binomial', str(binomial),
-            '--period', str(period),
-            '--begin', str(start_time),
-            '--end', str(end_time),
-            '--seed', str(seed),
-            '--fringe-factor', str(fringe_factor),
-            '--trip-attributes', trip_attrib,
-        ]
-        if thru_only:
-            randtrip_args.extend([
-                '--weights-prefix', trip_weights_prefix])
-
-        _logger.debug('Calling %s', ' '.join(randtrip_args))
-        tripgenproc = subprocess.Popen(randtrip_args,
-                                       stdout=subprocess.PIPE,
-                                       stderr=subprocess.STDOUT,
-                                       universal_newlines=True)
-        out, _ = tripgenproc.communicate()
-        if out is not None:
-            _logger.debug('Returned %s', out)
-        _logger.debug('Wrote random route file to %s', self.routefile)
+        self.tripfile = rando.tripfile
+        self.routefile = rando.routefile
 
     def gen_detectors(
         self,
@@ -306,30 +251,6 @@ def define_tls_output_file(
         os.makedirs(os.path.dirname(output_file))
 
     return os.path.realpath(addl_file)
-
-
-def set_non_fringe_weights_to_zero(weights_file_prefix, netfile):
-    net = sumolib.net.readNet(netfile)
-
-    src_def_file = weights_file_prefix + '.src.xml'
-    dst_def_file = weights_file_prefix + '.dst.xml'
-    src_etree = etree.parse(src_def_file)
-    for element in src_etree.getroot().iter('edge'):
-        edge = net.getEdge(element.attrib['id'])
-        if edge.is_fringe(edge.getIncoming()):
-            element.attrib['value'] = '1.00'  # this is a source edge
-        else:
-            element.attrib['value'] = '0.00'  # not a source edge
-    src_etree.write(src_def_file)
-
-    dst_etree = etree.parse(dst_def_file)
-    for element in dst_etree.getroot().iter('edge'):
-        edge = net.getEdge(element.attrib['id'])
-        if edge.is_fringe(edge.getOutgoing()):
-            element.attrib['value'] = '1.00'  # this is a sink edge
-        else:
-            element.attrib['value'] = '0.00'  # not a sink edge
-    dst_etree.write(dst_def_file)
 
 
 def remove_e1_lengths(detector_def_file):
