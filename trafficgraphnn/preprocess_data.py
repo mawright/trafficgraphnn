@@ -251,10 +251,10 @@ class PreprocessData(object):
         ord_lanes = [lane for lane in subgraph.nodes]
         N = len(ord_lanes)
         
-        A_neighbors = self.get_A_for_neighboring_lanes(ord_lanes) #Skip using neighbors for the beginning
+        #A_neighbors = self.get_A_for_neighboring_lanes(ord_lanes) #Skip using neighbors for the beginning
         
-        A = np.eye(N,N) + A + np.transpose(A) + A_neighbors
-        #A = np.eye(N,N) + A + np.transpose(A)
+        #A = np.eye(N,N) + A + np.transpose(A) + A_neighbors
+        A = np.eye(N,N) + A + np.transpose(A)
         A = np.minimum(A, np.ones((N,N)))
 
         return A, X, Y, ord_lanes
