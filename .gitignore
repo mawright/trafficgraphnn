@@ -142,3 +142,4 @@ pylintrc
 *.sh
 *.txt
 *.py.orig
+.gitignore.orig
