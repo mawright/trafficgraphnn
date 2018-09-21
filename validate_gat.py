@@ -77,10 +77,10 @@ n_units = 128   #number of units of the LSTM cells
 for train_num in range(6):
     
     ### ATTENTION: The arrangement of nodes can be shuffled between X_train_tens, X_val_tens and X_test_tens!!! Is this a problem???
-    X_train_tens = np.load('X_train_tens' + str(train_num) + '.npy')
-    X_val_tens = np.load('X_val_tens' + str(train_num) + '.npy') 
-    Y_train_tens = np.load('Y_train_tens' + str(train_num) + '.npy')
-    Y_val_tens = np.load('Y_val_tens' + str(train_num) + '.npy')   
+    X_train_tens = np.load('train_test_data/X_train_tens' + str(train_num) + '.npy')
+    X_val_tens = np.load('train_test_data/X_val_tens' + str(train_num) + '.npy') 
+    Y_train_tens = np.load('train_test_data/Y_train_tens' + str(train_num) + '.npy')
+    Y_val_tens = np.load('train_test_data/Y_val_tens' + str(train_num) + '.npy')   
     
     print('loaded train data from train_num',  train_num)
     
@@ -139,7 +139,10 @@ for train_num in range(6):
             X2 = tf.Variable(X2) 
             return X2
         
-        #define the model
+        def reshape_skip_LSTM(x):
+            return K.reshape(x, (-1, F_))
+        
+                #define the model
         A_tf = tf.convert_to_tensor(A, dtype=np.float32)
         
         X1_in = Input(batch_shape=(sample_size_train*N, timesteps_per_sample, F))
@@ -176,7 +179,7 @@ for train_num in range(6):
         decoder_inputs = LSTM(n_units,
              batch_input_shape=(sample_size_train*N, timesteps_per_sample, F), 
              return_sequences=True)(encoder_inputs)
-        decoder_output = AttentionDecoder(n_units, 16)(decoder_inputs) #Attention! 5 output features now!
+        decoder_output = AttentionDecoder(n_units, 16)(decoder_inputs) #Attention! 16 output features now!
         
         dense2 = Dense(1, activation = linear)(decoder_output)
         
@@ -218,11 +221,11 @@ for train_num in range(6):
 
 ### Predict results ###
 
-X_test_tens = np.load('X_test_tens.npy')
-Y_test_tens = np.load('Y_test_tens.npy')
-preproccess_end_time = np.load('preproccess_end_time.npy')
+X_test_tens = np.load('train_test_data/X_test_tens.npy')
+Y_test_tens = np.load('train_test_data/Y_test_tens.npy')
+preproccess_end_time = np.load('train_test_data/preproccess_end_time.npy')
 
-with open("order_lanes_test.txt", "rb") as fp:   # Unpickling
+with open("train_test_data/order_lanes_test.txt", "rb") as fp:   # Unpickling
     order_lanes_test = pickle.load(fp)
 
 print('loaded test data from train_num')

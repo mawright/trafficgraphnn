@@ -249,6 +249,13 @@ class PreprocessData(object):
         A = nx.adjacency_matrix(subgraph)
         #get order of lanes for A, X, Y
         ord_lanes = [lane for lane in subgraph.nodes]
+        N = len(ord_lanes)
+        
+        A_neighbors = self.get_A_for_neighboring_lanes(ord_lanes) #Skip using neighbors for the beginning
+        
+        A = np.eye(N,N) + A + np.transpose(A) + A_neighbors
+        #A = np.eye(N,N) + A + np.transpose(A)
+        A = np.minimum(A, np.ones((N,N)))
 
         return A, X, Y, ord_lanes
 
@@ -389,3 +396,22 @@ class PreprocessData(object):
             end_time = min(list_end_time)-10 #10seconds reserve, otherwise complications occur
             end_time = int(end_time/average_interval) * average_interval #make sure, that end time is matching with average_interval
             return end_time
+        
+    def get_A_for_neighboring_lanes(self, order_lanes):
+        indexes = [] #list with tuple of indexes (input_lane_index, neighbor_lane_index)
+        for lane_id, input_lane_index in zip(order_lanes, range(len(order_lanes))):
+            neighbor_lanes = self.sumo_network.get_neighboring_lanes(lane_id, include_input_lane=True)
+            for neighbor in neighbor_lanes:
+                if neighbor in order_lanes:
+                    neighbor_lane_index = order_lanes.index(neighbor)
+                    indexes.append((input_lane_index, neighbor_lane_index))
+        
+        N = len(order_lanes)
+        A = np.zeros((N, N))
+        for index_tuple in indexes:
+            A[index_tuple[0], index_tuple[1]] = 1
+        A = A + np.transpose(A)
+        A = np.minimum(A, np.ones((N,N)))
+        return A
+                
+                
