@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import math
 import pickle
+import os
 from trafficgraphnn.liumethod import LiuEtAlRunner
 
 from trafficgraphnn.preprocess_data import PreprocessData
@@ -43,18 +44,18 @@ num_lanes =3
 end_time = 1500 #seconds
 
 period_1_2 = 0.3
-period_3_4 = 0.35
-period_5 = 0.4
+period_3_4 = 0.7
+period_5 = 0.8
 
-period_test = 0.4
+period_test = 0.8
 
-binomial = 2
+binomial = None #commented out in gendata.py
 seed = 50
 fringe_factor = 1000
 
 ### Configuration of Liu estimation ###
 use_started_halts = False #use startet halts as ground truth data or maxJamLengthInMeters
-show_plot = False
+show_plot = True
 show_infos = False
 
 ### Configuration for preprocessing the detector data
@@ -75,7 +76,13 @@ es_patience = 100             # Patience fot early stopping
 n_units = 128   #number of units of the LSTM cells
 
 #----------------------------------------------------
-
+path = 'train_test_data/'
+try:  
+    os.mkdir(path)
+except OSError:  
+    print ("Creation of the directory %s failed" % path)
+else:  
+    print ("Successfully created the directory %s " % path)
 
 ### Creating Network and running simulation
 config = ConfigGenerator(net_name='test_net')
@@ -128,10 +135,7 @@ for train_num in range(6):
         A, X, Y, order_lanes = preprocess.preprocess_A_X_Y(
                 average_interval = average_interval, sample_size = sample_size, start = 200, end = preproccess_end_time, 
                 simu_num = simu_num, interpolate_ground_truth = interpolate_ground_truth)
-        
-        N = len(order_lanes)
-        A = np.eye(N,N) + A
-        
+    
         list_A.append(A)
         list_X.append(X)
         list_Y.append(Y)
@@ -144,25 +148,25 @@ for train_num in range(6):
     Y_val_tens = list_Y[1]    
     A = list_A[0] # A does not change 
     
-        #-----------Store X, Y ----------------
-    np.save('X_train_tens' + str(train_num) + '.npy', X_train_tens)
-    np.save('Y_train_tens' + str(train_num) + '.npy', Y_train_tens)
-    np.save('X_val_tens' + str(train_num) + '.npy', X_val_tens)
-    np.save('Y_val_tens' + str(train_num) + '.npy', Y_val_tens)
+    #-----------Store X, Y ----------------
+    np.save('train_test_data/X_train_tens' + str(train_num) + '.npy', X_train_tens)
+    np.save('train_test_data/Y_train_tens' + str(train_num) + '.npy', Y_train_tens)
+    np.save('train_test_data/X_val_tens' + str(train_num) + '.npy', X_val_tens)
+    np.save('train_test_data/Y_val_tens' + str(train_num) + '.npy', Y_val_tens)
+    np.save('train_test_data/A' + str(train_num) + '.npy', A)
     print('save X and Y to npy file')
     #--------------------------------------
-    
     
     print('X_train_tens.shape:', X_train_tens.shape)
     print('X_val_tens.shape:', X_val_tens.shape)
     
     print('now reduce batch size')
-    ### delete reduction later!!!
-    # reduce batch size
-    X_train_tens = X_train_tens[0:16, :, :, :]
-    Y_train_tens = Y_train_tens[0:16, :, :, :]
-    X_val_tens = X_val_tens[0:16, :, :, :]
-    Y_val_tens = Y_val_tens[0:16, :, :, :]
+#    ### delete reduction later!!!
+#    # reduce batch size
+#    X_train_tens = X_train_tens[0:16, :, :, :]
+#    Y_train_tens = Y_train_tens[0:16, :, :, :]
+#    X_val_tens = X_val_tens[0:16, :, :, :]
+#    Y_val_tens = Y_val_tens[0:16, :, :, :]
 
     print('X_train_tens.shape:', X_train_tens.shape)
     print('Y_train_tens.shape:', Y_train_tens.shape)
@@ -310,18 +314,18 @@ preproccess_end_time = preprocess.get_preprocessing_end_time(liu_runner.get_liu_
 A, X_test_tens, Y_test_tens, order_lanes_test = preprocess.preprocess_A_X_Y(
         average_interval = average_interval, sample_size = sample_size, start = 200, end = preproccess_end_time, 
         simu_num = simu_num, interpolate_ground_truth = interpolate_ground_truth)
-A = np.eye(N,N) + A
 
-#reduce batch size
-X_test_tens = X_train_tens[0:16, :, :, :]
-Y_test_tens = Y_train_tens[0:16, :, :, :]
+##reduce batch size
+#X_test_tens = X_train_tens[0:16, :, :, :]
+#Y_test_tens = Y_train_tens[0:16, :, :, :]
 
 #--store test data ----------
-np.save('X_test_tens.npy', X_test_tens)
-np.save('Y_test_tens.npy', Y_test_tens)
-np.save('preproccess_end_time.npy', preproccess_end_time)
+np.save('train_test_data/X_test_tens.npy', X_test_tens)
+np.save('train_test_data/Y_test_tens.npy', Y_test_tens)
+np.save('train_test_data/preproccess_end_time.npy', preproccess_end_time)
+np.save('train_test_data/A.npy', A)
 
-with open("order_lanes_test.txt", "wb") as fp:   #Pickling
+with open("train_test_data/order_lanes_test.txt", "wb") as fp:   #Pickling
     pickle.dump(order_lanes_test, fp)
 
 print('save X,Y and order of lanes for testing to npy file')

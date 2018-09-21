@@ -61,6 +61,7 @@ def plot_predictions(df_predictions, df_liu_results, df_predictions_Aeye):
     #print('time_predictions:', time_predictions)
 
     for lane in list_lanes:
+        print('plot for lane:', lane)
         
         fig = plt.figure()
         fig.set_figheight(5)
@@ -71,20 +72,20 @@ def plot_predictions(df_predictions, df_liu_results, df_predictions_Aeye):
         
         ground_truth, = plt.plot(time_liu_results[:],
                                  df_liu_results.loc[:, (lane, 'ground-truth')],
-                                 c='b', label= 'ground truth')
+                                 c='b', label= 'Ground-truth')
         liu_estimation, = plt.plot(time_liu_results[:], 
                                    df_liu_results.loc[:, (lane, 'estimated hybrid')],
-                                   c='r', label= 'liu')
+                                   c='r', label= 'Liu et al.')
         
         dl_prediction, = plt.plot(time_predictions, df_predictions.loc[:, lane],
-                                   c='g', label= 'deep net')
+                                   c='g', label= 'Dense')
         
 
         #if df_predictions_Aeye == None:
         #    plt.legend(handles=[ground_truth, liu_estimation, dl_prediction], fontsize = 18)
         #else:
         dl_prediction_Aeye, = plt.plot(time_predictions, df_predictions_Aeye.loc[:, lane],
-                       c='k', label= 'deep net Aeye')        
+                       c='k', label= 'Dense + LSTM')        
         plt.legend(handles=[ground_truth, liu_estimation, dl_prediction, dl_prediction_Aeye], fontsize = 18)
                 
         plt.xticks(np.arange(0, 6000, 100))
@@ -92,7 +93,7 @@ def plot_predictions(df_predictions, df_liu_results, df_predictions_Aeye):
         plt.yticks(np.arange(0, 800, 50))
         plt.yticks(fontsize=18)
         plt.xlim(time_predictions[0],time_predictions[-1])
-        plt.ylim(0, 600)
+        plt.ylim(0, 200)
         
         #TODO: implement background color by using tls data
         

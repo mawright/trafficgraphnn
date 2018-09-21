@@ -1098,7 +1098,7 @@ class LiuLane(object):
             plt.xticks(fontsize=18)
             plt.yticks(np.arange(0, y_lim, 50))
             plt.yticks(fontsize=18)
-            plt.xlim(420, x_lim)
+            plt.xlim(0, x_lim)
             plt.ylim(0, y_lim)
             if self.sumolib_in_lane.getID()== 'bottom2to2/0_2':
                 plt.ylim(0, 700)
