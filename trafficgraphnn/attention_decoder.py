@@ -22,7 +22,10 @@ tfPrint = lambda d, T: tf.Print(input_=T, data=[T, tf.shape(T)], message=d)
 class AttentionDecoder(Recurrent):
 
     def __init__(self, units, output_dim,
+                 causal=False,
+                 causal_lag=0,
                  activation='tanh',
+                 output_activation=None,
                  return_probabilities=False,
                  name='AttentionDecoder',
                  kernel_initializer='glorot_uniform',
@@ -48,7 +51,10 @@ class AttentionDecoder(Recurrent):
         self.units = units
         self.output_dim = output_dim
         self.return_probabilities = return_probabilities
+        self.causal = causal
+        self.causal_lag = causal_lag
         self.activation = activations.get(activation)
+        self.output_activation = activations.get(output_activation)
         self.kernel_initializer = initializers.get(kernel_initializer)
         self.recurrent_initializer = initializers.get(recurrent_initializer)
         self.bias_initializer = initializers.get(bias_initializer)
@@ -77,7 +83,7 @@ class AttentionDecoder(Recurrent):
         if self.stateful:
             super(AttentionDecoder, self).reset_states()
 
-        self.states = [None, None]  # y, s
+        self.states = [None, None, None]  # y, s
 
         """
             Matrices for creating the context vector
@@ -212,6 +218,11 @@ class AttentionDecoder(Recurrent):
         # store the whole sequence so we can "attend" to it at each timestep
         self.x_seq = x
 
+        # counter of number of input timesteps
+        if self.causal:
+            self._input_t = K.cumsum(
+                K.ones(self.timesteps, dtype='int32')) - 1 + self.causal_lag
+
         # apply the a dense layer over the time dimension of the sequence
         # do it here because it doesn't depend on any previous steps
         # thefore we can save computation time:
@@ -233,11 +244,14 @@ class AttentionDecoder(Recurrent):
         y0 = K.expand_dims(y0)  # (samples, 1)
         y0 = K.tile(y0, [1, self.output_dim])
 
-        return [y0, s0]
+        # Counter of decoding timestep (for enforcing causality)
+        t = K.variable(0, name='decode_t', dtype='int32')
+
+        return [y0, s0, t]
 
     def step(self, x, states):
 
-        ytm, stm = states
+        ytm, stm, t = states
 
         # repeat the hidden state to the length of the sequence
         _stm = K.repeat(stm, self.timesteps)
@@ -249,6 +263,12 @@ class AttentionDecoder(Recurrent):
         # this relates how much other timesteps contributed to this one.
         et = K.dot(activations.tanh(_Wxstm + self._uxpb),
                    K.expand_dims(self.V_a))
+
+        if self.causal:
+            is_future = K.greater(self._input_t, t)
+            mask = K.cast(is_future, 'float32') * -10e9
+            et = et + K.expand_dims(K.expand_dims(mask, -1), 0)
+
         at = K.exp(et)
         at_sum = K.sum(at, axis=1)
         at_sum_repeated = K.repeat(at_sum, self.timesteps)
@@ -282,22 +302,18 @@ class AttentionDecoder(Recurrent):
         # new hidden state:
         st = (1-zt)*stm + zt * s_tp
 
-#        yt = activations.softmax(
-#            K.dot(ytm, self.W_o)
-#            + K.dot(stm, self.U_o)
-#            + K.dot(context, self.C_o)
-#            + self.b_o)
+        yt = self.output_activation(
+           K.dot(ytm, self.W_o)
+           + K.dot(stm, self.U_o)
+           + K.dot(context, self.C_o)
+           + self.b_o)
 
-        yt = activations.linear(
-            K.dot(ytm, self.W_o)
-            + K.dot(stm, self.U_o)
-            + K.dot(context, self.C_o)
-            + self.b_o)
+        t += 1
 
         if self.return_probabilities:
-            return at, [yt, st]
+            return at, [yt, st, t]
         else:
-            return yt, [yt, st]
+            return yt, [yt, st, t]
 
     def compute_output_shape(self, input_shape):
         """
@@ -315,7 +331,10 @@ class AttentionDecoder(Recurrent):
         config = {
             'output_dim': self.output_dim,
             'units': self.units,
-            'return_probabilities': self.return_probabilities
+            'return_probabilities': self.return_probabilities,
+            'causal': self.causal,
+            'causal_lag': self.causal_lag,
+            'output_activation': self.output_activation
         }
         base_config = super(AttentionDecoder, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
