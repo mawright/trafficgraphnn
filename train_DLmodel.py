@@ -34,17 +34,18 @@ from define_model import define_model
 
 
 ### Configuration for tarining process
-train_val_pair = 2
+train_val_pair = 50
 training_mode = 'sequential'   # either sequential or shuffle 
-num_training_steps = 2
-epochs = 10
+num_training_steps = 20
+epochs = 50
 
 # total epochs = num_training_steps x train_val_pair x epochs
 
-es_patience = 50   # number of epochs with no improvement after which training will be stopped.
+es_patience = 10   # number of epochs with no improvement after which training will be stopped.
 es_callback = EarlyStopping(monitor='val_loss', patience=es_patience, verbose=1)
 
-
+save_model_steps = 10 #saves the model after several training steps, to see progress in training
+cnt_save_steps = 0
 #------------- load data -------------
 for pair_num in range(train_val_pair):
     X_train = np.load('train_test_data/X_train_tens' + str(pair_num) + '.npy')
@@ -82,7 +83,9 @@ for pair_num in range(train_val_pair):
 model = define_model(num_samples, num_timesteps, num_lanes, num_features, A)
 
 for training_step in range(num_training_steps):
+    cnt_save_steps += 1
     for pair_num in range(train_val_pair):
+        print('pair number', pair_num, 'in training step ', training_step ,' of ', num_training_steps, 'in total')
         if training_mode == 'sequential':
             X_train_tens = X_train_storage[pair_num, :, :, :]
             X_val_tens = X_val_storage[pair_num, :, :, :]
@@ -119,7 +122,20 @@ for training_step in range(num_training_steps):
                   shuffle=False,  # Shuffling data means shuffling the whole graph
                   callbacks = [es_callback]
                   )
-    print('------ training step number', training_step, ' with ', train_val_pair, ' number of training samples finished ---------')
+    
+    if cnt_save_steps == save_model_steps:
+        model.save('models/model_complete_' + str(training_step) + '.h5')
+        # serialize model to JSON
+        model_json = model.to_json()
+        with open('models/attn_model_' + str(training_step) + '.json', "w") as json_file:
+            json_file.write(model_json)
+        # serialize weights to HDF5
+        model.save_weights('models/attn_model_weights_' + str(training_step) + '.h5')
+        print("Saved attn model to disk")
+        cnt_save_steps = 0
+        
+        
+    print('----------------- training step number', training_step, ' with ', train_val_pair, ' number of training samples finished -----------------')
     
 
 # --------------- predict test data -------------------
@@ -140,13 +156,13 @@ Y_test = K.reshape(Y_test_tens, (sample_size_test*num_lanes, num_timesteps, num_
 Y_hat = model.predict(X1_test, verbose = 1, steps = 1) 
 prediction = K.reshape(Y_hat, (int(Y_hat.shape[0])//num_lanes, num_timesteps, num_lanes, num_targets))
 
-model.save('models/model_complete.h5')
+model.save('models/model_complete_final.h5')
 # serialize model to JSON
 model_json = model.to_json()
-with open("models/attn_model.json", "w") as json_file:
+with open("models/attn_model_final.json", "w") as json_file:
     json_file.write(model_json)
 # serialize weights to HDF5
-model.save_weights("models/attn_model_weights.h5")
+model.save_weights("models/attn_model_weights_final.h5")
 print("Saved attn model to disk")
 
 store_predictions_in_df(prediction, order_lanes_test, 200, average_interval, alternative_prediction = False) 

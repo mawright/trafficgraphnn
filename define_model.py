@@ -29,7 +29,7 @@ F_ = 128         # Output dimension of last GraphAttention layer
 n_attn_heads = 5              # Number of attention heads in first GAT layer
 dropout_rate = 0.5            # Dropout rate applied to the input of GAT layers
 attn_dropout = 0.5            #Dropout of the adjacency matrix in the gat layer
-l2_reg = 5e-100               # Regularization rate for l2
+l2_reg = 1e-4               # Regularization rate for l2
 learning_rate = 0.001      # Learning rate for optimizer
 n_units = 128   #number of units of the LSTM cells
 
@@ -84,20 +84,20 @@ def define_model(sample_size_train, timesteps_per_sample, N, F, A):
                                            activation='linear',
                                            kernel_regularizer=l2(l2_reg)))(dropout2)
         
-        dense1 = TimeDistributed(Dense(128, activation = linear))(graph_attention_2)
+        dropout3 = TimeDistributed(Dropout(dropout_rate))(graph_attention_2)
         
-        dropout3 = TimeDistributed(Dropout(dropout_rate))(dense1)
+        dense1 = TimeDistributed(Dense(128, activation = linear, kernel_regularizer=l2(l2_reg)))(dropout3)
+        
+        dropout4 = TimeDistributed(Dropout(dropout_rate))(dense1)
         
         #make sure that the reshape is made correctly!
-        encoder_inputs = Lambda(reshape_X1)(dropout3)
+        encoder_inputs = Lambda(reshape_X1)(dropout4)
         decoder_inputs = LSTM(n_units,
              batch_input_shape=(sample_size_train*N, timesteps_per_sample, F), 
              return_sequences=True)(encoder_inputs)
-        decoder_output = AttentionDecoder(n_units, 16)(decoder_inputs) #Attention! 5 output features now!
+        decoder_output = AttentionDecoder(n_units, 1)(decoder_inputs) #Attention! 5 output features now!
         
-        dense2 = Dense(1, activation = linear)(decoder_output)
-        
-        model = Model(inputs=X1_in, outputs=dense2) #try to smooth the output with dense layer
+        model = Model(inputs=X1_in, outputs=decoder_output) 
         
         optimizer = Adam(lr=learning_rate)
         model.compile(optimizer=optimizer,

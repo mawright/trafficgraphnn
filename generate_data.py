@@ -22,7 +22,7 @@ grid_length = 600 #meters
 num_lanes =3
 
 ### Configuration of the Simulation ###
-end_time = 500 #seconds
+end_time = 1500 #seconds
 
 period_1_2 = 0.4
 period_3_4 = 0.4
@@ -45,7 +45,7 @@ sample_size = 15     #number of steps per sample in size of average interval
 interpolate_ground_truth = True #interpolate ground-truth data with np.linspace
 
 
-number_of_simulations = 2
+number_of_simulations = 1
 
 # ------------- End of configuration -------------------------
 

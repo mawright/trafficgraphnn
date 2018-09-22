@@ -106,6 +106,7 @@ venv.bak/
 
 trafficgraphnn/lib/
 data/
+data_storage/
 
 *.sublime-project
 *.sublime-workspace
