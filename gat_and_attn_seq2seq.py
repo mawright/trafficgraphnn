@@ -25,7 +25,7 @@ from keras.layers import Input, Dropout, Dense, TimeDistributed, Reshape, Lambda
 from keras.models import Model, Sequential
 from keras.optimizers import Adam, SGD, Adagrad
 from keras.regularizers import l2
-from keras.activations import relu, linear
+from keras.activations import linear
 from trafficgraphnn.batch_graph_attention_layer import  BatchGraphAttention
 from keras.utils.vis_utils import plot_model
 from trafficgraphnn.attention_decoder import AttentionDecoder
@@ -43,19 +43,19 @@ num_lanes =3
 ### Configuration of the Simulation ###
 end_time = 1500 #seconds
 
-period_1_2 = 0.3
-period_3_4 = 0.7
-period_5 = 0.8
+period_1_2 = 0.4
+period_3_4 = 0.4
+period_5 = 0.4
 
-period_test = 0.8
+period_test = 0.4
 
-binomial = None #commented out in gendata.py
+binomial = 2
 seed = 50
 fringe_factor = 1000
 
 ### Configuration of Liu estimation ###
 use_started_halts = False #use startet halts as ground truth data or maxJamLengthInMeters
-show_plot = True
+show_plot = False
 show_infos = False
 
 ### Configuration for preprocessing the detector data
@@ -72,9 +72,10 @@ attn_dropout = 0.3            #Dropout of the adjacency matrix in the gat layer
 l2_reg = 5e-100               # Regularization rate for l2
 learning_rate = 0.001      # Learning rate for optimizer
 epochs = 2000            # Number of epochs to run for
-es_patience = 100             # Patience fot early stopping
 n_units = 128   #number of units of the LSTM cells
 
+es_patience = 50   # number of epochs with no improvement after which training will be stopped.
+es_callback = EarlyStopping(monitor='val_loss', patience=es_patience, verbose=1)
 #----------------------------------------------------
 path = 'train_test_data/'
 try:  
@@ -95,7 +96,7 @@ config.gen_e1_detectors(distance_to_tls=[5, 125], frequency=1)
 config.gen_e2_detectors(distance_to_tls=0, frequency=1)
 config.define_tls_output_file()
 
-for train_num in range(6):
+for train_num in range(4):
     
     if train_num <= 1:
         period = period_1_2
@@ -135,7 +136,8 @@ for train_num in range(6):
         A, X, Y, order_lanes = preprocess.preprocess_A_X_Y(
                 average_interval = average_interval, sample_size = sample_size, start = 200, end = preproccess_end_time, 
                 simu_num = simu_num, interpolate_ground_truth = interpolate_ground_truth)
-    
+	#NOTE: in this simulation A is an eye matrix    
+
         list_A.append(A)
         list_X.append(X)
         list_Y.append(Y)
@@ -236,7 +238,7 @@ for train_num in range(6):
                                            activation='linear',
                                            kernel_regularizer=l2(l2_reg)))(dropout2)
         
-        dense1 = TimeDistributed(Dense(64, activation = relu))(graph_attention_2)
+        dense1 = TimeDistributed(Dense(64, activation = linear))(graph_attention_2)
         
         dropout3 = TimeDistributed(Dropout(dropout_rate))(dense1)
         
@@ -254,7 +256,7 @@ for train_num in range(6):
         optimizer = Adam(lr=learning_rate)
         model.compile(optimizer=optimizer,
                       loss='mean_squared_error',
-                      weighted_metrics=['accuracy'])
+                      metrics=['accuracy'])
         model.summary()
         plot_model(model, to_file='model_plot.png', show_shapes=True, show_layer_names=True)
         
@@ -283,7 +285,8 @@ for train_num in range(6):
               validation_data = validation_data,
               validation_steps = 1,
               shuffle=False,  # Shuffling data means shuffling the whole graph
-             )
+              callbacks = [es_callback]
+              )
     print('--- model.fit number', train_num, 'finished')
 
 ### Predict results ###
@@ -294,10 +297,9 @@ sn = SumoNetwork.from_gen_config(config, lanewise=True)
 sn.run()
 print('Simulation run number', simu_num, 'finished')
 
-
 ### Running the Liu Estimation
 #creating liu runner object
-simu_num = 100 #100 stands for test data and will be stored in the main directory
+simu_num = 111111 #stands for test data and will be stored in the main directory
 liu_runner = LiuEtAlRunner(sn, store_while_running = True, use_started_halts = use_started_halts, simu_num = simu_num)
 
 # caluclating the maximum number of phases and run the estimation
@@ -364,4 +366,4 @@ print("Saved attn model to disk")
 
 df_liu_results_test = pd.read_hdf(liu_runner.get_liu_results_path())
 
-store_predictions_in_df(prediction, order_lanes_test, 200, preproccess_end_time, average_interval, Aeye = False)
+store_predictions_in_df(prediction, order_lanes_test, 200, average_interval, alternative_prediction = False)

@@ -40,19 +40,19 @@ def resample_predictions(predictions):
     
     return predictions_resampled
 
-def store_predictions_in_df(predictions, order_lanes, start_time, end_time, average_interval, Aeye = False):
+def store_predictions_in_df(predictions, order_lanes, start_time, average_interval, alternative_prediction = False):
     resampled_predictions = resample_predictions(predictions)
     resampled_predictions = np.transpose(resampled_predictions)
 
     df_prediction_results = pd.DataFrame(data = resampled_predictions[:,:], 
                                          index = range(start_time, resampled_predictions.shape[0] * average_interval + start_time, average_interval), 
                                          columns = order_lanes)
-    if Aeye == False:
+    if alternative_prediction == False:
         df_prediction_results.to_hdf('nn_prediction_results.h5', key = 'prediciton_results')
         print('Stored prediction results in dataframe')
     
-    if Aeye == True:
-        df_prediction_results.to_hdf('nn_prediction_results_Aeye.h5', key = 'prediciton_results')
+    if alternative_prediction == True:
+        df_prediction_results.to_hdf('nn_prediction_results_alternative.h5', key = 'prediciton_results')
         print('Stored prediction Aeye results in dataframe')        
     
 def plot_predictions(df_predictions, df_liu_results, df_predictions_Aeye):

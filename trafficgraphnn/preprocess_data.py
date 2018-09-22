@@ -272,26 +272,30 @@ class PreprocessData(object):
                 #dimesion: time x nodes x features
                 num_rows = len(df_detector.loc[start_time:end_time, (stopbar_detector_id, 'nVehContrib')]) -1 # (-1):last row is belongs to the following average interval
                 duration_in_sec = end_time-start_time
-                X_unsampled = np.zeros((num_rows, len(subgraph.nodes), 9))
+                X_unsampled = np.zeros((num_rows, len(subgraph.nodes), 8))
                 Y_unsampled = np.zeros((num_rows, len(subgraph.nodes), 1))
                 
             X_unsampled[:, cnt_lane, 0] = df_detector.loc[start_time:end_time-average_interval, (stopbar_detector_id, 'nVehContrib')]
-            X_unsampled[:, cnt_lane, 1] = df_detector.loc[start_time:end_time-average_interval, (stopbar_detector_id, 'flow')]
-            X_unsampled[:, cnt_lane, 2] = df_detector.loc[start_time:end_time-average_interval, (stopbar_detector_id, 'occupancy')]
-            X_unsampled[:, cnt_lane, 3] = df_detector.loc[start_time:end_time-average_interval, (stopbar_detector_id, 'speed')]
-            X_unsampled[:, cnt_lane, 4] = df_detector.loc[start_time:end_time-average_interval, (adv_detector_id, 'nVehContrib')]
-            X_unsampled[:, cnt_lane, 5] = df_detector.loc[start_time:end_time-average_interval, (adv_detector_id, 'flow')]
-            X_unsampled[:, cnt_lane, 6] = df_detector.loc[start_time:end_time-average_interval, (adv_detector_id, 'occupancy')]
-            X_unsampled[:, cnt_lane, 7] = df_detector.loc[start_time:end_time-average_interval, (adv_detector_id, 'speed')]
-            X_unsampled[:, cnt_lane, 8] = self.get_tls_binary_signal(start_time, duration_in_sec, lane, average_interval, num_rows)
-                  
+            X_unsampled[:, cnt_lane, 1] = df_detector.loc[start_time:end_time-average_interval, (stopbar_detector_id, 'occupancy')]
+            X_unsampled[:, cnt_lane, 2] = df_detector.loc[start_time:end_time-average_interval, (stopbar_detector_id, 'speed')]
+            X_unsampled[:, cnt_lane, 3] = df_detector.loc[start_time:end_time-average_interval, (adv_detector_id, 'nVehContrib')]
+            X_unsampled[:, cnt_lane, 4] = df_detector.loc[start_time:end_time-average_interval, (adv_detector_id, 'occupancy')]
+            X_unsampled[:, cnt_lane, 5] = df_detector.loc[start_time:end_time-average_interval, (adv_detector_id, 'speed')]
+            X_unsampled[:, cnt_lane, 6] = self.get_tls_binary_signal(start_time, duration_in_sec, lane, average_interval, num_rows)
+            X_unsampled[:, cnt_lane, 7] = self.get_ground_truth_array(start_time, 
+                                                   duration_in_sec, lane, average_interval, num_rows,   #use liu results as features
+                                                   interpolate_ground_truth = interpolate_ground_truth,
+                                                   ground_truth_name = 'estimated hybrid') 
+                              
             Y_unsampled[:, cnt_lane, 0] = self.get_ground_truth_array(start_time, 
-                       duration_in_sec, lane, average_interval, num_rows, interpolate_ground_truth = interpolate_ground_truth)
+                       duration_in_sec, lane, average_interval, num_rows, 
+                       interpolate_ground_truth = interpolate_ground_truth,
+                       ground_truth_name = 'ground-truth')
             
             
         num_samples = math.ceil(X_unsampled.shape[0]/sample_size)
         print('number of samples:', num_samples)
-        X_sampled = np.zeros((num_samples, sample_size, len(subgraph.nodes), 9))
+        X_sampled = np.zeros((num_samples, sample_size, len(subgraph.nodes), 8))
         Y_sampled = np.zeros((num_samples, sample_size, len(subgraph.nodes), 1))
         for cnt_sample in range(num_samples):
             sample_start = cnt_sample*sample_size
@@ -304,7 +308,7 @@ class PreprocessData(object):
                 # implement zero padding
                 diff_samples = sample_size - X_unsampled[sample_start:sample_end][:][:].shape[0]
                 X_zero_padding = np.vstack((X_unsampled[sample_start:sample_end][:][:],
-                                           np.zeros((diff_samples, len(subgraph.nodes), 9))))
+                                           np.zeros((diff_samples, len(subgraph.nodes), 8))))
                 Y_zero_padding = np.vstack((Y_unsampled[sample_start:sample_end][:][:],
                            np.zeros((diff_samples, len(subgraph.nodes), 1))))
                 X_sampled[cnt_sample][:][:][:] = X_zero_padding
@@ -318,7 +322,21 @@ class PreprocessData(object):
         sub_graph = graph.subgraph(node_sublist)
         return sub_graph
     
-    def get_ground_truth_array(self, start_time, duration_in_sec, lane_id, average_interval, num_rows, interpolate_ground_truth= False):
+    def get_ground_truth_array(self, start_time, duration_in_sec, lane_id, average_interval, num_rows, interpolate_ground_truth= False, ground_truth_name = 'ground-truth'):
+        """Returns the array (either ground truth or liu results) for a specific lane for a time period for an specific interval
+
+        "start time" corresponds to start of the ground truth data, int
+        "duration_in_sec" duration of the time period in seconds, int
+        "lane_id" lane_id for the specific lane, str
+        "average_interval" interval over which the ground truth data are averaged, int
+        "num_rows" number of rows in the X vector -> ensures, that no missmatch error occurs, int
+        "interpolate_ground_truth": if ground truth data are as a step function in the array or if they are linear interpolated, bool
+        "ground_truth_name": can be either "ground-truth" or "estimated hybrid" or "estimated pure liu", str
+
+        :return: Array with ground truth data
+        :rtype: numpy array
+        """
+        
         #ATTENTION!!! What to do when average interval is not 1??
         time_lane = self.df_liu_results.loc[:, (lane_id, 'time')] 
         arr_ground_truth = np.array([])     
@@ -329,7 +347,7 @@ class PreprocessData(object):
                 first_phase_start = phase_start
                 previous_ground_truth = 0
                 
-            ground_truth = self.df_liu_results.loc[phase, (lane_id, 'ground-truth')] 
+            ground_truth = self.df_liu_results.loc[phase, (lane_id, ground_truth_name)] 
             if interpolate_ground_truth == False:
                 temp_arr_ground_truth = np.full((int(phase_end-phase_start), 1), ground_truth)
             else:

@@ -267,4 +267,4 @@ model.save_weights("models/attn_model_weights.h5")
 print("Saved attn model to disk")
 
 
-store_predictions_in_df(prediction, order_lanes_test, 200, preproccess_end_time, average_interval, Aeye = True)
+store_predictions_in_df(prediction, order_lanes_test, 200, average_interval, Aeye = True)

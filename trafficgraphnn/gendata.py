@@ -81,7 +81,7 @@ class RandTripGeneratorWrapper(object):
             '--net-file', self.netfile,
             '--output-trip-file', tripfile,
             '--route-file', routefile,
-#            '--binomial', str(self.binomial),
+            '--binomial', str(self.binomial),
             '--period', str(self.period),
             '--begin', str(self.start_time),
             '--end', str(self.end_time),
