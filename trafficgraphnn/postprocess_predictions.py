@@ -55,9 +55,9 @@ def store_predictions_in_df(predictions, order_lanes, start_time, average_interv
         df_prediction_results.to_hdf('nn_prediction_results_alternative.h5', key = 'prediciton_results')
         print('Stored prediction Aeye results in dataframe')        
     
-def plot_predictions(df_predictions, df_liu_results, df_predictions_Aeye):
-    list_lanes = df_predictions.columns
-    time_predictions = df_predictions.index.values
+def plot_predictions(df_predictions_1, df_liu_results, df_predictions_2):
+    list_lanes = df_predictions_1.columns
+    time_predictions = df_predictions_1.index.values
     #print('time_predictions:', time_predictions)
 
     for lane in list_lanes:
@@ -77,16 +77,16 @@ def plot_predictions(df_predictions, df_liu_results, df_predictions_Aeye):
                                    df_liu_results.loc[:, (lane, 'estimated hybrid')],
                                    c='r', label= 'Liu et al.')
         
-        dl_prediction, = plt.plot(time_predictions, df_predictions.loc[:, lane],
-                                   c='g', label= 'Dense')
+        dl_prediction_1, = plt.plot(time_predictions, df_predictions_1.loc[:, lane],
+                                   c='g', label= 'dl_prediction_1')
         
 
         #if df_predictions_Aeye == None:
         #    plt.legend(handles=[ground_truth, liu_estimation, dl_prediction], fontsize = 18)
         #else:
-        dl_prediction_Aeye, = plt.plot(time_predictions, df_predictions_Aeye.loc[:, lane],
-                       c='k', label= 'Dense + LSTM')        
-        plt.legend(handles=[ground_truth, liu_estimation, dl_prediction, dl_prediction_Aeye], fontsize = 18)
+        dl_prediction_2, = plt.plot(time_predictions, df_predictions_2.loc[:, lane],
+                       c='k', label= 'dl_prediction_2')        
+        plt.legend(handles=[ground_truth, liu_estimation, dl_prediction_1, dl_prediction_2], fontsize = 18)
                 
         plt.xticks(np.arange(0, 6000, 100))
         plt.xticks(fontsize=18)

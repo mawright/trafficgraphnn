@@ -45,7 +45,8 @@ sample_size = 15     #number of steps per sample in size of average interval
 interpolate_ground_truth = True #interpolate ground-truth data with np.linspace
 
 
-number_of_simulations = 1
+number_of_simulations = 2
+number_of_simulations_test = 2
 
 # ------------- End of configuration -------------------------
 
@@ -71,7 +72,7 @@ config.define_tls_output_file()
 
 
 
-for train_num in range(50,100):
+for train_num in range(number_of_simulations):
     
     if train_num <= 1:
         period = period_1_2
@@ -134,40 +135,40 @@ for train_num in range(50,100):
     print('save X and Y to npy file for simulation number ', train_num)
     
 # --------------------- generating test data -----------------------
+for num_test_simu in range(111111, 111111 + number_of_simulations_test):
 
-#run simulation for generating test data
-config.gen_rand_trips(period = period_test, binomial = binomial, seed = seed, end_time = end_time, fringe_factor = fringe_factor)
-sn = SumoNetwork.from_gen_config(config, lanewise=True)
-sn.run()
-print('Simulation run number', simu_num, 'finished')
-
-### Running the Liu Estimation
-#creating liu runner object
-simu_num = 111111 #stands for test data and will be stored in the main directory
-liu_runner = LiuEtAlRunner(sn, store_while_running = True, use_started_halts = use_started_halts, simu_num = simu_num)
-
-# caluclating the maximum number of phases and run the estimation
-max_num_phase = liu_runner.get_max_num_phase(end_time)
-liu_runner.run_up_to_phase(max_num_phase)
-
-# show results for every lane
-liu_runner.plot_results_every_lane(show_plot = show_plot, show_infos = show_infos)
-
-
-### preprocess data for deep learning model
-preprocess = PreprocessData(sn, simu_num)
-preproccess_end_time = preprocess.get_preprocessing_end_time(liu_runner.get_liu_lane_IDs(), average_interval)
-A, X_test_tens, Y_test_tens, order_lanes_test = preprocess.preprocess_A_X_Y(
-        average_interval = average_interval, sample_size = sample_size, start = 200, end = preproccess_end_time, 
-        simu_num = simu_num, interpolate_ground_truth = interpolate_ground_truth)
-
-#--store test data ----------
-np.save('train_test_data/X_test_tens.npy', X_test_tens)
-np.save('train_test_data/Y_test_tens.npy', Y_test_tens)
-np.save('train_test_data/A_test.npy', A)
-np.save('train_test_data/average_interval.npy', average_interval)
-
-with open("train_test_data/order_lanes_test.txt", "wb") as fp:   #Pickling
-    pickle.dump(order_lanes_test, fp)
-
-print('save X,Y and order of lanes for testing to npy file')
+    #run simulation for generating test data
+    config.gen_rand_trips(period = period_test, binomial = binomial, seed = seed, end_time = end_time, fringe_factor = fringe_factor)
+    sn = SumoNetwork.from_gen_config(config, lanewise=True)
+    sn.run()
+    print('Simulation run number', num_test_simu, 'finished')
+    
+    ### Running the Liu Estimation
+    #creating liu runner object
+    liu_runner = LiuEtAlRunner(sn, store_while_running = True, use_started_halts = use_started_halts, simu_num = num_test_simu)
+    
+    # caluclating the maximum number of phases and run the estimation
+    max_num_phase = liu_runner.get_max_num_phase(end_time)
+    liu_runner.run_up_to_phase(max_num_phase)
+    
+    # show results for every lane
+    liu_runner.plot_results_every_lane(show_plot = show_plot, show_infos = show_infos)
+    
+    
+    ### preprocess data for deep learning model
+    preprocess = PreprocessData(sn, num_test_simu)
+    preproccess_end_time = preprocess.get_preprocessing_end_time(liu_runner.get_liu_lane_IDs(), average_interval)
+    A, X_test_tens, Y_test_tens, order_lanes_test = preprocess.preprocess_A_X_Y(
+            average_interval = average_interval, sample_size = sample_size, start = 200, end = preproccess_end_time, 
+            simu_num = num_test_simu, interpolate_ground_truth = interpolate_ground_truth)
+    
+    #--store test data ----------
+    np.save('train_test_data/X_test_tens_' + str(num_test_simu) +'.npy', X_test_tens)
+    np.save('train_test_data/Y_test_tens' + str(num_test_simu) +'.npy', Y_test_tens)
+    np.save('train_test_data/A_test' + str(num_test_simu) +'.npy', A)
+    np.save('train_test_data/average_interval' + str(num_test_simu) +'.npy', average_interval)
+    
+    with open('train_test_data/order_lanes_test' + str(num_test_simu) +'.txt', "wb") as fp:   #Pickling
+        pickle.dump(order_lanes_test, fp)
+    
+    print('save X,Y and order of lanes for testing to npy file for test_simulation number:', num_test_simu)
