@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from matplotlib import pyplot as plt
+import keras.backend as K
 
 from trafficgraphnn.utils import iterfy
 from trafficgraphnn.get_tls_data import get_tls_data
@@ -433,3 +434,74 @@ class PreprocessData(object):
         return A
                 
                 
+def reshape_for_LSTM(input_arr):
+    '''
+    reshapes input from shape (samples x timesteps x lanes x features)
+    to output of shape (samples*lanes x timesteps x features)
+    '''
+    
+    assert len(input_arr.shape) == 4
+    input_arr_dim = input_arr.get_shape().as_list()
+    num_samples = input_arr_dim[0]
+    num_timesteps = input_arr_dim[1]
+    num_lanes = input_arr_dim[2]
+    num_features = input_arr_dim[3]
+    
+    # we need to use permute_dimensions first to (samples, lanes, timesteps, features)
+    input_arr_permuted = K.permute_dimensions(input_arr, (0, 2, 1, 3))
+    
+    #then we can reshape
+    output_arr = K.reshape(input_arr_permuted, (num_samples*num_lanes, -1, num_features))
+    
+#    output_arr = np.zeros((num_samples*num_lanes, num_timesteps, num_targets))
+#    for sample in range(num_samples):
+#        for lane in range(num_lanes):
+#            lane_data = input_arr[sample, :, lane, :]
+#            output_arr[sample * num_lanes + lane, :, :] = lane_data
+    return output_arr
+
+def reshape_for_GAT(input_arr):
+    '''
+    reshapes input from shape (samples*lanes x timesteps x features) 
+    to output of shape (samples x timesteps x lanes x features)
+    
+    in future:
+    input list: [input_array, number of lanes]; neccesary to do it with a list because of keras lambda layer
+    additional info: number of lanes per road network; neccessary for reshaping;
+                                    information about num_lanes got lost during reshape_for_LSTM
+    '''     
+#    sess = tf.Session()  
+#    input_arr = input_list[0]
+    input_arr_dim = input_arr.get_shape().as_list()
+    
+    num_lanes = 120 #of course not a solution, but multiple Inputs into lambda layer does not work right now...
+#    num_lanes = int(K.eval(input_list[1]))
+#    num_lanesXsamples = input_arr_dim[0]
+    num_timesteps = input_arr_dim[1]
+    num_features = input_arr_dim[2]
+        
+    assert len(input_arr.shape) == 3
+    
+    #reshape tensor back to dimension (samples x lanes x timesteps x features)
+    input_arr_reshaped = K.reshape(input_arr, (-1, num_lanes, num_timesteps, num_features))
+    
+    #permute array to (samples x timesteps x lanes x features)
+    output_arr = K.permute_dimensions(input_arr_reshaped, (0, 2, 1, 3))
+    
+# alternative approch, can be deleted as soon as upper approach works
+#    output_arr = np.zeros((num_lanesXsamples//num_lanes, num_timesteps, num_lanes, num_features))
+#    
+#    cnt_lanes = 0
+#    cnt_samples = 0
+#    for lane in range(num_lanesXsamples):
+#        if cnt_lanes == num_lanes:
+#            cnt_samples += 1
+#            cnt_lanes = 0        
+#        lane_data = input_arr[lane, :, :]
+#        lane_index = lane - num_lanes*cnt_samples
+#        output_arr[cnt_samples, :, lane_index, :] = lane_data   
+#        cnt_lanes += 1
+    
+    return output_arr
+
+

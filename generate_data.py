@@ -71,7 +71,7 @@ config.define_tls_output_file()
 
 
 
-for train_num in range(number_of_simulations):
+for train_num in range(50,100):
     
     if train_num <= 1:
         period = period_1_2
@@ -131,7 +131,7 @@ for train_num in range(number_of_simulations):
     np.save('train_test_data/X_val_tens' + str(train_num) + '.npy', X_val_tens)
     np.save('train_test_data/Y_val_tens' + str(train_num) + '.npy', Y_val_tens)
     np.save('train_test_data/A' + str(train_num) + '.npy', A)
-    print('save X and Y to npy file for simulation number ', number_of_simulations)
+    print('save X and Y to npy file for simulation number ', train_num)
     
 # --------------------- generating test data -----------------------
 
