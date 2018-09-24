@@ -131,33 +131,42 @@ train_model.fit_generator(generate_X_Y_batch(X_train, Y_train, num_batches, batc
                           max_queue_size = 1,
                           use_multiprocessing = False)
 
+train_model.save('models/train_model_complete_final.h5')
+model_yaml = train_model.to_yaml()
+with open("models/model.yaml", "w") as yaml_file:
+    yaml_file.write(model_yaml)
+# serialize weights to HDF5
+train_model.save_weights("models/model_weights.h5")
+print("Saved model to disk")
+
 # --------------- predict test data -------------------
 ### Predict results ###
 
-for curr_prediction in range(num_predictions):
+curr_prediction = 0
+X_test_tens = tf.convert_to_tensor(np.load(data_path +'X_test_tens_' + str(curr_prediction) +'.npy'), dtype=np.float32)
+Y_test_tens =  tf.convert_to_tensor(np.load(data_path +'Y_test_tens_' + str(curr_prediction) +'.npy'), dtype=np.float32)
+average_interval = np.load(data_path +'average_interval_' + str(curr_prediction) +'.npy')
 
-    X_test_tens = tf.convert_to_tensor(np.load(data_path +'X_test_tens_' + str(curr_prediction) +'.npy'), dtype=np.float32)
-    Y_test_tens =  tf.convert_to_tensor(np.load(data_path +'Y_test_tens_' + str(curr_prediction) +'.npy'), dtype=np.float32)
-    average_interval = np.load(data_path +'average_interval_' + str(curr_prediction) +'.npy')
+with open(data_path +'order_lanes_test_' + str(curr_prediction) + '.txt', "rb") as fp:   # Unpickling
+    order_lanes_test = pickle.load(fp)
     
-    with open(data_path +'order_lanes_test_' + str(curr_prediction) + '.txt', "rb") as fp:   # Unpickling
-        order_lanes_test = pickle.load(fp)
-        
-    X_test = reshape_for_3Dim(X_test_tens)
-    Y_test = reshape_for_3Dim(Y_test_tens)
-    
-    if curr_prediction == 0: #creating model for first time
-        #creating new model: Allows us to have diffent batch size that for training
-        prediction_model = define_model(int(X_test.shape[0]), num_timesteps, num_lanes, num_features, A)
-        
-        old_weights = train_model.get_weights() #copy weights from training model
-        prediction_model.set_weights(old_weights)
-    
-    Y_hat = prediction_model.predict(X_test, verbose = 1, steps = 1) 
-    Y_hat = tf.convert_to_tensor(Y_hat, dtype=np.float32)
-    prediction = reshape_for_4Dim(Y_hat)
-    
-    store_predictions_in_df(data_path, prediction, order_lanes_test, 200, average_interval, simu_num = curr_prediction, alternative_prediction = False) 
+X_test = reshape_for_3Dim(X_test_tens)
+Y_test = reshape_for_3Dim(Y_test_tens)
+
+
+
+#    if curr_prediction == 0: #creating model for first time
+#        #creating new model: Allows us to have diffent batch size that for training
+#        prediction_model = define_model(int(X_test.shape[0]), num_timesteps, num_lanes, num_features, A)
+#        
+#        old_weights = train_model.get_weights() #copy weights from training model
+#        prediction_model.set_weights(old_weights)
+
+Y_hat = train_model.predict(X_test, verbose = 1, steps = 1) 
+Y_hat = tf.convert_to_tensor(Y_hat, dtype=np.float32)
+prediction = reshape_for_4Dim(Y_hat)
+
+store_predictions_in_df(data_path, prediction, order_lanes_test, 200, average_interval, simu_num = curr_prediction, alternative_prediction = False) 
 
 
 #train_model.save('models/train_model_complete_final.h5')
@@ -169,12 +178,7 @@ for curr_prediction in range(num_predictions):
 #train_model.save_weights("models/train_model_weights_final.h5")
 
 ##serialize model to YAML
-model_yaml = train_model.to_yaml()
-with open("model.yaml", "w") as yaml_file:
-    yaml_file.write(model_yaml)
-# serialize weights to HDF5
-prediction_model.save_weights("prediction_model_weights.h5")
-print("Saved model to disk")
+
 
 #print("Saved attn model to disk")
 #

@@ -26,6 +26,7 @@ class BatchGraphAttention(Layer):
 
         self.F_ = F_  # Number of output features (F' in the paper)
         self.A = A  #Adjacency Matrix (N x N), fixed for all graphs.
+        self._A_tensor = K.variable(A, name='A')
         self.attn_heads = attn_heads  # Number of attention heads (K in the paper)
         self.attn_heads_reduction = attn_heads_reduction  # 'concat' or 'average' (Eq 5 and 6 in the paper)
         self.attn_dropout = attn_dropout  # Internal dropout rate for attention coefficients
@@ -69,12 +70,12 @@ class BatchGraphAttention(Layer):
             # Attention kernel
             attn_kernel_self = self.add_weight(shape=(self.F_, 1),
                                                initializer=self.attn_kernel_initializer,
-                                               name='att_kernel_{}'.format(head),
+                                               name='att_kernel_{}_a'.format(head),
                                                regularizer=self.attn_kernel_regularizer,
                                                constraint=self.attn_kernel_constraint)
             attn_kernel_neighs = self.add_weight(shape=(self.F_, 1),
                                                  initializer=self.attn_kernel_initializer,
-                                                 name='att_kernel_{}'.format(head),
+                                                 name='att_kernel_{}_b'.format(head),
                                                  regularizer=self.attn_kernel_regularizer,
                                                  constraint=self.attn_kernel_constraint)
             self.attn_kernels.append([attn_kernel_self, attn_kernel_neighs])
