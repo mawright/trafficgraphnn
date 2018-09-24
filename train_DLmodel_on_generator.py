@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Sat Sep 22 12:33:24 2018
+Created on Sun Sep 23 19:00:22 2018
 
 @author: simon
 """
@@ -36,8 +36,9 @@ from keras.models import load_model
 
 
 ### Configuration for tarining process
-train_val_pair = 1
+train_val_pair = 2
 epochs = 2
+simulations_per_batch = 1 #each batch has data from 'batch_size_in_simulations' simulations
 
 data_path = 'data_storage/peri_0_4_bin_2_grid_3_len_600_lanes_3_time_1500_ATTENTION_TEST_DATA_FAILED!/train_test_data/'
 
@@ -90,27 +91,40 @@ X_val = reshape_for_3Dim(X_val_storage)
 Y_train = reshape_for_3Dim(Y_train_storage)
 Y_val = reshape_for_3Dim(Y_val_storage)
 
-####reduce batch size
-#X_train = X_train[0:960, :, :]
-#X_val = X_val[0:960, :, :]
-#Y_train = Y_train[0:960, :, :]
-#Y_val = Y_val[0:960, :, :]
-
 print('X_train.shape:', X_train.shape) #debug
 print('Y_train.shape:', Y_train.shape)
 
-train_model = define_model(train_val_pair*num_samples, num_timesteps, num_lanes, num_features, A)
-validation_data = (X_val, Y_val)
-    
-train_model.fit(X_train,
-          Y_train,
-          epochs=epochs,
-          steps_per_epoch = train_val_pair, #make as much steps as simulations are available batch_size = total num sampes / steps_per_epoch
-          validation_data = validation_data,
-          validation_steps = train_val_pair,
-          shuffle=False,  # Shuffling data means shuffling the whole graph
-          callbacks = [es_callback]
-          )
+dataset_size = train_val_pair*num_samples*num_lanes #total number of samples in whole dataset
+batch_size_in_samples = simulations_per_batch*num_samples * num_lanes #number of samples for one batch
+num_batches = dataset_size//batch_size_in_samples
+
+print('dataset_size:', dataset_size)
+print('batch_size_in_samples:', batch_size_in_samples)
+print('num_batches:', num_batches)
+
+train_model = define_model(batch_size_in_samples, num_timesteps, num_lanes, num_features, A, save_model = True)
+
+def generate_X_Y_batch(X_train, Y_train, num_batches, batch_size_in_samples):
+    while True:
+        for batch in range(num_batches):
+            start = batch_size_in_samples * batch
+            end = start + batch_size_in_samples
+            X = K.eval(X_train[start : end, :, :])
+            Y = K.eval(Y_train[start : end, :, :])
+            #print('X.shape:', X.shape)
+            #print('Y.shape:', Y.shape)
+            print('Gernerated X and Y data for batch ', batch)
+            yield (X, Y)
+
+train_model.fit_generator(generate_X_Y_batch(X_train, Y_train, num_batches, batch_size_in_samples),
+                          steps_per_epoch=num_batches, 
+                          epochs=epochs,
+                          verbose = 1,
+                          callbacks = [es_callback],
+                          validation_data = generate_X_Y_batch(X_val, Y_val, num_batches, batch_size_in_samples),
+                          validation_steps = num_batches,
+                          max_queue_size = 1,
+                          use_multiprocessing = False)
 
 # --------------- predict test data -------------------
 ### Predict results ###
@@ -126,7 +140,8 @@ X_test = reshape_for_3Dim(X_test_tens)
 Y_test = reshape_for_3Dim(Y_test_tens)
 
 #creating new model: Allows us to have diffent batch size that for training
-prediction_model = define_model(num_samples, num_timesteps, num_lanes, num_features, A)
+prediction_model = define_model(int(X_test.shape[0]), num_timesteps, num_lanes, num_features, A)
+
 old_weights = train_model.get_weights() #copy weights from training model
 prediction_model.set_weights(old_weights)
 
@@ -145,14 +160,14 @@ store_predictions_in_df(prediction, order_lanes_test, 200, average_interval, alt
 ## serialize weights to HDF5
 #train_model.save_weights("models/train_model_weights_final.h5")
 
-# serialize model to YAML
+###serialize model to YAML
 #model_yaml = train_model.to_yaml()
 #with open("model.yaml", "w") as yaml_file:
 #    yaml_file.write(model_yaml)
 ## serialize weights to HDF5
 #prediction_model.save_weights("prediction_model_weights.h5")
 #print("Saved model to disk")
-#
+
 #print("Saved attn model to disk")
 #
 #prediction_model.save('models/prediction_model_complete_final.h5')

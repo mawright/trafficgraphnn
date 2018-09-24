@@ -140,5 +140,21 @@ class BatchGraphAttention(Layer):
         output_shape = list(input_shape)
         output_shape[-1] = self.output_dim
         return tuple(output_shape)
+    
+#    def get_config(self):
+#        """
+#            For rebuilding models on load time.
+#        """
+#        config = {
+#            'F_': self.F_,
+#            'A': self.A,
+#            'attn_heads': self.attn_heads,
+#            'attn_heads_reduction': self.attn_heads_reduction,
+#            'attn_dropout': self.attn_dropout,
+#            'activation': self.activation,
+#            'kernel_regularizer': self.kernel_regularizer
+#        }
+#        base_config = super(BatchGraphAttention, self).get_config()
+#        return dict(list(base_config.items()) + list(config.items()))
 
 ## TODO modified TimeDistributed that takes two input tensors (X and A)

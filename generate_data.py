@@ -45,8 +45,8 @@ sample_size = 15     #number of steps per sample in size of average interval
 interpolate_ground_truth = True #interpolate ground-truth data with np.linspace
 
 
-number_of_simulations = 2
-number_of_simulations_test = 2
+number_of_simulations = 50
+number_of_simulations_test = 10
 
 # ------------- End of configuration -------------------------
 

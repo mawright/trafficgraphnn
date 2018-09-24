@@ -434,7 +434,7 @@ class PreprocessData(object):
         return A
                 
                 
-def reshape_for_LSTM(input_arr):
+def reshape_for_3Dim(input_arr):
     '''
     reshapes input from shape (samples x timesteps x lanes x features)
     to output of shape (samples*lanes x timesteps x features)
@@ -460,7 +460,7 @@ def reshape_for_LSTM(input_arr):
 #            output_arr[sample * num_lanes + lane, :, :] = lane_data
     return output_arr
 
-def reshape_for_GAT(input_arr):
+def reshape_for_4Dim(input_arr):
     '''
     reshapes input from shape (samples*lanes x timesteps x features) 
     to output of shape (samples x timesteps x lanes x features)

@@ -145,3 +145,4 @@ pylintrc
 *.py.orig
 .gitignore.orig
 *.tex
+*.yaml
