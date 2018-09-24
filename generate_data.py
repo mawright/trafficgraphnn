@@ -22,7 +22,7 @@ grid_length = 600 #meters
 num_lanes =3
 
 ### Configuration of the Simulation ###
-end_time = 1500 #seconds
+end_time = 400 #seconds
 
 period_1_2 = 0.4
 period_3_4 = 0.4
@@ -45,21 +45,22 @@ sample_size = 15     #number of steps per sample in size of average interval
 interpolate_ground_truth = True #interpolate ground-truth data with np.linspace
 
 
-number_of_simulations = 50
-number_of_simulations_test = 10
+number_of_simulations = 2
+number_of_simulations_test = 2
 
 # ------------- End of configuration -------------------------
 
-path = 'train_test_data/'
+
+
+### Creating Network and running simulation
+config = ConfigGenerator(net_name='test_net')
+path = config.get_preprocessed_data_dir()
 try:  
     os.mkdir(path)
 except OSError:  
     print ("Creation of the directory %s failed" % path)
 else:  
     print ("Successfully created the directory %s " % path)
-
-### Creating Network and running simulation
-config = ConfigGenerator(net_name='test_net')
 
 # Parameters for network, trips and sensors (binomial must be an integer!!!)
 config.gen_grid_network(grid_number = grid_number, grid_length = grid_length, num_lanes = num_lanes, simplify_tls = False)
@@ -127,15 +128,15 @@ for train_num in range(number_of_simulations):
     A = list_A[0] # A does not change 
     
     #Store X, Y 
-    np.save('train_test_data/X_train_tens' + str(train_num) + '.npy', X_train_tens)
-    np.save('train_test_data/Y_train_tens' + str(train_num) + '.npy', Y_train_tens)
-    np.save('train_test_data/X_val_tens' + str(train_num) + '.npy', X_val_tens)
-    np.save('train_test_data/Y_val_tens' + str(train_num) + '.npy', Y_val_tens)
-    np.save('train_test_data/A' + str(train_num) + '.npy', A)
+    np.save(path + '/X_train_tens_' + str(train_num) + '.npy', X_train_tens)
+    np.save(path + '/Y_train_tens_' + str(train_num) + '.npy', Y_train_tens)
+    np.save(path + '/X_val_tens_' + str(train_num) + '.npy', X_val_tens)
+    np.save(path + '/Y_val_tens_' + str(train_num) + '.npy', Y_val_tens)
+    np.save(path + '/A_' + str(train_num) + '.npy', A)
     print('save X and Y to npy file for simulation number ', train_num)
     
 # --------------------- generating test data -----------------------
-for num_test_simu in range(111111, 111111 + number_of_simulations_test):
+for num_test_simu in range(number_of_simulations_test):
 
     #run simulation for generating test data
     config.gen_rand_trips(period = period_test, binomial = binomial, seed = seed, end_time = end_time, fringe_factor = fringe_factor)
@@ -145,7 +146,7 @@ for num_test_simu in range(111111, 111111 + number_of_simulations_test):
     
     ### Running the Liu Estimation
     #creating liu runner object
-    liu_runner = LiuEtAlRunner(sn, store_while_running = True, use_started_halts = use_started_halts, simu_num = num_test_simu)
+    liu_runner = LiuEtAlRunner(sn, store_while_running = True, use_started_halts = use_started_halts, simu_num = num_test_simu, test_data=True)
     
     # caluclating the maximum number of phases and run the estimation
     max_num_phase = liu_runner.get_max_num_phase(end_time)
@@ -160,15 +161,15 @@ for num_test_simu in range(111111, 111111 + number_of_simulations_test):
     preproccess_end_time = preprocess.get_preprocessing_end_time(liu_runner.get_liu_lane_IDs(), average_interval)
     A, X_test_tens, Y_test_tens, order_lanes_test = preprocess.preprocess_A_X_Y(
             average_interval = average_interval, sample_size = sample_size, start = 200, end = preproccess_end_time, 
-            simu_num = num_test_simu, interpolate_ground_truth = interpolate_ground_truth)
+            simu_num = num_test_simu, interpolate_ground_truth = interpolate_ground_truth, test_data = True)
     
     #--store test data ----------
-    np.save('train_test_data/X_test_tens_' + str(num_test_simu) +'.npy', X_test_tens)
-    np.save('train_test_data/Y_test_tens' + str(num_test_simu) +'.npy', Y_test_tens)
-    np.save('train_test_data/A_test' + str(num_test_simu) +'.npy', A)
-    np.save('train_test_data/average_interval' + str(num_test_simu) +'.npy', average_interval)
+    np.save(path + '/X_test_tens_' + str(num_test_simu) +'.npy', X_test_tens)
+    np.save(path + '/Y_test_tens_' + str(num_test_simu) +'.npy', Y_test_tens)
+    np.save(path + '/A_test_' + str(num_test_simu) +'.npy', A)
+    np.save(path + '/average_interval_' + str(num_test_simu) +'.npy', average_interval)
     
-    with open('train_test_data/order_lanes_test' + str(num_test_simu) +'.txt', "wb") as fp:   #Pickling
+    with open(path + '/order_lanes_test_' + str(num_test_simu) +'.txt', "wb") as fp:   #Pickling
         pickle.dump(order_lanes_test, fp)
     
     print('save X,Y and order of lanes for testing to npy file for test_simulation number:', num_test_simu)

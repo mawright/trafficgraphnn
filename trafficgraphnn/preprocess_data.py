@@ -227,7 +227,8 @@ class PreprocessData(object):
                        start = 200,
                        end = 2000,
                        simu_num = 0,
-                       interpolate_ground_truth = False):
+                       interpolate_ground_truth = False, 
+                       test_data = False):
 
         #if not os.path.isfile(os.path.join(os.path.dirname(self.sumo_network.netfile),
         #                                   'e1_detector_data_'+ str(average_interval) + '_seconds' + str(simu_num) + '.h5')):
@@ -237,8 +238,13 @@ class PreprocessData(object):
                                                'e1_detector_data_' + str(average_interval) + '_seconds' + str(simu_num) + '.h5'))
 
         try:
-            df_liu_results = pd.read_hdf(os.path.join(os.path.dirname(self.sumo_network.netfile),
-                    'liu_estimation_results' + str(simu_num) + '.h5'))
+            if test_data:               
+                df_liu_results = pd.read_hdf(os.path.join(os.path.dirname(self.sumo_network.netfile),
+                        'liu_estimation_results_test_data_' + str(simu_num) + '.h5'))
+            else:
+                df_liu_results = pd.read_hdf(os.path.join(os.path.dirname(self.sumo_network.netfile),
+                        'liu_estimation_results' + str(simu_num) + '.h5'))
+                    
         except IOError:
             print('No file for liu estimation results found.')
 

@@ -40,7 +40,7 @@ def resample_predictions(predictions):
     
     return predictions_resampled
 
-def store_predictions_in_df(predictions, order_lanes, start_time, average_interval, alternative_prediction = False):
+def store_predictions_in_df(path, predictions, order_lanes, start_time, average_interval, simu_num = 0, alternative_prediction = False):
     resampled_predictions = resample_predictions(predictions)
     resampled_predictions = np.transpose(resampled_predictions)
 
@@ -48,12 +48,12 @@ def store_predictions_in_df(predictions, order_lanes, start_time, average_interv
                                          index = range(start_time, resampled_predictions.shape[0] * average_interval + start_time, average_interval), 
                                          columns = order_lanes)
     if alternative_prediction == False:
-        df_prediction_results.to_hdf('nn_prediction_results.h5', key = 'prediciton_results')
-        print('Stored prediction results in dataframe')
+        df_prediction_results.to_hdf(path + 'nn_prediction_results_' + str(simu_num) + '.h5', key = 'prediciton_results')
+        print('Stored prediction results in dataframe for simulation_number', simu_num)
     
     if alternative_prediction == True:
-        df_prediction_results.to_hdf('nn_prediction_results_alternative.h5', key = 'prediciton_results')
-        print('Stored prediction Aeye results in dataframe')        
+        df_prediction_results.to_hdf(path + 'nn_prediction_results_alternative_' + str(simu_num) + '.h5', key = 'prediciton_results')
+        print('Stored alternative prediction results in dataframe for simulation_number', simu_num)        
     
 def plot_predictions(df_predictions_1, df_liu_results, df_predictions_2):
     list_lanes = df_predictions_1.columns
