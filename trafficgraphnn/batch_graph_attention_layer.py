@@ -69,12 +69,12 @@ class BatchGraphAttention(Layer):
             # Attention kernel
             attn_kernel_self = self.add_weight(shape=(self.F_, 1),
                                                initializer=self.attn_kernel_initializer,
-                                               name='att_kernel_{}'.format(head),
+                                               name='att_kernel_{}_self'.format(head),
                                                regularizer=self.attn_kernel_regularizer,
                                                constraint=self.attn_kernel_constraint)
             attn_kernel_neighs = self.add_weight(shape=(self.F_, 1),
                                                  initializer=self.attn_kernel_initializer,
-                                                 name='att_kernel_{}'.format(head),
+                                                 name='att_kernel_{}_neighs'.format(head),
                                                  regularizer=self.attn_kernel_regularizer,
                                                  constraint=self.attn_kernel_constraint)
             self.attn_kernels.append([attn_kernel_self, attn_kernel_neighs])
