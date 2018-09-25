@@ -40,7 +40,7 @@ class TimeDistributedMultiInput(TimeDistributed):
                             'Got tensors with shapes : ' + str(input_shape))
         timesteps = [shape[1] for shape in input_shape if shape is not None]
         timesteps = set(timesteps)
-        timesteps -= set(None)
+        timesteps -= set([None])
         # TODO? Allow 1 timestep if an input is to be broadcasted
         # timesteps -= set([1])
         # self._broadcast_time = [shape[1] == 1 if shape is not None else False
@@ -49,9 +49,8 @@ class TimeDistributedMultiInput(TimeDistributed):
         if len(timesteps) > 1:
             raise ValueError('Receieved tensors with incompatible number of timesteps. '
                             'Got tensors with shapes : ' + str(input_shape))
-        self.timesteps = timesteps.pop()
-        self.input_spec = [InputSpec(shape=K.int_shape(shape))
-                        for shape in input_shape]
+        self.timesteps = timesteps.pop() if len(timesteps) == 1 else None
+        self.input_spec = [InputSpec(shape=s) for s in input_shape]
         child_input_shapes = [(shape[0],) + shape[2:] for shape in input_shape]
         if not self.layer.built:
             self.layer.build(child_input_shapes)
@@ -84,7 +83,7 @@ class TimeDistributedMultiInput(TimeDistributed):
             kwargs['training'] = training
         uses_learning_phase = False
 
-        input_shapes = [K.int_shape(input) for input in inputs]
+        input_shapes = [K.int_shape(inp) for inp in inputs]
         batch_sizes = [shape[0] for shape in input_shapes if shape is not None]
         fixed_batch_size = any([bs is not None for bs in batch_sizes])
         if fixed_batch_size:
@@ -110,13 +109,15 @@ class TimeDistributedMultiInput(TimeDistributed):
 
             input_length = self.timesteps if self.timesteps else K.shape(inputs[0])[1]
             # ^^ assumes input 0 has the correct number of timesteps
-            for inp in inputs:
+            def prep_input(inp):
                 inner_input_shape = self._get_shape_tuple((-1,), inp, 2)
                 # Shape: (num_samples * timesteps, ...). And track the
                 # transformation in self._input_map.
                 input_uid = object_list_uid(inp)
-                inp = K.reshape(inp, inner_input_shape)
-                self._input_map[input_uid] = inp
+                reshaped = K.reshape(inp, inner_input_shape)
+                self._input_map[input_uid] = reshaped
+                return reshaped
+            inputs = [prep_input(inp) for inp in inputs]
             # (num_samples * timesteps, ...)
             if has_arg(self.layer.call, 'mask') and mask is not None:
                 inner_mask_shape = self._get_shape_tuple((-1,), mask, 2)
@@ -145,3 +146,34 @@ class TimeDistributedMultiInput(TimeDistributed):
         if uses_learning_phase:
             y._uses_learning_phase = True
         return y
+
+    def compute_mask(self, inputs, mask=None):
+        """Computes an output mask tensor for Embedding layer
+        based on the inputs, mask, and the inner layer.
+
+        If batch size is specified:
+        Simply return the input `mask`. (An rnn-based implementation with
+        more than one rnn inputs is required but not supported in Keras yet.)
+
+        Otherwise we call `compute_mask` of the inner layer at each time step.
+        If the output mask at each time step is not `None`:
+        (E.g., inner layer is Masking or RNN)
+        Concatenate all of them and return the concatenation.
+        If the output mask at each time step is `None` and
+        the input mask is not `None`:
+        (E.g., inner layer is Dense)
+        Reduce the input_mask to 2 dimensions and return it.
+        Otherwise (both the output mask and the input mask are `None`):
+        (E.g., `mask` is not used at all)
+        Return `None`.
+
+        # Arguments
+            inputs: Tensor or list of tensors
+            mask: Tensor or list of tensors
+        # Returns
+            None or a list of tensors
+        """
+        if not isinstance(inputs, list):
+            return super(TimeDistributedMultiInput, self).compute_mask(inputs, mask)
+
+        return [super(TimeDistributedMultiInput, self).compute_mask(i, m) for i,m in zip(inputs, mask)]
