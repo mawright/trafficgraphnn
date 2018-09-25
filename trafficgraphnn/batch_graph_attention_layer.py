@@ -139,8 +139,9 @@ class BatchGraphAttention(Layer):
         return output
 
     def compute_output_shape(self, input_shape):
-        assert input_shape[-1] is not None
-        output_shape = list(input_shape)
+        X_shape = input_shape[0]
+        assert X_shape[-1] is not None
+        output_shape = list(X_shape)
         output_shape[-1] = self.output_dim
         return tuple(output_shape)
 
