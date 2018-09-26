@@ -33,21 +33,17 @@ from trafficgraphnn.postprocess_predictions import store_predictions_in_df, resa
 from define_model import define_model
 from keras.models import load_model
 
-
-
 ### Configuration for training process
 train_val_pair = 2
 epochs = 2
-simulations_per_batch = 2 #each batch has data from 'batch_size_in_simulations' simulations
+simulations_per_batch = 1 #each batch has data from 'batch_size_in_simulations' simulations
 
-num_predictions = 2 
+num_predictions = 1
 
 config = ConfigGenerator(net_name='test_net')
 data_path = config.get_preprocessed_data_dir() + '/' #location where files from generate_data.py are stored
 
-#data_path = 'data/networks/test_net/preprocessed_data/' #custom location
-
-# total epochs = num_training_steps x train_val_pair x epochs
+#data_path = 'data_storage/peri_0_4_bin_2_grid_3_len_600_lanes_3_time_1500_simu_50/train_test_data/' #custom location
 
 es_patience = 10   # number of epochs with no improvement after which training will be stopped.
 es_callback = EarlyStopping(monitor='val_loss', patience=es_patience, verbose=1)
@@ -67,10 +63,16 @@ for pair_num in range(train_val_pair):
         num_features = X_train.shape[3]
         num_targets = Y_train.shape[3]
         
-        X_train_storage = np.zeros((train_val_pair, num_samples, num_timesteps, num_lanes, num_features))
-        X_val_storage = np.zeros((train_val_pair, num_samples, num_timesteps, num_lanes, num_features))
-        Y_train_storage = np.zeros((train_val_pair, num_samples, num_timesteps, num_lanes, num_targets))
-        Y_val_storage = np.zeros((train_val_pair, num_samples, num_timesteps, num_lanes, num_targets))
+        print('num_samples:', num_samples)
+        print('num_timesteps:', num_timesteps)
+        print('num_lanes:', num_lanes)
+        print('num_features:', num_features)
+        print('num_targets:', num_targets)
+        
+        X_train_storage = np.zeros((train_val_pair, num_timesteps, num_lanes, num_features))
+        X_val_storage = np.zeros((train_val_pair, num_timesteps, num_lanes, num_features))
+        Y_train_storage = np.zeros((train_val_pair, num_timesteps, num_lanes, num_targets))
+        Y_val_storage = np.zeros((train_val_pair, num_timesteps, num_lanes, num_targets))
         
         A = np.load(data_path +'A_0.npy') #A does not change
     
@@ -80,27 +82,12 @@ for pair_num in range(train_val_pair):
     Y_train_storage[pair_num, :, :, :] = Y_train
     Y_val_storage[pair_num, :, :, :] = Y_val
     
-#reshape to one big X
-X_train_storage = K.reshape(X_train_storage, (train_val_pair * num_samples, num_timesteps, num_lanes, num_features))
-X_val_storage = K.reshape(X_val_storage, (train_val_pair * num_samples, num_timesteps, num_lanes, num_features))    
-Y_train_storage = K.reshape(Y_train_storage, (train_val_pair * num_samples, num_timesteps, num_lanes, num_targets))
-Y_val_storage = K.reshape(Y_val_storage, (train_val_pair * num_samples, num_timesteps, num_lanes, num_targets))
 
 print('X_train_storage.shape:', X_train_storage.shape) #debug
 print('Y_train_storage.shape:', Y_train_storage.shape)
 
-
-
-X_train = reshape_for_3Dim(X_train_storage)
-X_val = reshape_for_3Dim(X_val_storage)
-Y_train = reshape_for_3Dim(Y_train_storage)
-Y_val = reshape_for_3Dim(Y_val_storage)
-
-print('X_train.shape:', X_train.shape) #debug
-print('Y_train.shape:', Y_train.shape)
-
-dataset_size = train_val_pair*num_samples*num_lanes #total number of samples in whole dataset
-batch_size_in_samples = simulations_per_batch*num_samples * num_lanes #number of samples for one batch
+dataset_size = train_val_pair #total number of samples in whole dataset
+batch_size_in_samples = simulations_per_batch #number of samples for one batch
 num_batches = dataset_size//batch_size_in_samples
 
 print('dataset_size:', dataset_size)
@@ -109,27 +96,18 @@ print('num_batches:', num_batches)
 
 train_model = define_model(batch_size_in_samples, num_timesteps, num_lanes, num_features, A, save_model = True)
 
-def generate_X_Y_batch(X_train, Y_train, num_batches, batch_size_in_samples):
-    while True:
-        for batch in range(num_batches):
-            start = batch_size_in_samples * batch
-            end = start + batch_size_in_samples
-            X = K.eval(X_train[start : end, :, :])
-            Y = K.eval(Y_train[start : end, :, :])
-            #print('X.shape:', X.shape)
-            #print('Y.shape:', Y.shape)
-            print('Gernerated X and Y data for batch ', batch)
-            yield (X, Y)
-
-train_model.fit_generator(generate_X_Y_batch(X_train, Y_train, num_batches, batch_size_in_samples),
-                          steps_per_epoch=num_batches, 
-                          epochs=epochs,
-                          verbose = 1,
-                          callbacks = [es_callback],
-                          validation_data = generate_X_Y_batch(X_val, Y_val, num_batches, batch_size_in_samples),
-                          validation_steps = num_batches,
-                          max_queue_size = 1,
-                          use_multiprocessing = False)
+validation_data = (X_val_storage, Y_val_storage)
+    
+train_model.fit(X_train_storage,
+          Y_train_storage,
+          epochs=epochs,
+          batch_size = 2,
+#          steps_per_epoch = train_val_pair, #make as much steps as simulations are available batch_size = total num sampes / steps_per_epoch
+          validation_data = validation_data,
+#          validation_steps = train_val_pair,
+          shuffle=False,  # Shuffling data means shuffling the whole graph
+          callbacks = [es_callback]
+          )
 
 train_model.save('models/train_model_complete_final.h5')
 model_yaml = train_model.to_yaml()
@@ -150,8 +128,8 @@ average_interval = np.load(data_path +'average_interval_' + str(curr_prediction)
 with open(data_path +'order_lanes_test_' + str(curr_prediction) + '.txt', "rb") as fp:   # Unpickling
     order_lanes_test = pickle.load(fp)
     
-X_test = reshape_for_3Dim(X_test_tens)
-Y_test = reshape_for_3Dim(Y_test_tens)
+#X_test = reshape_for_3Dim(X_test_tens)
+#Y_test = reshape_for_3Dim(Y_test_tens)
 
 
 
@@ -162,10 +140,19 @@ Y_test = reshape_for_3Dim(Y_test_tens)
 #        old_weights = train_model.get_weights() #copy weights from training model
 #        prediction_model.set_weights(old_weights)
 
-Y_hat = train_model.predict(X_test, verbose = 1, steps = 1) 
-Y_hat = tf.convert_to_tensor(Y_hat, dtype=np.float32)
-prediction = reshape_for_4Dim(Y_hat)
+#alternative prediction!!!
+prediction_model = define_model(num_samples, num_timesteps, num_lanes, num_features, A)
+old_weights = train_model.get_weights() #copy weights from training model
+prediction_model.set_weights(old_weights)
 
+Y_hat = prediction_model.predict(X_test_tens, verbose = 1, steps = 1) 
+prediction = tf.convert_to_tensor(Y_hat, dtype=np.float32)
+store_predictions_in_df(data_path, prediction, order_lanes_test, 200, average_interval, simu_num = curr_prediction, alternative_prediction = True) 
+
+
+#regular prediction
+Y_hat = train_model.predict(X_test_tens, verbose = 1, steps = 1) 
+prediction = tf.convert_to_tensor(Y_hat, dtype=np.float32)
 store_predictions_in_df(data_path, prediction, order_lanes_test, 200, average_interval, simu_num = curr_prediction, alternative_prediction = False) 
 
 

@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from matplotlib import pyplot as plt
+import keras.backend as K
 
 def resample_predictions(predictions):
     sess = tf.InteractiveSession()
@@ -41,9 +42,13 @@ def resample_predictions(predictions):
     return predictions_resampled
 
 def store_predictions_in_df(path, predictions, order_lanes, start_time, average_interval, simu_num = 0, alternative_prediction = False):
-    resampled_predictions = resample_predictions(predictions)
-    resampled_predictions = np.transpose(resampled_predictions)
-
+    #resampled_predictions = resample_predictions(predictions)
+    #resampled_predictions = np.transpose(resampled_predictions)
+    
+    timesteps_per_sample = predictions.shape[1]
+    num_lanes = predictions.shape[2]
+    resampled_predictions = K.eval(K.reshape(predictions, (timesteps_per_sample, num_lanes))) #reshape to (timesteps x lanes)
+    
     df_prediction_results = pd.DataFrame(data = resampled_predictions[:,:], 
                                          index = range(start_time, resampled_predictions.shape[0] * average_interval + start_time, average_interval), 
                                          columns = order_lanes)

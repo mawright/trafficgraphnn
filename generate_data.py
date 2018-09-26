@@ -22,13 +22,13 @@ grid_length = 600 #meters
 num_lanes =3
 
 ### Configuration of the Simulation ###
-end_time = 400 #seconds
+end_time = 600 #seconds
 
-period_1_2 = 0.4
-period_3_4 = 0.4
-period_5 = 0.4
+period_1_2 = 0.3
+period_3_4 = 0.3
+period_5 = 0.3
 
-period_test = 0.4
+period_test = 0.3
 
 binomial = 2
 seed = 50
@@ -75,6 +75,7 @@ config.define_tls_output_file()
 
 for train_num in range(number_of_simulations):
     
+    seed += 1
     if train_num <= 1:
         period = period_1_2
     elif train_num >=2 and train_num <=3:
@@ -112,7 +113,8 @@ for train_num in range(number_of_simulations):
         preproccess_end_time = preprocess.get_preprocessing_end_time(liu_runner.get_liu_lane_IDs(), average_interval)
         A, X, Y, order_lanes = preprocess.preprocess_A_X_Y(
                 average_interval = average_interval, sample_size = sample_size, start = 200, end = preproccess_end_time, 
-                simu_num = simu_num, interpolate_ground_truth = interpolate_ground_truth)
+                simu_num = simu_num, interpolate_ground_truth = interpolate_ground_truth,
+                sample_time_sequence = False)
 	#NOTE: in this simulation A is an eye matrix    
 
         list_A.append(A)
@@ -137,7 +139,8 @@ for train_num in range(number_of_simulations):
     
 # --------------------- generating test data -----------------------
 for num_test_simu in range(number_of_simulations_test):
-
+    
+    seed += 1
     #run simulation for generating test data
     config.gen_rand_trips(period = period_test, binomial = binomial, seed = seed, end_time = end_time, fringe_factor = fringe_factor)
     sn = SumoNetwork.from_gen_config(config, lanewise=True)
@@ -161,7 +164,8 @@ for num_test_simu in range(number_of_simulations_test):
     preproccess_end_time = preprocess.get_preprocessing_end_time(liu_runner.get_liu_lane_IDs(), average_interval)
     A, X_test_tens, Y_test_tens, order_lanes_test = preprocess.preprocess_A_X_Y(
             average_interval = average_interval, sample_size = sample_size, start = 200, end = preproccess_end_time, 
-            simu_num = num_test_simu, interpolate_ground_truth = interpolate_ground_truth, test_data = True)
+            simu_num = num_test_simu, interpolate_ground_truth = interpolate_ground_truth, test_data = True, 
+            sample_time_sequence = False)
     
     #--store test data ----------
     np.save(path + '/X_test_tens_' + str(num_test_simu) +'.npy', X_test_tens)
