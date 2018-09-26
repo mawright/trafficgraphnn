@@ -24,8 +24,7 @@ class AttentionDecoder(Recurrent):
     def __init__(self, units, output_dim,
                  causal=False,
                  causal_lag=0,
-                 activation='tanh',
-                 output_activation=None,
+                 activation=None,
                  return_probabilities=False,
                  name='AttentionDecoder',
                  kernel_initializer='glorot_uniform',
@@ -54,7 +53,6 @@ class AttentionDecoder(Recurrent):
         self.causal = causal
         self.causal_lag = causal_lag
         self.activation = activations.get(activation)
-        self.output_activation = activations.get(output_activation)
         self.kernel_initializer = initializers.get(kernel_initializer)
         self.recurrent_initializer = initializers.get(recurrent_initializer)
         self.bias_initializer = initializers.get(bias_initializer)
@@ -220,8 +218,9 @@ class AttentionDecoder(Recurrent):
 
         # counter of number of input timesteps
         if self.causal:
-            self._input_t = K.cumsum(
-                K.ones(self.timesteps, dtype='int32')) - 1 + self.causal_lag
+            start = self.causal_lag
+            stop = self.timesteps + start
+            self._input_t = K.arange(start, stop)
 
         # apply the a dense layer over the time dimension of the sequence
         # do it here because it doesn't depend on any previous steps
@@ -269,10 +268,7 @@ class AttentionDecoder(Recurrent):
             mask = K.cast(is_future, 'float32') * -10e9
             et = et + K.expand_dims(K.expand_dims(mask, -1), 0)
 
-        at = K.exp(et)
-        at_sum = K.sum(at, axis=1)
-        at_sum_repeated = K.repeat(at_sum, self.timesteps)
-        at /= at_sum_repeated  # vector of size (batchsize, timesteps, 1)
+        at = K.softmax(et, axis=1)
 
         # calculate the context vector
         context = K.squeeze(K.batch_dot(at, self.x_seq, axes=1), axis=1)
@@ -302,7 +298,7 @@ class AttentionDecoder(Recurrent):
         # new hidden state:
         st = (1-zt)*stm + zt * s_tp
 
-        yt = self.output_activation(
+        yt = self.activation(
            K.dot(ytm, self.W_o)
            + K.dot(stm, self.U_o)
            + K.dot(context, self.C_o)
@@ -334,7 +330,7 @@ class AttentionDecoder(Recurrent):
             'return_probabilities': self.return_probabilities,
             'causal': self.causal,
             'causal_lag': self.causal_lag,
-            'output_activation': self.output_activation
+            'activation': self.activation
         }
         base_config = super(AttentionDecoder, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
