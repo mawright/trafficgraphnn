@@ -13,6 +13,7 @@ import tensorflow as tf
 import keras.backend as K
 from keras.callbacks import EarlyStopping
 from keras.layers import Input, Dropout, Dense, TimeDistributed, Lambda, LSTM
+from keras.layers.core import Reshape, Permute
 from keras.models import Model
 from keras.optimizers import Adam
 from keras.regularizers import l2
@@ -21,7 +22,6 @@ from trafficgraphnn.batch_graph_attention_layer import  BatchGraphAttention
 from keras.utils.vis_utils import plot_model
 
 from trafficgraphnn.attention_decoder import AttentionDecoder
-
 
 ### Configuration of the deep learning model
 width_1gat = 128 # Output dimension of first GraphAttention layer
@@ -38,8 +38,8 @@ n_units = 128   #number of units of the LSTM cells
 def define_model(num_samples, num_timesteps, num_lanes, num_features, A, save_model = False):
     #define necessary functions  
     
-    def reshape_for_GAT(input_arr):
-        input_arr_reshaped = K.reshape(input_arr, (-1, num_lanes, num_timesteps, num_features))
+    def reshape_for_output(input_arr):
+        input_arr_reshaped = K.reshape(input_arr, (-1, num_lanes, num_timesteps, 1))
         output_arr = K.permute_dimensions(input_arr_reshaped, (0, 2, 1, 3))
         return output_arr
     
@@ -49,19 +49,17 @@ def define_model(num_samples, num_timesteps, num_lanes, num_features, A, save_mo
         return output_arr
         
     #define the model
-    A_tf = tf.convert_to_tensor(A, dtype=np.float32)
-#        num_lanes = tf.convert_to_tensor(N, dtype=np.float32) #num_lanes ha to become an Input later, rn it's hardcoded
+    #A_tf = tf.convert_to_tensor(A, dtype=np.float32)
+    A = A.astype(np.float32)
     
-    X1_in = Input(batch_shape=(num_samples, num_timesteps, num_features)) #(num_lanes*num_old_samples x timesteps x num_features)
-#        num_lanes_in = Input(shape=(1,)) 
+    X1_in = Input(batch_shape=(None, num_timesteps, num_lanes, num_features)) #(num_lanes*num_old_samples x timesteps x num_features)
 
+    #shaped_X1_in = Lambda(reshape_for_GAT)(X1_in)
     
-    shaped_X1_in = Lambda(reshape_for_GAT)(X1_in)
-    
-    dropout1 = TimeDistributed(Dropout(dropout_rate))(shaped_X1_in)
+    dropout1 = TimeDistributed(Dropout(dropout_rate))(X1_in)
     
     graph_attention_1 = TimeDistributed(BatchGraphAttention(width_1gat,
-                                       A_tf,
+                                       A,
                                        attn_heads=n_attn_heads,
                                        attn_heads_reduction='average',
                                        attn_dropout=attn_dropout,
@@ -72,7 +70,7 @@ def define_model(num_samples, num_timesteps, num_lanes, num_features, A, save_mo
     dropout2 = TimeDistributed(Dropout(dropout_rate))(graph_attention_1)
     
     graph_attention_2 = TimeDistributed(BatchGraphAttention(F_,
-                                       A_tf,
+                                       A,
                                        attn_heads=n_attn_heads,
                                        attn_heads_reduction='average',
                                        attn_dropout=attn_dropout,
@@ -88,15 +86,16 @@ def define_model(num_samples, num_timesteps, num_lanes, num_features, A, save_mo
     
     #make sure that the reshape is made correctly!
     encoder_inputs = Lambda(reshape_for_LSTM)(dropout4)
-    decoder_inputs = LSTM(n_units,
-         batch_input_shape=(num_samples, num_timesteps, num_features), 
-         return_sequences=True)(encoder_inputs)
+   
+    decoder_inputs = LSTM(n_units, return_sequences=True)(encoder_inputs)
     
     decoder_output = AttentionDecoder(n_units, 1)(decoder_inputs) #Attention! 5 output features now!
-
-    model = Model(inputs= X1_in, outputs=decoder_output) 
     
-    optimizer = Adam(lr=0.001)
+    output_reshaped = Lambda(reshape_for_output)(decoder_output)
+
+    model = Model(inputs= X1_in, outputs=output_reshaped) 
+    
+    optimizer = Adam(lr=learning_rate)
     model.compile(optimizer=optimizer,
                   loss='mean_squared_error',
                   metrics=['accuracy'])

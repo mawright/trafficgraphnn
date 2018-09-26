@@ -227,7 +227,9 @@ class PreprocessData(object):
                        start = 200,
                        end = 2000,
                        simu_num = 0,
-                       interpolate_ground_truth = False):
+                       interpolate_ground_truth = False, 
+                       test_data = False, 
+                       sample_time_sequence = False):
 
         #if not os.path.isfile(os.path.join(os.path.dirname(self.sumo_network.netfile),
         #                                   'e1_detector_data_'+ str(average_interval) + '_seconds' + str(simu_num) + '.h5')):
@@ -237,15 +239,21 @@ class PreprocessData(object):
                                                'e1_detector_data_' + str(average_interval) + '_seconds' + str(simu_num) + '.h5'))
 
         try:
-            df_liu_results = pd.read_hdf(os.path.join(os.path.dirname(self.sumo_network.netfile),
-                    'liu_estimation_results' + str(simu_num) + '.h5'))
+            if test_data:               
+                df_liu_results = pd.read_hdf(os.path.join(os.path.dirname(self.sumo_network.netfile),
+                        'liu_estimation_results_test_data_' + str(simu_num) + '.h5'))
+            else:
+                df_liu_results = pd.read_hdf(os.path.join(os.path.dirname(self.sumo_network.netfile),
+                        'liu_estimation_results' + str(simu_num) + '.h5'))
+                    
         except IOError:
             print('No file for liu estimation results found.')
 
         subgraph = self.get_subgraph(self.graph)
 
         X, Y = self.calc_X_and_Y(subgraph, df_detector, df_liu_results,
-                            start, end, average_interval, sample_size, interpolate_ground_truth)
+                            start, end, average_interval, sample_size, 
+                            interpolate_ground_truth, sample_time_sequence = sample_time_sequence)
 
         A = nx.adjacency_matrix(subgraph)
         #get order of lanes for A, X, Y
@@ -261,7 +269,20 @@ class PreprocessData(object):
         return A, X, Y, ord_lanes
 
 
-    def calc_X_and_Y(self, subgraph, df_detector, df_liu_results, start_time, end_time, average_interval, sample_size, interpolate_ground_truth):
+    def calc_X_and_Y(self, 
+                     subgraph, 
+                     df_detector, 
+                     df_liu_results, 
+                     start_time, 
+                     end_time, 
+                     average_interval, 
+                     sample_size, 
+                     interpolate_ground_truth, 
+                     sample_time_sequence = False):
+        '''
+        Takes the dataframe from the e1 detectors and liu results as input and gibes the X and Y back.
+    
+        '''
 
         for lane, cnt_lane in zip(subgraph.nodes, range(len(subgraph.nodes))): 
             # faster solution: just access df once and store data in arrays or lists
@@ -293,29 +314,35 @@ class PreprocessData(object):
                        interpolate_ground_truth = interpolate_ground_truth,
                        ground_truth_name = 'ground-truth')
             
+        if sample_time_sequence:
             
-        num_samples = math.ceil(X_unsampled.shape[0]/sample_size)
-        print('number of samples:', num_samples)
-        X_sampled = np.zeros((num_samples, sample_size, len(subgraph.nodes), 8))
-        Y_sampled = np.zeros((num_samples, sample_size, len(subgraph.nodes), 1))
-        for cnt_sample in range(num_samples):
-            sample_start = cnt_sample*sample_size
-            sample_end = sample_start + sample_size
-
-            if X_unsampled[sample_start:sample_end][:][:].shape[0] == sample_size:
-                X_sampled[cnt_sample][:][:][:] = X_unsampled[sample_start:sample_end][:][:]
-                Y_sampled[cnt_sample][:][:][:] = Y_unsampled[sample_start:sample_end][:][:]
-            else:
-                # implement zero padding
-                diff_samples = sample_size - X_unsampled[sample_start:sample_end][:][:].shape[0]
-                X_zero_padding = np.vstack((X_unsampled[sample_start:sample_end][:][:],
-                                           np.zeros((diff_samples, len(subgraph.nodes), 8))))
-                Y_zero_padding = np.vstack((Y_unsampled[sample_start:sample_end][:][:],
-                           np.zeros((diff_samples, len(subgraph.nodes), 1))))
-                X_sampled[cnt_sample][:][:][:] = X_zero_padding
-                Y_sampled[cnt_sample][:][:][:] = Y_zero_padding
-
-        return X_sampled, Y_sampled
+            num_samples = math.ceil(X_unsampled.shape[0]/sample_size)
+            print('number of samples:', num_samples)
+            X_sampled = np.zeros((num_samples, sample_size, len(subgraph.nodes), 8))
+            Y_sampled = np.zeros((num_samples, sample_size, len(subgraph.nodes), 1))
+            for cnt_sample in range(num_samples):
+                sample_start = cnt_sample*sample_size
+                sample_end = sample_start + sample_size
+    
+                if X_unsampled[sample_start:sample_end][:][:].shape[0] == sample_size:
+                    X_sampled[cnt_sample][:][:][:] = X_unsampled[sample_start:sample_end][:][:]
+                    Y_sampled[cnt_sample][:][:][:] = Y_unsampled[sample_start:sample_end][:][:]
+                else:
+                    # implement zero padding
+                    diff_samples = sample_size - X_unsampled[sample_start:sample_end][:][:].shape[0]
+                    X_zero_padding = np.vstack((X_unsampled[sample_start:sample_end][:][:],
+                                               np.zeros((diff_samples, len(subgraph.nodes), 8))))
+                    Y_zero_padding = np.vstack((Y_unsampled[sample_start:sample_end][:][:],
+                               np.zeros((diff_samples, len(subgraph.nodes), 1))))
+                    X_sampled[cnt_sample][:][:][:] = X_zero_padding
+                    Y_sampled[cnt_sample][:][:][:] = Y_zero_padding
+    
+            return X_sampled, Y_sampled #dimension (num_samples x num_timesteps x num_lanes x num_features)
+        else:
+            #reshape arrays, that they have the same output shape than sampeled X and Y
+            X_reshaped = np.reshape(X_unsampled, (1, X_unsampled.shape[0], X_unsampled.shape[1], X_unsampled.shape[2]))
+            Y_reshaped = np.reshape(Y_unsampled, (1, Y_unsampled.shape[0], Y_unsampled.shape[1], Y_unsampled.shape[2]))
+            return X_reshaped, Y_reshaped #dimension ( 1 x num_timesteps x num_lanes x num_features)
 
     def get_subgraph(self, graph):
         node_sublist = [lane[0] for lane in self.graph.nodes(data=True) if lane[1] != {}]
@@ -323,7 +350,14 @@ class PreprocessData(object):
         sub_graph = graph.subgraph(node_sublist)
         return sub_graph
     
-    def get_ground_truth_array(self, start_time, duration_in_sec, lane_id, average_interval, num_rows, interpolate_ground_truth= False, ground_truth_name = 'ground-truth'):
+    def get_ground_truth_array(self, 
+                               start_time, 
+                               duration_in_sec, 
+                               lane_id, average_interval, 
+                               num_rows, 
+                               interpolate_ground_truth= False, 
+                               ground_truth_name = 'ground-truth'):
+        
         """Returns the array (either ground truth or liu results) for a specific lane for a time period for an specific interval
 
         "start time" corresponds to start of the ground truth data, int

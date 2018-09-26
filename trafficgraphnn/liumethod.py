@@ -25,7 +25,8 @@ class LiuEtAlRunner(object):
                  time_window=None,
                  store_while_running = True,
                  use_started_halts = False,
-                 simu_num = 0):
+                 simu_num = 0,
+                 test_data = False):
         self.sumo_network = sumo_network
         self.graph = self.sumo_network.get_graph()
         self.net = sumo_network.net
@@ -34,6 +35,7 @@ class LiuEtAlRunner(object):
         self.store_while_running = store_while_running
         self.use_started_halts = use_started_halts
         self.simu_num = simu_num
+        self.test_data = test_data
         # verify all lanes requested are actually in the network
         if lane_subset is None:
             # process all lanes
@@ -195,9 +197,15 @@ class LiuEtAlRunner(object):
 
         for intersection in self.liu_intersections:
             intersection.add_estimation_to_df(self.store_while_running, 0)
-
-        self.df_estimation_results.to_hdf(os.path.join(os.path.dirname(
-                self.sumo_network.netfile), 'liu_estimation_results' + str(self.simu_num) + '.h5'), key = 'df_estimation_results')
+        
+        if self.test_data:
+            self.df_estimation_results.to_hdf(os.path.join(os.path.dirname(
+                    self.sumo_network.netfile), 'liu_estimation_results_test_data_' + str(self.simu_num) + '.h5'), 
+                    key = 'df_estimation_results')
+        else:
+            self.df_estimation_results.to_hdf(os.path.join(os.path.dirname(
+                    self.sumo_network.netfile), 'liu_estimation_results' + str(self.simu_num) + '.h5'), 
+                    key = 'df_estimation_results')
         print('Saved all results in hdf file')
 
         if unload_data == True: #unload data and delete everything to save memory
@@ -209,8 +217,12 @@ class LiuEtAlRunner(object):
 
     def append_results(self, num_phase):
 
-        file_name = os.path.join(os.path.dirname(
-            self.sumo_network.netfile), 'liu_estimation_results' + str(self.simu_num) + '.h5')
+        if self.test_data:
+            file_name = os.path.join(os.path.dirname(
+                self.sumo_network.netfile), 'liu_estimation_results_test_data_' + str(self.simu_num) + '.h5')            
+        else:
+            file_name = os.path.join(os.path.dirname(
+                self.sumo_network.netfile), 'liu_estimation_results' + str(self.simu_num) + '.h5')
         if not os.path.exists(file_name) or num_phase == 0:
             self.df_estimation_results.to_hdf(file_name,
                     key = 'df_estimation_results', format='table')

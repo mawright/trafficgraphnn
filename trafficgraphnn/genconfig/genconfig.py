@@ -34,6 +34,7 @@ class ConfigGenerator(object):
         self.net_config_dir = os.path.join(net_config_dir, net_name)
         self.net_name = net_name
         self.output_data_dir = os.path.join(self.net_config_dir, 'output')
+        self.preprocessed_data_dir = os.path.join(self.net_config_dir, 'preprocessed_data')
 
         self.net_output_file = os.path.join(
             self.net_config_dir, self.net_name + '.net.xml')
@@ -205,6 +206,9 @@ class ConfigGenerator(object):
             self.non_detector_addl_files.append(addl_file)
 
         return os.path.realpath(addl_file)
+    
+    def get_preprocessed_data_dir(self):
+        return self.preprocessed_data_dir
 
 
 def define_tls_output_file(
