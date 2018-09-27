@@ -30,13 +30,13 @@ from trafficgraphnn.batch_graph_attention_layer import  BatchGraphAttention
 from keras.utils.vis_utils import plot_model
 from trafficgraphnn.attention_decoder import AttentionDecoder
 from trafficgraphnn.postprocess_predictions import store_predictions_in_df, resample_predictions
-from define_model import define_model
+from define_model_new import define_model
 from keras.models import load_model
 
 ### Configuration for training process
 train_val_pair = 2
 epochs = 2
-simulations_per_batch = 1 #each batch has data from 'batch_size_in_simulations' simulations
+simulations_per_batch = 2 #each batch has data from 'batch_size_in_simulations' simulations
 
 num_predictions = 1
 
@@ -44,6 +44,7 @@ config = ConfigGenerator(net_name='test_net')
 data_path = config.get_preprocessed_data_dir() + '/' #location where files from generate_data.py are stored
 
 #data_path = 'data_storage/peri_0_4_bin_2_grid_3_len_600_lanes_3_time_1500_simu_50/train_test_data/' #custom location
+#data_path = 'train_test_data/' #custom location
 
 es_patience = 10   # number of epochs with no improvement after which training will be stopped.
 es_callback = EarlyStopping(monitor='val_loss', patience=es_patience, verbose=1)
@@ -94,14 +95,14 @@ print('dataset_size:', dataset_size)
 print('batch_size_in_samples:', batch_size_in_samples)
 print('num_batches:', num_batches)
 
-train_model = define_model(batch_size_in_samples, num_timesteps, num_lanes, num_features, A, save_model = True)
+train_model = define_model(batch_size_in_samples, num_timesteps, num_lanes, num_features, A)
 
 validation_data = (X_val_storage, Y_val_storage)
     
 train_model.fit(X_train_storage,
           Y_train_storage,
           epochs=epochs,
-          batch_size = 2,
+          batch_size = simulations_per_batch,
 #          steps_per_epoch = train_val_pair, #make as much steps as simulations are available batch_size = total num sampes / steps_per_epoch
           validation_data = validation_data,
 #          validation_steps = train_val_pair,
@@ -121,8 +122,8 @@ print("Saved model to disk")
 ### Predict results ###
 
 curr_prediction = 0
-X_test_tens = tf.convert_to_tensor(np.load(data_path +'X_test_tens_' + str(curr_prediction) +'.npy'), dtype=np.float32)
-Y_test_tens =  tf.convert_to_tensor(np.load(data_path +'Y_test_tens_' + str(curr_prediction) +'.npy'), dtype=np.float32)
+X_test_tens = np.load(data_path +'X_test_tens_' + str(curr_prediction) +'.npy')
+Y_test_tens =  np.load(data_path +'Y_test_tens_' + str(curr_prediction) +'.npy')
 average_interval = np.load(data_path +'average_interval_' + str(curr_prediction) +'.npy')
 
 with open(data_path +'order_lanes_test_' + str(curr_prediction) + '.txt', "rb") as fp:   # Unpickling
@@ -141,7 +142,7 @@ with open(data_path +'order_lanes_test_' + str(curr_prediction) + '.txt', "rb") 
 #        prediction_model.set_weights(old_weights)
 
 #alternative prediction!!!
-prediction_model = define_model(num_samples, num_timesteps, num_lanes, num_features, A)
+prediction_model = define_model(1, num_timesteps, num_lanes, num_features, A)
 old_weights = train_model.get_weights() #copy weights from training model
 prediction_model.set_weights(old_weights)
 
@@ -150,10 +151,10 @@ prediction = tf.convert_to_tensor(Y_hat, dtype=np.float32)
 store_predictions_in_df(data_path, prediction, order_lanes_test, 200, average_interval, simu_num = curr_prediction, alternative_prediction = True) 
 
 
-#regular prediction
-Y_hat = train_model.predict(X_test_tens, verbose = 1, steps = 1) 
-prediction = tf.convert_to_tensor(Y_hat, dtype=np.float32)
-store_predictions_in_df(data_path, prediction, order_lanes_test, 200, average_interval, simu_num = curr_prediction, alternative_prediction = False) 
+##regular prediction
+#Y_hat = train_model.predict(X_test_tens, verbose = 1, steps = 1) 
+#prediction = tf.convert_to_tensor(Y_hat, dtype=np.float32)
+#store_predictions_in_df(data_path, prediction, order_lanes_test, 200, average_interval, simu_num = curr_prediction, alternative_prediction = False) 
 
 
 #train_model.save('models/train_model_complete_final.h5')
