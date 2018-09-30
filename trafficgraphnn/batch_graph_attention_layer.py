@@ -3,12 +3,12 @@ from __future__ import absolute_import
 from keras import backend as K
 from keras import activations, constraints, initializers, regularizers
 from keras.layers import Layer, Dropout, LeakyReLU
+from keras.engine import InputSpec
 
 class BatchGraphAttention(Layer):
 
     def __init__(self,
                  F_,
-                 A,
                  attn_heads=1,
                  attn_heads_reduction='concat',  # {'concat', 'average'}
                  attn_dropout=0.5,
@@ -25,8 +25,6 @@ class BatchGraphAttention(Layer):
             raise ValueError('Possbile reduction methods: concat, average')
 
         self.F_ = F_  # Number of output features (F' in the paper)
-        self.A = A  #Adjacency Matrix (N x N), fixed for all graphs.
-        self._A_tensor = K.variable(A, name='A')
         self.attn_heads = attn_heads  # Number of attention heads (K in the paper)
         self.attn_heads_reduction = attn_heads_reduction  # 'concat' or 'average' (Eq 5 and 6 in the paper)
         self.attn_dropout = attn_dropout  # Internal dropout rate for attention coefficients
@@ -54,8 +52,10 @@ class BatchGraphAttention(Layer):
         super(BatchGraphAttention, self).__init__(**kwargs)
 
     def build(self, input_shape):
-        assert len(input_shape) >= 3 # dimensions: batch, node, features
-        F = input_shape[-1]
+        assert len(input_shape) >= 2
+        assert len(input_shape[0]) >= 3 # dimensions: batch, node, features
+        assert len(input_shape[1]) >= 3 # dimensions, batch, node, node
+        F = input_shape[0][-1] # input feature dim
 
         # Initialize kernels for each attention head
         for head in range(self.attn_heads):
@@ -70,20 +70,22 @@ class BatchGraphAttention(Layer):
             # Attention kernel
             attn_kernel_self = self.add_weight(shape=(self.F_, 1),
                                                initializer=self.attn_kernel_initializer,
-                                               name='att_kernel_{}_a'.format(head),
+                                               name='att_kernel_{}_self'.format(head),
                                                regularizer=self.attn_kernel_regularizer,
                                                constraint=self.attn_kernel_constraint)
             attn_kernel_neighs = self.add_weight(shape=(self.F_, 1),
                                                  initializer=self.attn_kernel_initializer,
-                                                 name='att_kernel_{}_b'.format(head),
+                                                 name='att_kernel_{}_neighs'.format(head),
                                                  regularizer=self.attn_kernel_regularizer,
                                                  constraint=self.attn_kernel_constraint)
             self.attn_kernels.append([attn_kernel_self, attn_kernel_neighs])
+
+        self.input_spec = [InputSpec(shape=s) for s in input_shape]
         self.built = True
 
     def call(self, inputs):
-        X = inputs  # Node features (batch x N x F)
-        #A = inputs[1]  # Adjacency matrix (N x N)
+        X = inputs[0]  # Node features (batch x N x F)
+        A = inputs[1]  # Adjacency matrix (batch x N x N)
 
         outputs = []
         for head in range(self.attn_heads):
@@ -108,7 +110,7 @@ class BatchGraphAttention(Layer):
             dense = LeakyReLU(alpha=0.2)(dense)
 
             # Mask values before activation (Vaswani et al., 2017)
-            mask = K.exp(self.A * -10e9) * -10e9
+            mask = K.exp(A * -10e9) * -10e9
             masked = dense + mask
 
             # Feed masked values to softmax
@@ -137,8 +139,9 @@ class BatchGraphAttention(Layer):
         return output
 
     def compute_output_shape(self, input_shape):
-        assert input_shape[-1] is not None
-        output_shape = list(input_shape)
+        X_shape = input_shape[0]
+        assert X_shape[-1] is not None
+        output_shape = list(X_shape)
         output_shape[-1] = self.output_dim
         return tuple(output_shape)
 
@@ -148,7 +151,6 @@ class BatchGraphAttention(Layer):
         """
         config = {
             'F_': self.F_,
-            'A': self.A,
             'attn_heads': self.attn_heads,
             'attn_heads_reduction': self.attn_heads_reduction,
             'attn_dropout': self.attn_dropout,
@@ -163,5 +165,3 @@ class BatchGraphAttention(Layer):
         }
         base_config = super(BatchGraphAttention, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
-
-## TODO modified TimeDistributed that takes two input tensors (X and A)
