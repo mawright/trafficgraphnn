@@ -41,17 +41,42 @@ def resample_predictions(predictions):
     
     return predictions_resampled
 
-def store_predictions_in_df(path, predictions, order_lanes, start_time, average_interval, simu_num = 0, alternative_prediction = False):
+def store_predictions_in_df(path, 
+                            predictions,
+                            ground_truth,
+                            order_lanes, 
+                            start_time, 
+                            average_interval, 
+                            simu_num = 0, 
+                            alternative_prediction = False):
     #resampled_predictions = resample_predictions(predictions)
     #resampled_predictions = np.transpose(resampled_predictions)
     
     timesteps_per_sample = predictions.shape[1]
     num_lanes = predictions.shape[2]
-    resampled_predictions = K.eval(K.reshape(predictions, (timesteps_per_sample, num_lanes))) #reshape to (timesteps x lanes)
+    num_features = predictions.shape[3]
     
-    df_prediction_results = pd.DataFrame(data = resampled_predictions[:,:], 
-                                         index = range(start_time, resampled_predictions.shape[0] * average_interval + start_time, average_interval), 
-                                         columns = order_lanes)
+    resampled_predictions = K.eval(K.reshape(predictions, (timesteps_per_sample, num_lanes, num_features))) #reshape to (timesteps x lanes x features)
+    
+#    df_prediction_results = pd.DataFrame(data = resampled_predictions[:,:], 
+#                                         index = range(start_time, resampled_predictions.shape[0] * average_interval + start_time, average_interval), 
+#                                         columns = order_lanes)
+    
+    df_prediction_results = pd.DataFrame()
+    for lane, index_lane in zip(order_lanes, range(len(order_lanes))):
+        iterables = [[lane], ['ground-truth queue', 'prediction queue', 'ground-truth nVehSeen', 'prediction nVehSeen']]
+        index = pd.MultiIndex.from_product(iterables, names=['lane', 'values'])
+
+        df_lane = pd.DataFrame(index = range(start_time, resampled_predictions.shape[0] * average_interval + start_time, average_interval), 
+                               columns = index)
+        df_lane.index.name = 'timesteps'
+        df_lane[lane, 'ground-truth queue'] = ground_truth[1, :, index_lane, 1]
+        df_lane[lane, 'prediction queue'] = predictions[1, :, index_lane, 1]
+        df_lane[lane, 'ground-truth nVehSeen'] = ground_truth[1, :, index_lane, 2]
+        df_lane[lane, 'prediction nVehSeen'] = predictions[1, :, index_lane, 2]
+        
+        df_prediction_results = pd.concat([df_prediction_results, df_lane], axis = 1)
+
     if alternative_prediction == False:
         df_prediction_results.to_hdf(path + 'nn_prediction_results_' + str(simu_num) + '.h5', key = 'prediciton_results')
         print('Stored prediction results in dataframe for simulation_number', simu_num)
@@ -83,14 +108,14 @@ def plot_predictions(df_predictions_1, df_liu_results, df_predictions_2):
                                    c='r', label= 'Liu et al.')
         
         dl_prediction_1, = plt.plot(time_predictions, df_predictions_1.loc[:, lane],
-                                   c='g', label= 'dl_prediction_1')
+                                   c='g', label= 'long time seq')
         
 
         #if df_predictions_Aeye == None:
         #    plt.legend(handles=[ground_truth, liu_estimation, dl_prediction], fontsize = 18)
         #else:
         dl_prediction_2, = plt.plot(time_predictions, df_predictions_2.loc[:, lane],
-                       c='k', label= 'dl_prediction_2')        
+                       c='k', label= 'short time seq')        
         plt.legend(handles=[ground_truth, liu_estimation, dl_prediction_1, dl_prediction_2], fontsize = 18)
                 
         plt.xticks(np.arange(0, 6000, 100))
@@ -98,7 +123,7 @@ def plot_predictions(df_predictions_1, df_liu_results, df_predictions_2):
         plt.yticks(np.arange(0, 800, 50))
         plt.yticks(fontsize=18)
         plt.xlim(time_predictions[0],time_predictions[-1])
-        plt.ylim(0, 200)
+        plt.ylim(0, 300)
         
         #TODO: implement background color by using tls data
         

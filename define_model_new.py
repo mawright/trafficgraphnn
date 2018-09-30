@@ -86,7 +86,7 @@ def define_model(num_simulations, num_timesteps, num_lanes, num_features, A):
                               return_sequences=True, 
                               kernel_initializer='random_uniform')(encoder_inputs)
 
-        decoder_output = AttentionDecoder(n_units, 1)(decoder_inputs) #Attention! 5 output features now!
+        decoder_output = AttentionDecoder(n_units, 2, causal=True)(decoder_inputs) #Attention! 5 output features now!
 
         reshaped_output = ReshapeForOutput(num_lanes)(decoder_output)
 
@@ -95,7 +95,7 @@ def define_model(num_simulations, num_timesteps, num_lanes, num_features, A):
         optimizer = Adam(lr=learning_rate)
         model.compile(optimizer=optimizer,
                       loss='mean_squared_error',
-                      metrics=['accuracy'])
+                      metrics=['mean_absolute_percentage_error'])
         model.summary()
         plot_model(model, to_file='model_plot.png', show_shapes=True, show_layer_names=True)
         

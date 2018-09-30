@@ -21,6 +21,7 @@ import keras.backend as K
 from trafficgraphnn.utils import iterfy
 from trafficgraphnn.get_tls_data import get_tls_data
 from trafficgraphnn.sumo_network import SumoNetwork
+from trafficgraphnn.utils import E2IterParseWrapper
 
 
 _logger = logging.getLogger(__name__)
@@ -58,9 +59,34 @@ class PreprocessData(object):
             phase_end = self.df_liu_results.loc[phase, (lane_ID, 'phase end')]
             if point_of_time >= phase_start and point_of_time < phase_end:
                 return phase
-
+            
         print('Point of time out of time window!')
-        return np.nan
+        return np.nan 
+    
+    def get_nVehSeen_from_e2(self, detector_ID, start_time, duration_in_sec, average_interval, num_rows):
+        seq_nVehSeen = np.zeros((start_time+duration_in_sec))
+        file_list = os.listdir(self.detector_data_path)
+        for filename in file_list:
+            if detector_ID in filename:
+                file_path = os.path.join(self.detector_data_path, filename)
+                parsed_xml_e2_detector = E2IterParseWrapper(file_path, True)  
+                for interval in parsed_xml_e2_detector.iterate_until(start_time+duration_in_sec):
+                    interval_time = int(float(interval.attrib.get('begin')))
+                    det_id = interval.attrib.get('id')
+                    nVehSeen = interval.attrib.get('nVehSeen')
+                    assert det_id == detector_ID
+                    seq_nVehSeen[interval_time] = nVehSeen
+                    
+                #crop out the right time frame
+                seq_nVehSeen = seq_nVehSeen[start_time:start_time+duration_in_sec]
+                
+                #average over average interval
+                averaged_nVehSeen = np.zeros((num_rows))
+                for index in range(num_rows):
+                    avrg_start = index*average_interval
+                    avrg_end = avrg_start+average_interval
+                    averaged_nVehSeen[index] = np.average(seq_nVehSeen[avrg_start:avrg_end])
+                return averaged_nVehSeen
 
     def preprocess_detector_data(self, average_intervals, num_index=0,  average_over_cycle = False):
         #code that is averaging over specific intervals
@@ -289,13 +315,14 @@ class PreprocessData(object):
             lane_id = lane.replace('/', '-')
             stopbar_detector_id = 'e1_' + str(lane_id) + '_0'
             adv_detector_id = 'e1_' + str(lane_id) + '_1'
+            e2_detector_id = 'e2_' + str(lane_id) + '_0'
             
             if cnt_lane == 0:
                 #dimesion: time x nodes x features
                 num_rows = len(df_detector.loc[start_time:end_time, (stopbar_detector_id, 'nVehContrib')]) -1 # (-1):last row is belongs to the following average interval
                 duration_in_sec = end_time-start_time
                 X_unsampled = np.zeros((num_rows, len(subgraph.nodes), 8))
-                Y_unsampled = np.zeros((num_rows, len(subgraph.nodes), 1))
+                Y_unsampled = np.zeros((num_rows, len(subgraph.nodes), 2))
                 
             X_unsampled[:, cnt_lane, 0] = df_detector.loc[start_time:end_time-average_interval, (stopbar_detector_id, 'nVehContrib')]
             X_unsampled[:, cnt_lane, 1] = df_detector.loc[start_time:end_time-average_interval, (stopbar_detector_id, 'occupancy')]
@@ -314,12 +341,15 @@ class PreprocessData(object):
                        interpolate_ground_truth = interpolate_ground_truth,
                        ground_truth_name = 'ground-truth')
             
+            Y_unsampled[:, cnt_lane, 1] = self.get_nVehSeen_from_e2(e2_detector_id, 
+                       start_time, duration_in_sec, average_interval, num_rows)
+            
         if sample_time_sequence:
             
             num_samples = math.ceil(X_unsampled.shape[0]/sample_size)
             print('number of samples:', num_samples)
             X_sampled = np.zeros((num_samples, sample_size, len(subgraph.nodes), 8))
-            Y_sampled = np.zeros((num_samples, sample_size, len(subgraph.nodes), 1))
+            Y_sampled = np.zeros((num_samples, sample_size, len(subgraph.nodes), 2))
             for cnt_sample in range(num_samples):
                 sample_start = cnt_sample*sample_size
                 sample_end = sample_start + sample_size
@@ -333,7 +363,7 @@ class PreprocessData(object):
                     X_zero_padding = np.vstack((X_unsampled[sample_start:sample_end][:][:],
                                                np.zeros((diff_samples, len(subgraph.nodes), 8))))
                     Y_zero_padding = np.vstack((Y_unsampled[sample_start:sample_end][:][:],
-                               np.zeros((diff_samples, len(subgraph.nodes), 1))))
+                               np.zeros((diff_samples, len(subgraph.nodes), 2))))
                     X_sampled[cnt_sample][:][:][:] = X_zero_padding
                     Y_sampled[cnt_sample][:][:][:] = Y_zero_padding
     
@@ -448,6 +478,7 @@ class PreprocessData(object):
             list_end_time.append(df_last_row.loc[(lane,'phase end')])
             end_time = min(list_end_time)-10 #10seconds reserve, otherwise complications occur
             end_time = int(end_time/average_interval) * average_interval #make sure, that end time is matching with average_interval
+            self.preprocess_end_time = end_time
             return end_time
         
     def get_A_for_neighboring_lanes(self, order_lanes):

@@ -3,6 +3,10 @@
 """
 Created on Fri Sep 21 17:04:57 2018
 
+TODO:
+    Create class GenerateData where a bunch of equal simulations are generated and the liu_results as well as X and Y matrices are stored
+    Implement, that you can specify the order of lanes for the X and Y
+
 @author: simon
 """
 from __future__ import division
@@ -22,13 +26,13 @@ grid_length = 600 #meters
 num_lanes =3
 
 ### Configuration of the Simulation ###
-end_time = 600 #seconds
+end_time = 500 #seconds
 
-period_1_2 = 0.3
-period_3_4 = 0.3
-period_5 = 0.3
+period_1_2 = 0.4
+period_3_4 = 0.4
+period_5 = 0.4
 
-period_test = 0.3
+period_test = 0.4
 
 binomial = 2
 seed = 50
@@ -46,7 +50,7 @@ interpolate_ground_truth = True #interpolate ground-truth data with np.linspace
 
 
 number_of_simulations = 2
-number_of_simulations_test = 2
+number_of_simulations_test = 1
 
 # ------------- End of configuration -------------------------
 
@@ -71,7 +75,7 @@ config.gen_e2_detectors(distance_to_tls=0, frequency=1)
 config.define_tls_output_file()
 
 
-
+#TODO: create generate_data.py which generates uniform simulations!! implement that as class! Decision which is train test and val data will be made in train.py file
 
 for train_num in range(number_of_simulations):
     
