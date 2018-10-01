@@ -10,6 +10,7 @@ import pandas as pd
 import tensorflow as tf
 from matplotlib import pyplot as plt
 import keras.backend as K
+from keras.losses import mean_absolute_percentage_error
 
 def resample_predictions(predictions):
     sess = tf.InteractiveSession()
@@ -37,8 +38,7 @@ def resample_predictions(predictions):
         lane_series = np.reshape(lane_series, (1, num_samples*timesteps_per_sample))
         predictions_resampled[lane, :] = lane_series
         
-    print('predictions_resampled.shape:', predictions_resampled.shape)   
-    
+    print('predictions_resampled.shape:', predictions_resampled.shape)
     return predictions_resampled
 
 def store_predictions_in_df(path, 
@@ -107,14 +107,14 @@ def plot_predictions(df_predictions_1, df_liu_results, df_predictions_2):
                                    df_liu_results.loc[:, (lane, 'estimated hybrid')],
                                    c='r', label= 'Liu et al.')
         
-        dl_prediction_1, = plt.plot(time_predictions, df_predictions_1.loc[:, lane],
+        dl_prediction_1, = plt.plot(time_predictions, df_predictions_1.loc[:, (lane, 'prediction queue')],
                                    c='g', label= 'long time seq')
         
 
         #if df_predictions_Aeye == None:
         #    plt.legend(handles=[ground_truth, liu_estimation, dl_prediction], fontsize = 18)
         #else:
-        dl_prediction_2, = plt.plot(time_predictions, df_predictions_2.loc[:, lane],
+        dl_prediction_2, = plt.plot(time_predictions, df_predictions_2.loc[:, (lane, 'prediction queue')],
                        c='k', label= 'short time seq')        
         plt.legend(handles=[ground_truth, liu_estimation, dl_prediction_1, dl_prediction_2], fontsize = 18)
                 
@@ -130,5 +130,20 @@ def plot_predictions(df_predictions_1, df_liu_results, df_predictions_2):
         plt.xlabel('time [s]', fontsize = 18)
         plt.ylabel('queue length [m]', fontsize = 18)
         plt.show()
+        
+        print('MAPE for df_predictions_1')
+        calc_MAPE_of_predictions(lane, df_predictions_1)
+        print('MAPE for df_predictions_2')
+        calc_MAPE_of_predictions(lane, df_predictions_2)
 
+def calc_MAPE_of_predictions(lane, df_predictions):
+    ground_truth_queue = df_predictions.loc[:, (lane, 'ground-truth queue')]
+    prediction_queue = df_predictions.loc[:, (lane, 'prediction queue')]    
+    MAPE_queue = K.eval(mean_absolute_percentage_error(ground_truth_queue, prediction_queue))
+    print('MAPE queue:', MAPE_queue)
+    
+    ground_truth_nVehSeen = df_predictions.loc[:, (lane, 'ground-truth nVehSeen')]
+    prediction_nVehSeen = df_predictions.loc[:, (lane, 'prediction nVehSeen')]    
+    MAPE_nVehSeen = K.eval(mean_absolute_percentage_error(ground_truth_nVehSeen, prediction_nVehSeen))
+    print('MAPE nVehSeen:', MAPE_nVehSeen)
     

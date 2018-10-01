@@ -280,7 +280,6 @@ class LiuIntersection(object):
     def plot_results(self, show_plot, show_infos):
         for lane in self.liu_lanes.values():
             lane.plot(show_plot, show_infos)
-            print('MAPE: ', lane.get_MAPE())
 
     def get_total_MAPE_per_intersection(self):
         sum_MAPE_IO = 0
