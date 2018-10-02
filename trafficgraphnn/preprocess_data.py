@@ -23,7 +23,6 @@ from trafficgraphnn.get_tls_data import get_tls_data
 from trafficgraphnn.sumo_network import SumoNetwork
 from trafficgraphnn.utils import E2IterParseWrapper
 
-
 _logger = logging.getLogger(__name__)
 
 class PreprocessData(object):

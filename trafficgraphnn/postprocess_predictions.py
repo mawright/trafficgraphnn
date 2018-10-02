@@ -56,7 +56,8 @@ def store_predictions_in_df(path,
     num_lanes = predictions.shape[2]
     num_features = predictions.shape[3]
     
-    resampled_predictions = K.eval(K.reshape(predictions, (timesteps_per_sample, num_lanes, num_features))) #reshape to (timesteps x lanes x features)
+#    resampled_ground_truth = K.eval(K.reshape(predictions, (timesteps_per_sample, num_lanes, num_features))) #reshape to (timesteps x lanes x features) bc whe have only one simulation
+#    resampled_predictions = K.eval(K.reshape(predictions, (timesteps_per_sample, num_lanes, num_features))) #reshape to (timesteps x lanes x features)
     
 #    df_prediction_results = pd.DataFrame(data = resampled_predictions[:,:], 
 #                                         index = range(start_time, resampled_predictions.shape[0] * average_interval + start_time, average_interval), 
@@ -67,13 +68,13 @@ def store_predictions_in_df(path,
         iterables = [[lane], ['ground-truth queue', 'prediction queue', 'ground-truth nVehSeen', 'prediction nVehSeen']]
         index = pd.MultiIndex.from_product(iterables, names=['lane', 'values'])
 
-        df_lane = pd.DataFrame(index = range(start_time, resampled_predictions.shape[0] * average_interval + start_time, average_interval), 
+        df_lane = pd.DataFrame(index = range(start_time, timesteps_per_sample * average_interval + start_time, average_interval), 
                                columns = index)
         df_lane.index.name = 'timesteps'
-        df_lane[lane, 'ground-truth queue'] = ground_truth[1, :, index_lane, 1]
-        df_lane[lane, 'prediction queue'] = predictions[1, :, index_lane, 1]
-        df_lane[lane, 'ground-truth nVehSeen'] = ground_truth[1, :, index_lane, 2]
-        df_lane[lane, 'prediction nVehSeen'] = predictions[1, :, index_lane, 2]
+        df_lane[lane, 'ground-truth queue'] = ground_truth[0, :, index_lane, 0]
+        df_lane[lane, 'prediction queue'] = predictions[0, :, index_lane, 0]
+        df_lane[lane, 'ground-truth nVehSeen'] = ground_truth[0, :, index_lane, 1]
+        df_lane[lane, 'prediction nVehSeen'] = predictions[0, :, index_lane, 1]
         
         df_prediction_results = pd.concat([df_prediction_results, df_lane], axis = 1)
 
@@ -139,11 +140,17 @@ def plot_predictions(df_predictions_1, df_liu_results, df_predictions_2):
 def calc_MAPE_of_predictions(lane, df_predictions):
     ground_truth_queue = df_predictions.loc[:, (lane, 'ground-truth queue')]
     prediction_queue = df_predictions.loc[:, (lane, 'prediction queue')]    
+    ground_truth_queue = np.reshape(ground_truth_queue.values, (ground_truth_queue.values.shape[0]))
+    prediction_queue = np.reshape(prediction_queue.values, (prediction_queue.values.shape[0]))
+    
     MAPE_queue = K.eval(mean_absolute_percentage_error(ground_truth_queue, prediction_queue))
     print('MAPE queue:', MAPE_queue)
     
     ground_truth_nVehSeen = df_predictions.loc[:, (lane, 'ground-truth nVehSeen')]
-    prediction_nVehSeen = df_predictions.loc[:, (lane, 'prediction nVehSeen')]    
+    prediction_nVehSeen = df_predictions.loc[:, (lane, 'prediction nVehSeen')]  
+    ground_truth_nVehSeen = np.reshape(ground_truth_nVehSeen.values, (ground_truth_nVehSeen.values.shape[0]))
+    prediction_nVehSeen = np.reshape(prediction_nVehSeen.values, (prediction_nVehSeen.values.shape[0]))
+    
     MAPE_nVehSeen = K.eval(mean_absolute_percentage_error(ground_truth_nVehSeen, prediction_nVehSeen))
     print('MAPE nVehSeen:', MAPE_nVehSeen)
     

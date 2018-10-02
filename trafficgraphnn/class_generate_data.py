@@ -3,10 +3,6 @@
 """
 Created on Fri Sep 21 17:04:57 2018
 
-TODO:
-    Create class GenerateData where a bunch of equal simulations are generated and the liu_results as well as X and Y matrices are stored
-
-
 @author: simon
 """
 from __future__ import division
@@ -21,17 +17,17 @@ from trafficgraphnn.preprocess_data import PreprocessData
 
 class GenerateData(object):
     def __init__(self,
-                number_of_simulations = 2,
+                number_of_simulations = 150,
                 order_of_lanes = None,
                 #ATTENTION! When start_index != 0, no A matrix is saved! start_index 
                 #is just to extend previous simulation runs with the same orderof lanes!
-                start_index = 0,  #index where names of the generation should start
+                start_index = 113,  #index where names of the generation should start
                 grid_number = 3, #TODO: make num lanes adjustable
                 grid_length = 600, 
                 num_lanes =3,
                 
-                end_time = 500, #seconds                
-                period_lower_bound = 0.3, #lower bound for randomized period
+                end_time = 1700, #seconds                
+                period_lower_bound = 0.4, #lower bound for randomized period
                 period_upper_bound = 0.4, #upper bound for randomized period
 
                 binomial = 2,
@@ -51,7 +47,7 @@ class GenerateData(object):
                 ):
 
         self.number_of_simulations = number_of_simulations
-        self.order_of_lanes =order_of_lanes
+        self.order_of_lanes = order_of_lanes
         self.start_index = start_index
         self.grid_number = grid_number
         self.grid_length = grid_length
@@ -114,14 +110,18 @@ class GenerateData(object):
 
             ### Running the Liu Estimation
             #creating liu runner object
-            liu_runner = LiuEtAlRunner(sn, store_while_running = True, use_started_halts = self.use_started_halts, simu_num = simu_num)
+            liu_runner = LiuEtAlRunner(sn, 
+                                       store_while_running = True, 
+                                       use_started_halts = self.use_started_halts, 
+                                       simu_num = simu_num)
             
             # caluclating the maximum number of phases and run the estimation
             max_num_phase = liu_runner.get_max_num_phase(self.end_time)
             liu_runner.run_up_to_phase(max_num_phase)
             
             # show results for every lane
-            liu_runner.plot_results_every_lane(show_plot = self.show_plot, show_infos = self.show_infos)
+            liu_runner.plot_results_every_lane(show_plot = self.show_plot, 
+                                               show_infos = self.show_infos)
 
             ### preprocess data for deep learning model
             preprocess = PreprocessData(sn, simu_num)
@@ -156,4 +156,5 @@ class GenerateData(object):
         
     def set_order_of_lanes(self, data_path):   
         self.order_of_lanes = self.get_order_of_lanes(data_path)
+        print('Set order of lanes')
             

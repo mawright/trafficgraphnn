@@ -17,6 +17,7 @@ from keras.optimizers import Adam
 from keras.regularizers import l2
 from keras.activations import linear
 from trafficgraphnn.batch_graph_attention_layer import  BatchGraphAttention
+from trafficgraphnn.time_distributed_multi_input import TimeDistributedMultiInput
 from keras.utils.vis_utils import plot_model
 
 from trafficgraphnn.attention_decoder import AttentionDecoder
@@ -34,40 +35,31 @@ l2_reg = 1e-4               # Regularization rate for l2
 learning_rate = 0.001      # Learning rate for optimizer
 n_units = 128   #number of units of the LSTM cells
 
-
-
-def define_model(num_simulations, num_timesteps, num_lanes, num_features, A):
-    #define necessary functions   
-    
-        #define the model
-#        A_tf = tf.convert_to_tensor(A, dtype=np.float32)
-        A = A.astype(np.float32)
-#        num_lanes = tf.convert_to_tensor(N, dtype=np.float32) #num_lanes ha to become an Input later, rn it's hardcoded
-        
-        X1_in = Input(batch_shape=(num_simulations, num_timesteps, num_lanes, num_features))
+def define_model(num_simulations, num_timesteps, num_lanes, num_features, A): 
+          
+        X1_in = Input(batch_shape=(None, num_timesteps, num_lanes, num_features))
+        A_in = Input(batch_shape=(None, num_timesteps, num_lanes, num_lanes))
         
         dropout1 = TimeDistributed(Dropout(dropout_rate))(X1_in)
         
-        graph_attention_1 = TimeDistributed(BatchGraphAttention(width_1gat,
-                                           A,
+        graph_attention_1 = TimeDistributedMultiInput(BatchGraphAttention(width_1gat,
                                            attn_heads=n_attn_heads,
                                            attn_heads_reduction='average',
                                            attn_dropout=attn_dropout,
                                            activation='linear',
                                            kernel_initializer='random_uniform',
                                            kernel_regularizer=l2(l2_reg))
-                                           )(dropout1)
+                                           )([dropout1, A_in])
         
         dropout2 = TimeDistributed(Dropout(dropout_rate))(graph_attention_1)
         
-        graph_attention_2 = TimeDistributed(BatchGraphAttention(F_,
-                                           A,
+        graph_attention_2 = TimeDistributedMultiInput(BatchGraphAttention(F_,
                                            attn_heads=n_attn_heads,
                                            attn_heads_reduction='average',
                                            attn_dropout=attn_dropout,
                                            activation='linear',
                                            kernel_regularizer=l2(l2_reg),
-                                           kernel_initializer='random_uniform'))(dropout2)
+                                           kernel_initializer='random_uniform'))([dropout2, A_in])
         
         dropout3 = TimeDistributed(Dropout(dropout_rate))(graph_attention_2)
         
@@ -78,7 +70,7 @@ def define_model(num_simulations, num_timesteps, num_lanes, num_features, A):
         dropout4 = TimeDistributed(Dropout(dropout_rate))(dense1)
         
         #make sure that the reshape is made correctly!
-        encoder_inputs = ReshapeForLSTM()(dropout4)
+        encoder_inputs = ReshapeForLSTM(num_simulations)(dropout4)
 
         
         
@@ -90,7 +82,7 @@ def define_model(num_simulations, num_timesteps, num_lanes, num_features, A):
 
         reshaped_output = ReshapeForOutput(num_lanes)(decoder_output)
 
-        model = Model(inputs= X1_in, outputs=reshaped_output) 
+        model = Model(inputs= [X1_in, A_in], outputs=reshaped_output) 
         
         optimizer = Adam(lr=learning_rate)
         model.compile(optimizer=optimizer,
