@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Sun Sep 23 19:00:22 2018
+Created on Wed Sep 26 19:59:06 2018
 
 @author: simon
 """
@@ -84,25 +84,33 @@ for pair_num in range(train_val_pair):
     Y_val_storage[pair_num, :, :, :] = Y_val
     
 
-print('X_train_storage.shape:', X_train_storage.shape) #debug
+print('X_train_storage.shape before reshape in time samples:', X_train_storage.shape) #debug
 print('Y_train_storage.shape:', Y_train_storage.shape)
 
-dataset_size = train_val_pair #total number of samples in whole dataset
-batch_size_in_samples = simulations_per_batch #number of samples for one batch
+X_train_storage = np.reshape(X_train_storage, (-1, 15, num_lanes, num_features))
+X_val_storage = np.reshape(X_val_storage, (-1, 15, num_lanes, num_features))
+Y_train_storage = np.reshape(Y_train_storage, (-1, 15, num_lanes, num_targets))
+Y_val_storage = np.reshape(Y_val_storage, (-1, 15, num_lanes, num_targets))
+
+print('X_train_storage.shape AFTER reshape in time samples:', X_train_storage.shape) #debug
+print('Y_train_storage.shape:', Y_train_storage.shape)
+
+dataset_size = X_train_storage.shape[0] #total number of samples in whole dataset
+batch_size_in_samples = num_timesteps/15 #number of samples for one batch
 num_batches = dataset_size//batch_size_in_samples
 
 print('dataset_size:', dataset_size)
 print('batch_size_in_samples:', batch_size_in_samples)
 print('num_batches:', num_batches)
 
-train_model = define_model(batch_size_in_samples, num_timesteps, num_lanes, num_features, A)
+train_model = define_model(batch_size_in_samples, 15, num_lanes, num_features, A)
 
 validation_data = (X_val_storage, Y_val_storage)
     
 train_model.fit(X_train_storage,
           Y_train_storage,
           epochs=epochs,
-          batch_size = simulations_per_batch,
+          batch_size = batch_size_in_samples,
 #          steps_per_epoch = train_val_pair, #make as much steps as simulations are available batch_size = total num sampes / steps_per_epoch
           validation_data = validation_data,
 #          validation_steps = train_val_pair,
@@ -126,6 +134,9 @@ X_test_tens = np.load(data_path +'X_test_tens_' + str(curr_prediction) +'.npy')
 Y_test_tens =  np.load(data_path +'Y_test_tens_' + str(curr_prediction) +'.npy')
 average_interval = np.load(data_path +'average_interval_' + str(curr_prediction) +'.npy')
 
+X_test_tens = np.reshape(X_test_tens, (-1, 15, num_lanes, num_features))
+Y_test_tens = np.reshape(Y_test_tens, (-1, 15, num_lanes, num_targets))
+
 with open(data_path +'order_lanes_test_' + str(curr_prediction) + '.txt', "rb") as fp:   # Unpickling
     order_lanes_test = pickle.load(fp)
     
@@ -142,7 +153,7 @@ with open(data_path +'order_lanes_test_' + str(curr_prediction) + '.txt', "rb") 
 #        prediction_model.set_weights(old_weights)
 
 #alternative prediction!!!
-prediction_model = define_model(1, num_timesteps, num_lanes, num_features, A)
+prediction_model = define_model(batch_size_in_samples, 15, num_lanes, num_features, A)
 old_weights = train_model.get_weights() #copy weights from training model
 prediction_model.set_weights(old_weights)
 

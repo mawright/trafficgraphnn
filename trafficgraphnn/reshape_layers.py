@@ -11,12 +11,15 @@ from keras.engine.topology import Layer
 
 class ReshapeForLSTM(Layer):
 
-    def __init__(self, **kwargs):
+    def __init__(self,
+                 num_simulations,
+                 **kwargs):
+        self.num_simulations = num_simulations
         super(ReshapeForLSTM, self).__init__(**kwargs)
 
     def build(self, input_shape):
         self.input_dim = input_shape
-        self.num_simulations = self.input_dim[0]
+#        self.num_simulations = self.input_dim[0]
         self.num_timesteps = self.input_dim[1]
         self.num_lanes = self.input_dim[2]
         self.num_features = self.input_dim[3]
@@ -24,7 +27,8 @@ class ReshapeForLSTM(Layer):
 
     def call(self, x):
         x_permuted = K.permute_dimensions(x, (0, 2, 1, 3))
-        x_reshaped = K.reshape(x_permuted, (self.num_simulations*self.num_lanes, self.num_timesteps, self.num_features))
+#        x_reshaped = K.reshape(x_permuted, (self.num_simulations*self.num_lanes, self.num_timesteps, self.num_features))
+        x_reshaped = K.reshape(x_permuted, (-1, self.num_timesteps, self.num_features))
         return x_reshaped
 
     def compute_output_shape(self, input_shape):
@@ -36,7 +40,7 @@ class ReshapeForLSTM(Layer):
         """
         config = {
 #            'input_dim': self.input_dim,
-#            'num_simulations': self.num_simulations,
+            'num_simulations': self.num_simulations,
 #            'num_timesteps': self.num_timesteps,
 #            'num_lanes': self.num_lanes,
 #            'num_features': self.num_features
@@ -44,9 +48,9 @@ class ReshapeForLSTM(Layer):
         base_config = super(ReshapeForLSTM, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
-    @classmethod
-    def from_config(cls, config):
-        return cls(**config)
+#    @classmethod
+#    def from_config(cls, config):
+#        return cls(**config)
     
 class ReshapeForOutput(Layer):
 
@@ -58,7 +62,7 @@ class ReshapeForOutput(Layer):
 
     def build(self, input_shape):
         self.input_dim = input_shape
-        self.num_simulations_x_num_lanes = self.input_dim[0]
+#        self.num_simulations_x_num_lanes = self.input_dim[0]
         self.num_timesteps = self.input_dim[1]
         self.num_features = self.input_dim[2]
         super(ReshapeForOutput, self).build(input_shape)  # Be sure to call this at the end
@@ -88,6 +92,6 @@ class ReshapeForOutput(Layer):
         base_config = super(ReshapeForOutput, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
     
-    @classmethod
-    def from_config(cls, config):
-        return cls(**config)
+#    @classmethod
+#    def from_config(cls, config):
+#        return cls(**config)
