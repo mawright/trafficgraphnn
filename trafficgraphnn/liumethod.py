@@ -9,7 +9,6 @@ import math
 from matplotlib import pyplot as plt
 
 from trafficgraphnn.utils import iterfy
-from trafficgraphnn.get_tls_data import get_tls_data
 from trafficgraphnn.sumo_output_reader import SumoNetworkOutputReader, SumoLaneOutputReader
 
 
