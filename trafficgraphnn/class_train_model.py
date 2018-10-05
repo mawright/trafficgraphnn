@@ -115,24 +115,24 @@ class TrainModel(object):
         num_batches = num_simulations//simulations_per_batch
         print('num_batches:', num_batches)
 
-        self.train_model = define_model(simulations_per_batch,
+        self.model = define_model(simulations_per_batch,
                                        self.num_timesteps,
                                        self.num_lanes,
                                        self.num_features,
                                        self.A)
-        
-        A_stack = self.stack_A(num_simulations)       
+
+        A_stack = self.stack_A(num_simulations)
 
         validation_data = ([X_val, A_stack], Y_val)
            # number of epochs with no improvement after which training will be stopped.
-          
+
         self.es_callback = EarlyStopping(monitor='val_loss', patience=es_patience, verbose=1)
-        self.mc_callback = ModelCheckpoint(path+'best_model.hdf5', 
+        self.mc_callback = ModelCheckpoint(path+'best_model.hdf5',
                                            monitor = 'val_loss',
                                            verbose = 1,
                                            save_best_only = True)
-        
-        self.train_model.fit([X_train, A_stack],
+
+        self.model.fit([X_train, A_stack],
                   Y_train,
                   epochs=epochs,
                   batch_size = simulations_per_batch,
@@ -150,14 +150,14 @@ class TrainModel(object):
         except OSError:
             print ("Creation of the directory %s failed" % path)
 
-        self.train_model.save(path + 'trained_model_complete_final.h5')
-        model_yaml = self.train_model.to_yaml()
+        self.model.save(path + 'trained_model_complete_final.h5')
+        model_yaml = self.model.to_yaml()
         with open(path + "trained_model.yaml", "w") as yaml_file:
             yaml_file.write(model_yaml)
         # serialize weights to HDF5
-        self.train_model.save_weights(path + "trained_model_weights.h5")
+        self.model.save_weights(path + "trained_model_weights.h5")
         print("Saved trained model to disk")
-        
+
     def save_prediction_model(self, path = 'models/'):
         try:
             os.mkdir(path)
@@ -167,7 +167,7 @@ class TrainModel(object):
 
         self.prediction_model.save(path + 'prediction_model_complete_final.h5')
 
-    def predict(self, 
+    def predict(self,
                 X_predict,
                 Y_ground_truth,
                 prediction_number = 0,
@@ -180,12 +180,12 @@ class TrainModel(object):
                                         self.num_lanes,
                                         self.num_features,
                                         self.A)
-        
+
         A_stack = self.stack_A(1)
         if use_best_model:
             train_weights = self.get_best_model_weights(path = best_model_path)
         else:
-            train_weights = self.train_model.get_weights() #copy weights from training model
+            train_weights = self.model.get_weights() #copy weights from training model
         self.prediction_model.set_weights(train_weights)
         Y_hat = self.prediction_model.predict([X_predict, A_stack], verbose = 1, steps = 1)
 #        prediction = tf.convert_to_tensor(Y_hat, dtype=np.float32)
@@ -206,14 +206,14 @@ class TrainModel(object):
         print('Done.\n'
               'Test loss: {}\n'
               'Test mape: {}'.format(*eval_results))
-        
+
         return Y_hat
-    
+
     def predict_ext_model(self, model, X_predict, Y_ground_truth, prediction_number = 0):
         assert X_predict.shape[0] == Y_ground_truth.shape[0]
-        
+
         A_stack = self.stack_A(1)
-       
+
         Y_hat = model.predict([X_predict, A_stack], verbose = 1, steps = 1)
 #        prediction = tf.convert_to_tensor(Y_hat, dtype=np.float32)
 
@@ -233,10 +233,10 @@ class TrainModel(object):
         print('Done.\n'
               'Test loss: {}\n'
               'Test mape: {}'.format(*eval_results))
-        
-        return Y_hat        
-        
-    
+
+        return Y_hat
+
+
     def stack_A(self, num_simulations):
         A = self.A.astype(np.float32)
         A_list = [A for _ in range(self.num_timesteps)]
@@ -246,15 +246,15 @@ class TrainModel(object):
         A_stack_simu = np.stack(A_list2, axis=0)
         print('A_stack_simu.shape after reshape', A_stack_simu.shape)
         return A_stack_simu
-    
+
     def get_best_model_weights(self, path = 'models/'):
 
-        best_model = load_model(path + 'best_model.hdf5', 
+        best_model = load_model(path + 'best_model.hdf5',
                            custom_objects={
                                    'BatchGraphAttention': BatchGraphAttention,
                                    'AttentionDecoder': AttentionDecoder,
                                   'TimeDistributedMultiInput': TimeDistributedMultiInput,
                                   'ReshapeForLSTM': ReshapeForLSTM,
                                   'ReshapeForOutput': ReshapeForOutput})
-        
+
         return best_model.get_weights()
