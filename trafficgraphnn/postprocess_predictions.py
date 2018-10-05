@@ -86,7 +86,85 @@ def store_predictions_in_df(path,
         df_prediction_results.to_hdf(path + 'nn_prediction_results_alternative_' + str(simu_num) + '.h5', key = 'prediciton_results')
         print('Stored alternative prediction results in dataframe for simulation_number', simu_num)        
     
-def plot_predictions(df_predictions_1, df_liu_results, df_predictions_2):
+def plot_predictions_1_df(df_predictions_1, df_liu_results):
+    #list_lanes = df_predictions_1.columns
+    list_lanes = df_predictions_1.columns.unique(level = 'lane')
+    print(list_lanes)
+    time_predictions = df_predictions_1.index.values
+    #print('time_predictions:', time_predictions)
+
+    for lane in list_lanes:
+        print('plot for lane:', lane)
+        
+        #---- plot for queue -------------
+        fig = plt.figure()
+        fig.set_figheight(5)
+        fig.set_figwidth(12)
+            
+        time_liu_results = df_liu_results.loc[:, (lane, 'phase end')]
+        #print('time_liu_results:', time_liu_results)
+        
+        ground_truth_old, = plt.plot(time_liu_results[:],
+                                 df_liu_results.loc[:, (lane, 'ground-truth')],
+                                 c='b', label= 'Ground-truth')
+        liu_estimation, = plt.plot(time_liu_results[:], 
+                                   df_liu_results.loc[:, (lane, 'estimated hybrid')],
+                                   c='r', label= 'Liu et al.')
+        
+        ground_truth_new, = plt.plot(time_predictions, df_predictions_1.loc[:, (lane, 'ground-truth queue')],
+                                   c='b', label= 'ground-truth new')
+        
+        dl_prediction_1, = plt.plot(time_predictions, df_predictions_1.loc[:, (lane, 'prediction queue')],
+                                   c='g', label= 'long time seq')
+
+        plt.legend(handles=[ground_truth_old, liu_estimation, ground_truth_new, dl_prediction_1], fontsize = 18)
+                
+        plt.xticks(np.arange(0, 6000, 100))
+        plt.xticks(fontsize=18)
+        plt.yticks(np.arange(0, 800, 50))
+        plt.yticks(fontsize=18)
+        plt.xlim(time_predictions[0],time_predictions[-1])
+        plt.ylim(0, 300)
+        
+        #TODO: implement background color by using tls data
+        
+        plt.xlabel('time [s]', fontsize = 18)
+        plt.ylabel('queue length [m]', fontsize = 18)
+        plt.show()
+        
+        # ------- plot for nVehSeen ----------------------------------------------------
+        fig1 = plt.figure()
+        fig1.set_figheight(5)
+        fig1.set_figwidth(12)
+        
+        ground_truth_new, = plt.plot(time_predictions, df_predictions_1.loc[:, (lane, 'ground-truth nVehSeen')],
+                                   c='b', label= 'ground-truth')
+        
+        prediction_nVehSeen, = plt.plot(time_predictions, df_predictions_1.loc[:, (lane, 'prediction nVehSeen')],
+                                   c='g', label= 'estimated nVehSeen')
+            
+        plt.legend(handles=[ground_truth_new, prediction_nVehSeen], fontsize = 18)
+                
+        plt.xticks(np.arange(0, 6000, 100))
+        plt.xticks(fontsize=18)
+        plt.yticks(np.arange(0, 800, 2))
+        plt.yticks(fontsize=18)
+        plt.xlim(time_predictions[0],time_predictions[-1])
+        plt.ylim(0, 20)
+        
+        #TODO: implement background color by using tls data
+        
+        plt.xlabel('time [s]', fontsize = 18)
+        plt.ylabel('nVehSeen [m]', fontsize = 18)
+        plt.show()
+        
+        
+        print('MAPE for df_predictions_1')
+        calc_MAPE_of_predictions(lane, df_predictions_1)
+        print('-------------------------------------------------------------------------')
+
+        
+def plot_predictions_2_df(df_predictions_1, df_liu_results, df_predictions_2):
     list_lanes = df_predictions_1.columns
     time_predictions = df_predictions_1.index.values
     #print('time_predictions:', time_predictions)
@@ -101,23 +179,22 @@ def plot_predictions(df_predictions_1, df_liu_results, df_predictions_2):
         time_liu_results = df_liu_results.loc[:, (lane, 'phase end')]
         #print('time_liu_results:', time_liu_results)
         
-        ground_truth, = plt.plot(time_liu_results[:],
+        ground_truth_old, = plt.plot(time_liu_results[:],
                                  df_liu_results.loc[:, (lane, 'ground-truth')],
                                  c='b', label= 'Ground-truth')
         liu_estimation, = plt.plot(time_liu_results[:], 
                                    df_liu_results.loc[:, (lane, 'estimated hybrid')],
                                    c='r', label= 'Liu et al.')
         
+        ground_truth_new, = plt.plot(time_predictions, df_predictions_1.loc[:, (lane, 'ground-truth queue')],
+                                   c='g', label= 'ground-truth new')
+        
         dl_prediction_1, = plt.plot(time_predictions, df_predictions_1.loc[:, (lane, 'prediction queue')],
                                    c='g', label= 'long time seq')
         
 
-        #if df_predictions_Aeye == None:
-        #    plt.legend(handles=[ground_truth, liu_estimation, dl_prediction], fontsize = 18)
-        #else:
-        dl_prediction_2, = plt.plot(time_predictions, df_predictions_2.loc[:, (lane, 'prediction queue')],
-                       c='k', label= 'short time seq')        
-        plt.legend(handles=[ground_truth, liu_estimation, dl_prediction_1, dl_prediction_2], fontsize = 18)
+             
+        plt.legend(handles=[ground_truth_old, liu_estimation, ground_truth_new, dl_prediction_1], fontsize = 18)
                 
         plt.xticks(np.arange(0, 6000, 100))
         plt.xticks(fontsize=18)

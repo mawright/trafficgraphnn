@@ -17,18 +17,18 @@ from trafficgraphnn.preprocess_data import PreprocessData
 
 class GenerateData(object):
     def __init__(self,
-                number_of_simulations = 150,
+                number_of_simulations = 2,
                 order_of_lanes = None,
                 #ATTENTION! When start_index != 0, no A matrix is saved! start_index 
                 #is just to extend previous simulation runs with the same orderof lanes!
-                start_index = 113,  #index where names of the generation should start
+                start_index = 0,  #index where names of the generation should start
                 grid_number = 3, #TODO: make num lanes adjustable
                 grid_length = 600, 
                 num_lanes =3,
                 
-                end_time = 1700, #seconds                
-                period_lower_bound = 0.4, #lower bound for randomized period
-                period_upper_bound = 0.4, #upper bound for randomized period
+                end_time = 400, #seconds                
+                period_lower_bound = 0.3, #lower bound for randomized period
+                period_upper_bound = 0.3, #upper bound for randomized period
 
                 binomial = 2,
                 seed = 50,
@@ -68,7 +68,7 @@ class GenerateData(object):
 
     def generate_X_Y_A(self):
         ### Creating Network and running simulation
-        config = ConfigGenerator(net_name='test_net')
+        config = ConfigGenerator(net_name='test_net_small')
         path = config.get_preprocessed_data_dir()
         
         # Parameters for network, trips and sensors (binomial must be an integer!!!)

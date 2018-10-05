@@ -27,7 +27,8 @@ class ReshapeForLSTM(Layer):
 
     def call(self, x):
         x_permuted = K.permute_dimensions(x, (0, 2, 1, 3))
-        x_reshaped = K.reshape(x_permuted, (self.num_simulations*self.num_lanes, self.num_timesteps, self.num_features))
+#        x_reshaped = K.reshape(x_permuted, (self.num_simulations*self.num_lanes, self.num_timesteps, self.num_features))
+        x_reshaped = K.reshape(x_permuted, (-1, self.num_timesteps, self.num_features))
         return x_reshaped
 
     def compute_output_shape(self, input_shape):

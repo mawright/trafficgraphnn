@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Fri Sep 21 18:29:37 2018
+Created on Wed Oct  3 20:38:49 2018
 
 @author: simon
 """
@@ -29,9 +29,9 @@ from trafficgraphnn.reshape_layers import ReshapeForLSTM, ReshapeForOutput
 width_1gat = 128 # Output dimension of first GraphAttention layer
 F_ = 128         # Output dimension of last GraphAttention layer
 n_attn_heads = 5              # Number of attention heads in first GAT layer
-dropout_rate = 0.5            # Dropout rate applied to the input of GAT layers
-attn_dropout = 0.5            #Dropout of the adjacency matrix in the gat layer
-l2_reg = 1e-4               # Regularization rate for l2
+dropout_rate = 0.3            # Dropout rate applied to the input of GAT layers
+attn_dropout = 0           #Dropout of the adjacency matrix in the gat layer
+l2_reg = 5e-5               # Regularization rate for l2
 learning_rate = 0.001      # Learning rate for optimizer
 n_units = 128   #number of units of the LSTM cells
 
@@ -63,17 +63,31 @@ def define_model(num_simulations, num_timesteps, num_lanes, num_features, A):
         
         dropout3 = TimeDistributed(Dropout(dropout_rate))(graph_attention_2)
         
+        graph_attention_3 = TimeDistributedMultiInput(BatchGraphAttention(F_,
+                                           attn_heads=n_attn_heads,
+                                           attn_heads_reduction='average',
+                                           attn_dropout=attn_dropout,
+                                           activation='linear',
+                                           kernel_regularizer=l2(l2_reg),
+                                           kernel_initializer='random_uniform'))([dropout3, A_in])
+        
+        dropout4 = TimeDistributed(Dropout(dropout_rate))(graph_attention_3)
+        
         dense1 = TimeDistributed(Dense(128, activation = linear, 
                                        kernel_regularizer=l2(l2_reg), 
-                                       kernel_initializer='random_uniform'))(dropout3)
+                                       kernel_initializer='random_uniform'))(dropout4)
         
-        dropout4 = TimeDistributed(Dropout(dropout_rate))(dense1)
+        dropout5 = TimeDistributed(Dropout(dropout_rate))(dense1)
+        
+        dense2 = TimeDistributed(Dense(128, activation = linear, 
+                               kernel_regularizer=l2(l2_reg), 
+                               kernel_initializer='random_uniform'))(dropout5)
+        
+        dropout6 = TimeDistributed(Dropout(dropout_rate))(dense2)
         
         #make sure that the reshape is made correctly!
-        encoder_inputs = ReshapeForLSTM(num_simulations)(dropout4)
-
-        
-        
+        encoder_inputs = ReshapeForLSTM(num_simulations)(dropout6)
+  
         decoder_inputs = LSTM(n_units,
                               return_sequences=True, 
                               kernel_initializer='random_uniform')(encoder_inputs)
