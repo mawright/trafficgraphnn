@@ -30,7 +30,7 @@ trainer.save_prediction_model()
 
 #problem with set weights of best model to new prediction model
 #solution -> get weight from every layer and reshape it idividually
-prediction = trainer.predict(X_predict, Y_predict, 
-                             prediction_number = 0, 
-                             use_best_model = True,
-                             best_model_path = 'savio ws/trained_models/20181004_1_lower_l2/models/')
+#prediction = trainer.predict(X_predict, Y_predict, 
+#                             prediction_number = 0, 
+#                             use_best_model = True,
+#                             best_model_path = 'savio ws/trained_models/20181004_1_lower_l2/models/')
