@@ -35,13 +35,13 @@ l2_reg = 1e-4               # Regularization rate for l2
 learning_rate = 0.001      # Learning rate for optimizer
 n_units = 128   #number of units of the LSTM cells
 
-def define_model(num_simulations, num_timesteps, num_lanes, num_features, A): 
-          
+def define_model(num_simulations, num_timesteps, num_lanes, num_features, A):
+
         X1_in = Input(batch_shape=(None, num_timesteps, num_lanes, num_features))
         A_in = Input(batch_shape=(None, num_timesteps, num_lanes, num_lanes))
-        
+
         dropout1 = TimeDistributed(Dropout(dropout_rate))(X1_in)
-        
+
         graph_attention_1 = TimeDistributedMultiInput(BatchGraphAttention(width_1gat,
                                            attn_heads=n_attn_heads,
                                            attn_heads_reduction='average',
@@ -50,9 +50,9 @@ def define_model(num_simulations, num_timesteps, num_lanes, num_features, A):
                                            kernel_initializer='random_uniform',
                                            kernel_regularizer=l2(l2_reg))
                                            )([dropout1, A_in])
-        
+
         dropout2 = TimeDistributed(Dropout(dropout_rate))(graph_attention_1)
-        
+
         graph_attention_2 = TimeDistributedMultiInput(BatchGraphAttention(F_,
                                            attn_heads=n_attn_heads,
                                            attn_heads_reduction='average',
@@ -60,17 +60,17 @@ def define_model(num_simulations, num_timesteps, num_lanes, num_features, A):
                                            activation='linear',
                                            kernel_regularizer=l2(l2_reg),
                                            kernel_initializer='random_uniform'))([dropout2, A_in])
-        
+
         dropout3 = TimeDistributed(Dropout(dropout_rate))(graph_attention_2)
-        
-        dense1 = TimeDistributed(Dense(128, activation = linear, 
-                                       kernel_regularizer=l2(l2_reg), 
+
+        dense1 = TimeDistributed(Dense(128, activation = linear,
+                                       kernel_regularizer=l2(l2_reg),
                                        kernel_initializer='random_uniform'))(dropout3)
-        
+
         dropout4 = TimeDistributed(Dropout(dropout_rate))(dense1)
-        
+
         #make sure that the reshape is made correctly!
-        encoder_inputs = ReshapeForLSTM(num_simulations)(dropout4)
+        encoder_inputs = ReshapeForLSTM()(dropout4)
 
         
         
@@ -82,13 +82,13 @@ def define_model(num_simulations, num_timesteps, num_lanes, num_features, A):
 
         reshaped_output = ReshapeForOutput(num_lanes)(decoder_output)
 
-        model = Model(inputs= [X1_in, A_in], outputs=reshaped_output) 
-        
+        model = Model(inputs= [X1_in, A_in], outputs=reshaped_output)
+
         optimizer = Adam(lr=learning_rate)
         model.compile(optimizer=optimizer,
                       loss='mean_squared_error',
                       metrics=['mean_absolute_percentage_error'])
         model.summary()
         plot_model(model, to_file='model_plot.png', show_shapes=True, show_layer_names=True)
-        
+
         return model
