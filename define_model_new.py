@@ -11,7 +11,7 @@ import numpy as np
 import tensorflow as tf
 import keras.backend as K
 from keras.callbacks import EarlyStopping
-from keras.layers import Input, Dropout, Dense, TimeDistributed, Lambda, LSTM, Reshape, Permute
+from keras.layers import Input, Dropout, Dense, TimeDistributed, Lambda, LSTM, Reshape, Permute, GRU
 from keras.models import Model
 from keras.optimizers import Adam
 from keras.regularizers import l2
@@ -74,7 +74,7 @@ def define_model(num_simulations, num_timesteps, num_lanes, num_features, A):
 
         
         
-        decoder_inputs = LSTM(n_units,
+        decoder_inputs = GRU(n_units,
                               return_sequences=True, 
                               kernel_initializer='random_uniform')(encoder_inputs)
 
