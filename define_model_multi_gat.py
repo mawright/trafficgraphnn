@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Fri Sep 21 18:29:37 2018
+Created on Tue Oct  9 17:33:45 2018
 
 @author: simon
 """
+
 
 import numpy as np
 
 import tensorflow as tf
 import keras.backend as K
 from keras.callbacks import EarlyStopping
-from keras.layers import Input, Dropout, Dense, TimeDistributed, Lambda, LSTM, Reshape, Permute, GRU
+from keras.layers import Input, Dropout, Dense, TimeDistributed, Lambda, LSTM, Reshape, Permute, GRU, Concatenate
 from keras.models import Model
 from keras.optimizers import Adam
 from keras.regularizers import l2
@@ -26,7 +27,7 @@ from trafficgraphnn.reshape_layers import ReshapeForLSTM, ReshapeForOutput
 
 
 ### Configuration of the deep learning model
-width_1gat = 128 # Output dimension of first GraphAttention layer
+width_1gat = 64 # Output dimension of first GraphAttention layer
 F_ = 128         # Output dimension of last GraphAttention layer
 n_attn_heads = 5              # Number of attention heads in first GAT layer
 dropout_rate = 0.3            # Dropout rate applied to the input of GAT layers
@@ -35,36 +36,39 @@ l2_reg = 1e-4               # Regularization rate for l2
 learning_rate = 0.001      # Learning rate for optimizer
 n_units = 128   #number of units of the LSTM cells
 
-def define_model(num_simulations, num_timesteps, num_lanes, num_features):
+def define_model_multi_gat(num_simulations, num_timesteps, num_lanes, num_features):
 
         X1_in = Input(batch_shape=(None, num_timesteps, num_lanes, num_features))
-        A_in = Input(batch_shape=(None, num_timesteps, num_lanes, num_lanes))
+        A_down_in = Input(batch_shape=(None, num_timesteps, num_lanes, num_lanes))
+        A_up_in = Input(batch_shape=(None, num_timesteps, num_lanes, num_lanes))
+        
 
         dropout1 = TimeDistributed(Dropout(dropout_rate))(X1_in)
 
-        graph_attention_1 = TimeDistributedMultiInput(BatchGraphAttention(width_1gat,
+        graph_attention_downstream = TimeDistributedMultiInput(BatchGraphAttention(width_1gat,
                                            attn_heads=n_attn_heads,
                                            attn_heads_reduction='average',
                                            attn_dropout=attn_dropout,
                                            activation='relu',
                                            kernel_regularizer=l2(l2_reg),
-                                           attn_kernel_regularizer=l2(0.001))
-                                           )([dropout1, A_in])
+                                           attn_kernel_regularizer=l2(0.0001))
+                                           )([dropout1, A_down_in])
+    
+        graph_attention_upstream = TimeDistributedMultiInput(BatchGraphAttention(width_1gat,
+                                       attn_heads=n_attn_heads,
+                                       attn_heads_reduction='average',
+                                       attn_dropout=attn_dropout,
+                                       activation='relu',
+                                       kernel_regularizer=l2(l2_reg),
+                                       attn_kernel_regularizer=l2(0.0001))
+                                       )([dropout1, A_up_in])
+    
+        concat_gat = TimeDistributedMultiInput(Concatenate())([graph_attention_downstream, graph_attention_upstream])
 
-        dropout2 = TimeDistributed(Dropout(dropout_rate))(graph_attention_1)
-
-        graph_attention_2 = TimeDistributedMultiInput(BatchGraphAttention(F_,
-                                           attn_heads=n_attn_heads,
-                                           attn_heads_reduction='average',
-                                           attn_dropout=attn_dropout,
-                                           activation='relu',
-                                           kernel_regularizer=l2(l2_reg),
-                                           attn_kernel_regularizer=l2(0.001)))([dropout2, A_in])
-
-        dropout3 = TimeDistributed(Dropout(dropout_rate))(graph_attention_2)
+        dropout2 = TimeDistributed(Dropout(dropout_rate))(concat_gat)
 
         dense1 = TimeDistributed(Dense(128, activation = relu,
-                                       kernel_regularizer=l2(l2_reg)))(dropout3)
+                                       kernel_regularizer=l2(l2_reg)))(dropout2)
 
         dropout4 = TimeDistributed(Dropout(dropout_rate))(dense1)
 
@@ -84,7 +88,7 @@ def define_model(num_simulations, num_timesteps, num_lanes, num_features):
 
         reshaped_output = ReshapeForOutput(num_lanes)(decoder_output)
 
-        model = Model(inputs= [X1_in, A_in], outputs=reshaped_output)
+        model = Model(inputs= [X1_in, A_down_in, A_up_in], outputs=reshaped_output)
 
         optimizer = Adam(lr=learning_rate)
         model.compile(optimizer=optimizer,

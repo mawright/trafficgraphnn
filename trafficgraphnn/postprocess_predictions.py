@@ -10,7 +10,7 @@ import pandas as pd
 import tensorflow as tf
 from matplotlib import pyplot as plt
 import keras.backend as K
-from keras.losses import mean_absolute_percentage_error
+from keras.losses import mean_absolute_percentage_error, mean_absolute_error
 
 def resample_predictions(predictions):
     sess = tf.InteractiveSession()
@@ -84,7 +84,9 @@ def store_predictions_in_df(path,
     
     if alternative_prediction == True:
         df_prediction_results.to_hdf(path + 'nn_prediction_results_alternative_' + str(simu_num) + '.h5', key = 'prediciton_results')
-        print('Stored alternative prediction results in dataframe for simulation_number', simu_num)        
+        print('Stored alternative prediction results in dataframe for simulation_number', simu_num) 
+    
+    return df_prediction_results
     
 def plot_predictions_1_df(df_predictions_1, df_liu_results):
     #list_lanes = df_predictions_1.columns
@@ -161,6 +163,7 @@ def plot_predictions_1_df(df_predictions_1, df_liu_results):
         
         print('MAPE for df_predictions_1')
         calc_MAPE_of_predictions(lane, df_predictions_1)
+        calc_MAPE_of_liu(lane, df_liu_results)
         print('-------------------------------------------------------------------------')
 
         
@@ -222,6 +225,8 @@ def calc_MAPE_of_predictions(lane, df_predictions):
     
     MAPE_queue = K.eval(mean_absolute_percentage_error(ground_truth_queue, prediction_queue))
     print('MAPE queue:', MAPE_queue)
+    MAE_queue = K.eval(mean_absolute_error(ground_truth_queue, prediction_queue))
+    print('MAE queue:', MAE_queue)
     
     ground_truth_nVehSeen = df_predictions.loc[:, (lane, 'ground-truth nVehSeen')]
     prediction_nVehSeen = df_predictions.loc[:, (lane, 'prediction nVehSeen')]  
@@ -231,3 +236,17 @@ def calc_MAPE_of_predictions(lane, df_predictions):
     MAPE_nVehSeen = K.eval(mean_absolute_percentage_error(ground_truth_nVehSeen, prediction_nVehSeen))
     print('MAPE nVehSeen:', MAPE_nVehSeen)
     
+    MAE_nVehSeen = K.eval(mean_absolute_error(ground_truth_nVehSeen, prediction_nVehSeen))
+    print('MAE nVehSeen:', MAE_nVehSeen)
+    
+def calc_MAPE_of_liu(lane, df_liu_results):
+    ground_truth = df_liu_results.loc[:, (lane, 'ground-truth')]
+    liu_estimations = df_liu_results.loc[:, (lane, 'estimated hybrid')]
+    ground_truth = np.reshape(ground_truth.values, (ground_truth.values.shape[0]))
+    liu_estimations = np.reshape(liu_estimations.values, (liu_estimations.values.shape[0]))
+    
+    MAPE_queue = K.eval(mean_absolute_percentage_error(ground_truth, liu_estimations))
+    print('MAPE liu:', MAPE_queue)
+    
+    MAE_queue = K.eval(mean_absolute_error(ground_truth, liu_estimations))
+    print('MAE liu:', MAE_queue)

@@ -33,12 +33,16 @@ from keras.utils.vis_utils import plot_model
 from trafficgraphnn.attention_decoder import AttentionDecoder
 from trafficgraphnn.postprocess_predictions import store_predictions_in_df, resample_predictions
 from define_model_new import define_model
+from define_model_multi_gat import define_model_multi_gat
 from keras.models import load_model
+from scipy import sparse
+from scipy.sparse import csr_matrix
 
 
 class TrainModel(object):
     def __init__(self,
-            data_path = None
+            data_path = None, 
+            multi_gat = False
             ):
 
         if data_path == None:
@@ -51,8 +55,15 @@ class TrainModel(object):
             #data_path = 'data_storage/peri_0_4_bin_2_grid_3_len_600_lanes_3_time_1500_simu_50/train_test_data/' #custom location
             #data_path = 'train_test_data/' #custom location
 
-        self.A = np.load(self.data_path +'A.npy') #A does not change
-        print(self.A)#debug
+        self.multi_gat = multi_gat
+        
+        if self.multi_gat:
+            self.A_down = np.load(self.data_path +'A_downstream.npy') 
+            self.A_up = np.load(self.data_path +'A_upstream.npy') 
+            self.A_neig = np.load(self.data_path +'A_neighbors.npy') 
+        else:
+            self.A = np.load(self.data_path +'A.npy') #A does not change
+
         with open(self.data_path +'order_lanes.txt', "rb") as fp:   # Unpickling
             self.order_lanes = pickle.load(fp)
         self.average_interval = np.load(self.data_path +'average_interval.npy')
@@ -118,10 +129,9 @@ class TrainModel(object):
         self.model = define_model(simulations_per_batch,
                                        self.num_timesteps,
                                        self.num_lanes,
-                                       self.num_features,
-                                       self.A)
+                                       self.num_features)
 
-        A_stack = self.stack_A(num_simulations)
+        A_stack = self.stack_A(self.A, num_simulations)
 
         validation_data = ([X_val, A_stack], Y_val)
            # number of epochs with no improvement after which training will be stopped.
@@ -141,7 +151,59 @@ class TrainModel(object):
                   callbacks = [self.es_callback, self.mc_callback]
                   )
         print('Finished training of model')
+        
+        
+    def train_model_multi_gat(self,
+                            X_train,
+                            Y_train,
+                            X_val,
+                            Y_val,
+                            simulations_per_batch = 1,
+                            epochs = 1,
+                            es_patience = 10):
+        path = 'models/'
+        try:
+            os.mkdir(path)
+            print ("Successfully created the directory %s " % path)
+        except OSError:
+            print ("Creation of the directory %s failed" % path)
 
+
+        num_simulations = X_train.shape[0] #total number of samples in whole dataset
+        assert num_simulations == Y_train.shape[0]
+        assert num_simulations == X_val.shape[0]
+        assert num_simulations == Y_val.shape[0]
+
+        num_batches = num_simulations//simulations_per_batch
+        print('num_batches:', num_batches)
+
+        self.model = define_model_multi_gat(simulations_per_batch,
+                                       self.num_timesteps,
+                                       self.num_lanes,
+                                       self.num_features)
+
+        
+        A_down_stack = self.stack_A(self.A_down, num_simulations)
+        A_up_stack = self.stack_A(self.A_up, num_simulations)
+
+        validation_data = ([X_val, A_down_stack, A_up_stack], Y_val)
+           # number of epochs with no improvement after which training will be stopped.
+
+        self.es_callback = EarlyStopping(monitor='val_loss', patience=es_patience, verbose=1)
+        self.mc_callback = ModelCheckpoint(path+'best_model.hdf5',
+                                           monitor = 'val_loss',
+                                           verbose = 1,
+                                           save_best_only = True)
+
+        self.model.fit([X_train, A_down_stack, A_up_stack],
+                  Y_train,
+                  epochs=epochs,
+                  batch_size = simulations_per_batch,
+                  validation_data = validation_data,
+                  shuffle=False,
+                  callbacks = [self.es_callback, self.mc_callback]
+                  )
+        print('Finished training of model')
 
     def save_train_model(self, path = 'models/'):
         try:
@@ -167,28 +229,30 @@ class TrainModel(object):
 
         self.prediction_model.save(path + 'prediction_model_complete_final.h5')
 
-    def predict(self,
-                X_predict,
-                Y_ground_truth,
-                prediction_number = 0,
-                use_best_model = True,
-                best_model_path = 'models/'):
 
+    def predict_on_best_model(self, X_predict, Y_ground_truth, prediction_number = 0):
         assert X_predict.shape[0] == Y_ground_truth.shape[0]
-        self.prediction_model = define_model(X_predict.shape[0],
-                                        self.num_timesteps,
-                                        self.num_lanes,
-                                        self.num_features,
-                                        self.A)
-
-        A_stack = self.stack_A(1)
-        if use_best_model:
-            train_weights = self.get_best_model_weights(path = best_model_path)
+        
+        model = self.load_best_model()
+        
+        if self.multi_gat:
+            A_down_stack = self.stack_A(self.A_down, 1)
+            A_up_stack = self.stack_A(self.A_up, 1)
+            Y_hat = model.predict([X_predict, A_down_stack, A_up_stack], verbose = 1, steps = 1)
+            
+            eval_results = model.evaluate([X_predict, A_down_stack, A_up_stack],
+                  Y_ground_truth,
+                  batch_size=1,
+                  verbose=1)
+            
         else:
-            train_weights = self.model.get_weights() #copy weights from training model
-        self.prediction_model.set_weights(train_weights)
-        Y_hat = self.prediction_model.predict([X_predict, A_stack], verbose = 1, steps = 1)
-#        prediction = tf.convert_to_tensor(Y_hat, dtype=np.float32)
+            A_stack = self.stack_A(self.A, 1)    
+            Y_hat = model.predict([X_predict, A_stack], verbose = 1, steps = 1)
+            
+            eval_results = model.evaluate([X_predict, A_stack],
+                              Y_ground_truth,
+                              batch_size=1,
+                              verbose=1)
 
         store_predictions_in_df(self.data_path,
                                 Y_hat,
@@ -199,37 +263,7 @@ class TrainModel(object):
                                 simu_num = prediction_number,
                                 alternative_prediction = False)
 
-        eval_results = self.prediction_model.evaluate([X_predict, A_stack],
-                                      Y_ground_truth,
-                                      batch_size=1,
-                                      verbose=1)
-        print('Done.\n'
-              'Test loss: {}\n'
-              'Test mape: {}'.format(*eval_results))
 
-        return Y_hat
-
-    def predict_ext_model(self, model, X_predict, Y_ground_truth, prediction_number = 0):
-        assert X_predict.shape[0] == Y_ground_truth.shape[0]
-
-        A_stack = self.stack_A(1)
-
-        Y_hat = model.predict([X_predict, A_stack], verbose = 1, steps = 1)
-#        prediction = tf.convert_to_tensor(Y_hat, dtype=np.float32)
-
-        store_predictions_in_df(self.data_path,
-                                Y_hat,
-                                Y_ground_truth,
-                                self.order_lanes,
-                                200,
-                                self.average_interval,
-                                simu_num = prediction_number,
-                                alternative_prediction = False)
-
-        eval_results = self.prediction_model.evaluate([X_predict, A_stack],
-                                      Y_ground_truth,
-                                      batch_size=1,
-                                      verbose=1)
         print('Done.\n'
               'Test loss: {}\n'
               'Test mape: {}'.format(*eval_results))
@@ -237,8 +271,8 @@ class TrainModel(object):
         return Y_hat
 
 
-    def stack_A(self, num_simulations):
-        A = self.A.astype(np.float32)
+    def stack_A(self, A, num_simulations):
+        A = A.astype(np.float32)
         A_list = [A for _ in range(self.num_timesteps)]
         A_stack_time = np.stack(A_list, axis=0)
         print('A_stack_time.shape ', A_stack_time.shape)
@@ -247,7 +281,7 @@ class TrainModel(object):
         print('A_stack_simu.shape after reshape', A_stack_simu.shape)
         return A_stack_simu
 
-    def get_best_model_weights(self, path = 'models/'):
+    def load_best_model(self, path = 'models/'):
 
         best_model = load_model(path + 'best_model.hdf5',
                            custom_objects={
@@ -256,5 +290,10 @@ class TrainModel(object):
                                   'TimeDistributedMultiInput': TimeDistributedMultiInput,
                                   'ReshapeForLSTM': ReshapeForLSTM,
                                   'ReshapeForOutput': ReshapeForOutput})
-
-        return best_model.get_weights()
+        return best_model
+    
+    def get_ord_lanes(self):
+        return self.order_lanes
+    
+    def get_average_interval(self):
+        return self.average_interval

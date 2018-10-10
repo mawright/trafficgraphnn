@@ -275,24 +275,20 @@ class PreprocessData(object):
         except IOError:
             print('No file for liu estimation results found.')
 
-        if ord_lanes == None:
+        if ord_lanes == None and simu_num == 0:
             subgraph = self.get_subgraph(self.graph)
-            A = nx.adjacency_matrix(subgraph)
             ord_lanes = [lane for lane in subgraph.nodes]
-            N = len(ord_lanes)
-            #A_neighbors = self.get_A_for_neighboring_lanes(ord_lanes) #Skip using neighbors for the beginning            
-            #A = np.eye(N,N) + A + np.transpose(A) + A_neighbors
-            A = np.eye(N,N) + A + np.transpose(A)
-            A = np.minimum(A, np.ones((N,N)))
+            A_down, A_up, A_neigh = self.get_all_A(subgraph, ord_lanes)
+            A_list = [A_down, A_up, A_neigh]
         else:
-            A = None #no A needs to be exported
+            A_list = None #no A needs to be exported
         
 
         X, Y = self.calc_X_and_Y(ord_lanes, df_detector, df_liu_results,
                             start, end, average_interval, sample_size, 
                             interpolate_ground_truth, sample_time_sequence = sample_time_sequence)
 
-        return A, X, Y, ord_lanes
+        return A_list, X, Y, ord_lanes
 
 
     def calc_X_and_Y(self, 
@@ -498,6 +494,23 @@ class PreprocessData(object):
         A = A + np.transpose(A)
         A = np.minimum(A, np.ones((N,N)))
         return A
+    
+    def get_all_A(self, subgraph, order_lanes):
+        N = len(order_lanes)
+             
+        #get adjacency matrix for all downstream connenctions:
+        A_down = nx.adjacency_matrix(subgraph)
+        A_down = np.eye(N, N) + A_down
+        A_down = np.minimum(A_down, np.ones((N,N)))
+        #get adjacency matrix for all upstream connections
+        A_up = np.transpose(A_down)     
+        
+        #get adjacency matrix for all neigboring lanes (e.g. for lane changing)       
+        A_neighbors = self.get_A_for_neighboring_lanes(order_lanes) #Skip using neighbors for the beginning            
+        A_neighbors = np.eye(N, N) + A_neighbors
+        A_neighbors = np.minimum(A_neighbors, np.ones((N,N)))     
+          
+        return A_down, A_up, A_neighbors
                 
                 
 def reshape_for_3Dim(input_arr):
@@ -569,5 +582,7 @@ def reshape_for_4Dim(input_arr):
 #        cnt_lanes += 1
     
     return output_arr
+
+
 
 
