@@ -490,6 +490,10 @@ class LiuLane(object):
     def phase_length(self):
         return self.reader.phase_length
 
+    @property
+    def phase_start(self):
+        return self.reader.phase_start
+
     def add_out_lane(self, out_lane_id):
         self.reader.add_out_lane(out_lane_id)
 
