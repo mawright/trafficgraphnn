@@ -26,9 +26,9 @@ class GenerateData(object):
                 grid_length = 600, 
                 num_lanes =3,
                 
-                end_time = 400, #seconds                
-                period_lower_bound = 0.3, #lower bound for randomized period
-                period_upper_bound = 0.3, #upper bound for randomized period
+                end_time = 1400, #seconds                
+                period_lower_bound = 0.4, #lower bound for randomized period
+                period_upper_bound = 0.4, #upper bound for randomized period
 
                 binomial = 2,
                 seed = 50,
@@ -68,7 +68,7 @@ class GenerateData(object):
 
     def generate_X_Y_A(self):
         ### Creating Network and running simulation
-        config = ConfigGenerator(net_name='test_net_small')
+        config = ConfigGenerator(net_name='new_data')
         path = config.get_preprocessed_data_dir()
         
         # Parameters for network, trips and sensors (binomial must be an integer!!!)
@@ -127,7 +127,7 @@ class GenerateData(object):
             preprocess = PreprocessData(sn, simu_num)
             preproccess_end_time = preprocess.get_preprocessing_end_time(liu_runner.get_liu_lane_IDs(), 
                                                                          self.average_interval)
-            A, X, Y, order_lanes = preprocess.preprocess_A_X_Y(
+            A_list, X, Y, order_lanes = preprocess.preprocess_A_X_Y(
                     average_interval = self.average_interval, 
                     sample_size = self.sample_size, 
                     start = 200, 
@@ -143,7 +143,9 @@ class GenerateData(object):
             print('save X and Y to npy file for simulation number ', simu_num)
             
             if simu_num == 0: #only for the very first simulation; pay attention to self.start_index
-                np.save(path + '/A.npy', A)
+                np.save(path + '/A_downstream.npy', A_list[0])
+                np.save(path + '/A_upstream.npy', A_list[1])
+                np.save(path + '/A_neighbors.npy', A_list[2])
                 np.save(path + '/average_interval.npy', self.average_interval)
                 with open(path + '/order_lanes.txt', "wb") as fp:   #Pickling
                     pickle.dump(order_lanes, fp)
