@@ -39,8 +39,9 @@ class BatchGraphAttention(Layer):
         self.supports_masking = False
 
         # Populated by build()
-        self.kernels = []       # Layer kernels for attention heads
-        self.attn_kernels = []  # Attention kernels for attention heads
+        self.kernel = None       # Layer kernels for attention heads
+        self.attn_kernel_self = None  # Attention kernels for attention heads
+        self.attn_kernel_neighs = None
 
         if attn_heads_reduction == 'concat':
             # Output will have shape (..., K * F')
@@ -54,31 +55,28 @@ class BatchGraphAttention(Layer):
     def build(self, input_shape):
         assert len(input_shape) >= 2
         assert len(input_shape[0]) >= 3 # dimensions: batch, node, features
-        assert len(input_shape[1]) >= 3 # dimensions, batch, node, node
+        assert len(input_shape[1]) >= 2 # dimensions: node, node
         F = input_shape[0][-1] # input feature dim
 
         # Initialize kernels for each attention head
-        for head in range(self.attn_heads):
-            # Layer kernel
-            kernel = self.add_weight(shape=(F, self.F_),
-                                     initializer=self.kernel_initializer,
-                                     name='kernel_%s' % head,
-                                     regularizer=self.kernel_regularizer,
-                                     constraint=self.kernel_constraint)
-            self.kernels.append(kernel)
+        # Layer kernel
+        self.kernel = self.add_weight(shape=(self.attn_heads, F, self.F_),
+                                    initializer=self.kernel_initializer,
+                                    name='kernel',
+                                    regularizer=self.kernel_regularizer,
+                                    constraint=self.kernel_constraint)
 
-            # Attention kernel
-            attn_kernel_self = self.add_weight(shape=(self.F_, 1),
-                                               initializer=self.attn_kernel_initializer,
-                                               name='att_kernel_{}_self'.format(head),
-                                               regularizer=self.attn_kernel_regularizer,
-                                               constraint=self.attn_kernel_constraint)
-            attn_kernel_neighs = self.add_weight(shape=(self.F_, 1),
-                                                 initializer=self.attn_kernel_initializer,
-                                                 name='att_kernel_{}_neighs'.format(head),
-                                                 regularizer=self.attn_kernel_regularizer,
-                                                 constraint=self.attn_kernel_constraint)
-            self.attn_kernels.append([attn_kernel_self, attn_kernel_neighs])
+        # Attention kernel
+        self.attn_kernel_self = self.add_weight(shape=(self.attn_heads, self.F_),
+                                            initializer=self.attn_kernel_initializer,
+                                            name='att_kernel_self',
+                                            regularizer=self.attn_kernel_regularizer,
+                                            constraint=self.attn_kernel_constraint)
+        self.attn_kernel_neighs = self.add_weight(shape=(self.attn_heads, self.F_),
+                                                initializer=self.attn_kernel_initializer,
+                                                name='att_kernel_neighs',
+                                                regularizer=self.attn_kernel_regularizer,
+                                                constraint=self.attn_kernel_constraint)
 
         self.input_spec = [InputSpec(shape=s) for s in input_shape]
         self.built = True
@@ -87,51 +85,54 @@ class BatchGraphAttention(Layer):
         X = inputs[0]  # Node features (batch x N x F)
         A = inputs[1]  # Adjacency matrix (batch x N x N)
 
-        outputs = []
-        for head in range(self.attn_heads):
-            kernel = self.kernels[head]  # W in the paper (F x F')
-            attention_kernel = self.attn_kernels[head]  # Attention kernel a in the paper (2F' x 1)
+        # Compute inputs to attention network
+        linear_transf_X = K.dot(X, self.kernel)  # (batch x N x h x F')
 
-            # Compute inputs to attention network
-            linear_transf_X = K.dot(X, kernel)  # (N x F')
+        # Compute feature combinations
+        # Note: [[a_1], [a_2]]^T [[Wh_i], [Wh_2]] = [a_1]^T [Wh_i] + [a_2]^T [Wh_j]
+        # broadcast the attention kernel across all batches and nodes
+        multiplied_self_attn = linear_transf_X * K.reshape(self.attn_kernel_self,
+                                                           (1, 1, self.attn_heads, self.F_))
+        # dot product of two vectors is just elementwise product summed
+        attn_for_self = K.sum(multiplied_self_attn, axis=-1, keepdims=True)  # (batch x N x h x 1), [a_1]^T [Wh_i]
 
-            # Compute feature combinations
-            # Note: [[a_1], [a_2]]^T [[Wh_i], [Wh_2]] = [a_1]^T [Wh_i] + [a_2]^T [Wh_j]
-            attn_for_self = K.dot(linear_transf_X, attention_kernel[0])    # (N x 1), [a_1]^T [Wh_i]
-            attn_for_neighs = K.dot(linear_transf_X, attention_kernel[1])  # (N x 1), [a_2]^T [Wh_j]
+        multiplied_neigh_attn = linear_transf_X * K.reshape(self.attn_kernel_neighs,
+                                                            (1, 1, self.attn_heads, self.F_))
+        attn_for_neighs = K.sum(multiplied_neigh_attn, axis=-1, keepdims=True)  # (batch x N x h x 1), [a_2]^T [Wh_j]
 
-            # Attention head a(Wh_i, Wh_j) = a^T [[Wh_i], [Wh_j]]
+        # Attention head a(Wh_i, Wh_j) = a^T [[Wh_i], [Wh_j]]
 
-            #transpose just dimension 1 and 2, not batches
-            trans_attn_for_neighs = K.permute_dimensions(attn_for_neighs, [0, 2, 1])
-            dense = attn_for_self + trans_attn_for_neighs  # (N x N) via broadcasting
+        # permute dimensions for broadcasting
+        attn_for_self = K.permute_dimensions(attn_for_self, (0, 2, 1, 3))
+        attn_for_neighs = K.permute_dimensions(attn_for_neighs, (0, 2, 3, 1))
+        dense = attn_for_self + attn_for_neighs  # (batch x h x N x N) via broadcasting
 
-            # Add nonlinearty
-            dense = LeakyReLU(alpha=0.2)(dense)
+        # Add nonlinearty
+        dense = LeakyReLU(alpha=0.2)(dense)
 
-            # Mask values before activation (Vaswani et al., 2017)
-            mask = K.exp(A * -10e9) * -10e9
-            masked = dense + mask
+        # Mask values before activation (Vaswani et al., 2017)
+        mask = K.exp(A * -10e9) * -10e9
+        masked = dense + mask
 
-            # Feed masked values to softmax
-            softmax = K.softmax(masked)  # (N x N), attention coefficients
-            dropout = Dropout(self.attn_dropout)(softmax)  # (N x N)
+        # Feed masked values to softmax
+        softmax = K.softmax(masked)  # (batch x E x h x N x N), attention coefficients
+        dropout = Dropout(self.attn_dropout)(softmax)  # (N x N)
 
-            # Linear combination with neighbors' features
-            node_features = K.batch_dot(dropout, linear_transf_X)  # (N x F')
+        # Linear combination with neighbors' features
+        node_features = K.batch_dot(dropout,
+                                    K.permute_dimensions(linear_transf_X, (0, 2, 1, 3)))  # (batch x h x N x F')
 
-            if self.attn_heads_reduction == 'concat' and self.activation is not None:
-                # In case of 'concat', we compute the activation here (Eq 5)
-                node_features = self.activation(node_features)
-
-            # Add output of attention head to final output
-            outputs.append(node_features)
+        if self.attn_heads_reduction == 'concat' and self.activation is not None:
+            # In case of 'concat', we compute the activation here (Eq 5)
+            node_features = self.activation(node_features)
 
         # Reduce the attention heads output according to the reduction method
         if self.attn_heads_reduction == 'concat':
-            output = K.concatenate(outputs)  # (N x KF')
+            output = K.permute_dimensions(node_features, (0, 2, 1, 3))
+            shape = K.shape(output)
+            output = K.reshape(output, (shape[0], shape[1], shape[2]*shape[3]))  # (N x KF')
         else:
-            output = K.mean(K.stack(outputs), axis=0)  # N x F')
+            output = K.mean(node_features, axis=1)  # (N x F')
             if self.activation is not None:
                 # In case of 'average', we compute the activation here (Eq 6)
                 output = self.activation(output)
