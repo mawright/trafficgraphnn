@@ -147,7 +147,7 @@ class BatchGraphAttention(Layer):
         if self.use_bias:
             node_features = K.bias_add(node_features, self.bias)
 
-        if self.attn_heads_reduction == 'concat' and self.activation is not None:
+        if self.attn_heads_reduction == 'concat':
             # In case of 'concat', we compute the activation here (Eq 5)
             node_features = self.activation(node_features)
 
