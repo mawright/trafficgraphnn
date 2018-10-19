@@ -119,8 +119,10 @@ class BatchGraphAttention(Layer):
 
         outputs = []
         for (kernel, bias, attn_kernel_self, attn_kernel_neighs
-        ) in zip(self.kernels, self.biases, self.attn_kernels_self, self.attn_kernels_neighs
-                 ):
+        ) in zip(self.kernels,
+                 self.biases,
+                 self.attn_kernels_self,
+                 self.attn_kernels_neighs):
             # Compute inputs to attention network
             features = K.dot(X, kernel)  # (batch x N x F')
 
