@@ -12,6 +12,7 @@ class BatchShawMultigraphAttention(Layer):
     def __init__(self,
                  F_,
                  attn_heads=1,
+                 attention_type='multiplicative',
                  attn_heads_reduction='concat',  # {'concat', 'average'}
                  edge_type_reduction='concat',
                  attn_dropout=0.5,
@@ -35,9 +36,12 @@ class BatchShawMultigraphAttention(Layer):
                  **kwargs):
         if attn_heads_reduction not in {'concat', 'average'}:
             raise ValueError('Possbile reduction methods: concat, average')
+        if attention_type not in {'multiplicative', 'additive'}:
+            raise ValueError("Allowed attention types: 'multiplicative', 'additive'")
 
         self.F_ = F_  # Number of output features (F' in the paper)
         self.attn_heads = attn_heads  # Number of attention heads (K in the paper)
+        self.attention_type = attention_type
         self.attn_heads_reduction = attn_heads_reduction  # 'concat' or 'average' (Eq 5 and 6 in the paper)
         self.edge_type_reduction = edge_type_reduction
         self.attn_dropout = attn_dropout  # Internal dropout rate for attention coefficients
@@ -177,12 +181,12 @@ class BatchShawMultigraphAttention(Layer):
 
         # Feed masked values to softmax
         attn_weights = K.softmax(masked)  # (batch x E x h x N x N), attention coefficients
-        dropout = Dropout(self.attn_dropout)(attn_weights)
+        attn_weight_dropout = Dropout(self.attn_dropout)(attn_weights)
 
         # now compute the "value" transformations
-        linear_transf_X = K.dot(X, self.kernel)  # (batch x N x h x F')
+        features = K.dot(X, self.kernel)  # (batch x N x h x F')
         # reshape the X-value tensor: swap head and node dimensions
-        permuted_value_x = K.permute_dimensions(linear_transf_X, (0, 2, 1, 3))
+        permuted_value_x = K.permute_dimensions(features, (0, 2, 1, 3)) # (batch x h x N x F')
         # add the edge-type dimension
         expanded_value_x = K.expand_dims(permuted_value_x, 1)
         # repeat over edge-type dimension
@@ -195,17 +199,11 @@ class BatchShawMultigraphAttention(Layer):
             expanded_value_biases = K.expand_dims(K.expand_dims(self.biases, 0), -2)
             value_x = value_x + expanded_value_biases
 
-        value_x = Dropout(self.feature_dropout)(value_x)
+        dropout_features = Dropout(self.feature_dropout)(value_x)
 
         # Linear combination with neighbors' features
-        node_features = K.batch_dot(dropout, value_x)  # (batch x E x h x N x F')
-        output = K.permute_dimensions(node_features, (0, 3, 1, 2, 4)) # (batch x N x E x h x F')
-
-        if (self.attn_heads_reduction == 'concat'
-                and self.edge_type_reduction == 'concat'
-                and self.activation is not None):
-            # In case of 'concat', we compute the activation here (Eq 5)
-            output = self.activation(output)
+        output = K.batch_dot(attn_weight_dropout, dropout_features)  # (batch x E x h x N x F')
+        output = K.permute_dimensions(output, (0, 3, 1, 2, 4)) # (batch x N x E x h x F')
 
         # Reduce the edge type output according to the specified reduction method
         if self.edge_type_reduction == 'concat':
@@ -220,9 +218,8 @@ class BatchShawMultigraphAttention(Layer):
             output = K.reshape(output, (shape[0], shape[1], shape[2]*shape[3]))
         else:
             output = K.mean(output, axis=2)  # (batch x N x F')
-            if self.activation is not None:
-                # In case of 'average', we compute the activation here (Eq 6)
-                output = self.activation(output)
+
+        output = self.activation(output)
 
         return output
 
@@ -241,6 +238,7 @@ class BatchShawMultigraphAttention(Layer):
             'attn_heads': self.attn_heads,
             'attn_heads_reduction': self.attn_heads_reduction,
             'edge_type_reduction': self.edge_type_reduction,
+            'attention_type': self.attention_type,
             'attn_dropout': self.attn_dropout,
             'feature_dropout': self.feature_dropout,
             'activation': self.activation,
