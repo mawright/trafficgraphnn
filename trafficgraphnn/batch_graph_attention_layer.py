@@ -118,11 +118,13 @@ class BatchGraphAttention(Layer):
         A = inputs[1]  # Adjacency matrix (batch x N x N)
 
         outputs = []
-        for (kernel, bias, attn_kernel_self, attn_kernel_neighs
-        ) in zip(self.kernels,
-                 self.biases,
-                 self.attn_kernels_self,
-                 self.attn_kernels_neighs):
+        for h in range(self.attn_heads):
+            kernel = self.kernels[h]
+            attn_kernel_self = self.attn_kernels_self[h]
+            attn_kernel_neighs = self.attn_kernels_neighs[h]
+            if self.use_bias:
+                bias = self.biases[h]
+
             # Compute inputs to attention network
             features = K.dot(X, kernel)  # (batch x N x F')
 
