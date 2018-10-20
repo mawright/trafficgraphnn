@@ -17,6 +17,7 @@ class BatchShawMultigraphAttention(Layer):
                  edge_type_reduction='concat',
                  attn_dropout=0.5,
                  feature_dropout=0.,
+                 zero_isolated=True,
                  use_value_bias=True,
                  use_key_bias=True,
                  activation='relu',
@@ -47,6 +48,7 @@ class BatchShawMultigraphAttention(Layer):
         self.attn_dropout = attn_dropout  # Internal dropout rate for attention coefficients
         self.feature_dropout = feature_dropout
         self.activation = activations.get(activation)  # Optional nonlinearity (Eq 4 in the paper)
+        self.zero_isolated = zero_isolated
 
         self.use_value_bias = use_value_bias
         self.use_key_bias = use_key_bias
@@ -69,9 +71,9 @@ class BatchShawMultigraphAttention(Layer):
         self.supports_masking = False
 
         # Populated by build()
-        self.kernel = None       # Layer kernels (value) for attention heads
-        self.attn_kernel_self = None  # Attention kernels for attention heads (Query)
-        self.attn_kernel_neighs = None # (Key)
+        self.kernels = None       # Layer kernels (value) for attention heads
+        self.attn_kernels_self = None  # Attention kernels for attention heads (Query)
+        self.attn_kernels_neighs = None # (Key)
 
         self.biases = None
         self.attn_biases = None
@@ -87,10 +89,11 @@ class BatchShawMultigraphAttention(Layer):
 
         assert len(input_shape[1]) == 4 # dimensions: batch, num_edge_types, node, node
 
-        if input_shape[1][1] is None:
-            raise ValueError('Number of edge types (dimension 1 of the A tensor) must be specified')
+        num_edge_types = input_shape[1][-1]
+        if num_edge_types is None:
+            raise ValueError('Number of edge types (dimension -1 of the A tensor) must be specified')
 
-        self.num_edge_types = input_shape[1][1]
+        self.num_edge_types = num_edge_types
 
         self.output_dim = self.F_
         if self.edge_type_reduction == 'concat':
@@ -100,124 +103,123 @@ class BatchShawMultigraphAttention(Layer):
             self.output_dim *= self.attn_heads
 
         # Initialize kernels for each attention head
-        # Layer kernel: dims (h X F x F')
-        self.kernel = self.add_weight(shape=(self.attn_heads, F, self.F_),  # "value" weight matrix
-                                      initializer=self.kernel_initializer,
-                                      name='kernel',
-                                      regularizer=self.kernel_regularizer,
-                                      constraint=self.kernel_constraint)
+        # Layer kernel: dims (F x F')
+        self.kernels = [
+            self.add_weight(shape=(F, self.F_),  # "value" weight matrix
+                            initializer=self.kernel_initializer,
+                            name='kernel_head_{}'.format(h),
+                            regularizer=self.kernel_regularizer,
+                            constraint=self.kernel_constraint)
+            for h in range(self.attn_heads)]
 
-        # per-edge-type value bias vectors: dims (E x h x F')
+        # per-edge-type value bias vectors: dims (E x F')
         if self.use_value_bias:
-            self.biases = self.add_weight(shape=(self.num_edge_types, self.attn_heads, self.F_),
-                                          initializer=self.bias_initializer,
-                                          name='output_biases',
-                                          regularizer=self.bias_regularizer,
-                                          constraint=self.bias_constraint)
+            self.biases = [
+                self.add_weight(shape=(self.num_edge_types, self.F_),
+                                initializer=self.bias_initializer,
+                                name='output_bias_{}'.format(h),
+                                regularizer=self.bias_regularizer,
+                                constraint=self.bias_constraint)
+                for h in range(self.attn_heads)]
 
         # Attention kernel
-        # Self ("Query") kernel: dims (h, F, F')
-        self.attn_kernel_self = self.add_weight(shape=(self.attn_heads, F, self.F_),
-                                                initializer=self.attn_kernel_initializer,
-                                                name='att_kernel_self',
-                                                regularizer=self.attn_kernel_regularizer,
-                                                constraint=self.attn_kernel_constraint)
-        # Neighbors ("key") kernel: dims (h, F, F')
-        self.attn_kernel_neighs = self.add_weight(shape=(self.attn_heads, F, self.F_), # "key" weight matrix
-                                                  initializer=self.attn_kernel_initializer,
-                                                  name='att_kernel_neighs',
-                                                  regularizer=self.attn_kernel_regularizer,
-                                                  constraint=self.attn_kernel_constraint)
+        # Self ("Query") kernel: dims (F, F')
+        self.attn_kernels_self = [
+            self.add_weight(shape=(F, self.F_),
+                            initializer=self.attn_kernel_initializer,
+                            name='att_kernel_self_{}'.format(h),
+                            regularizer=self.attn_kernel_regularizer,
+                            constraint=self.attn_kernel_constraint)
+            for h in range(self.attn_heads)]
+        # Neighbors ("key") kernel: dims (F, F')
+        self.attn_kernels_neighs = [
+            self.add_weight(shape=(F, self.F_), # "key" weight matrix
+                            initializer=self.attn_kernel_initializer,
+                            name='att_kernel_neighs_{}'.format(h),
+                            regularizer=self.attn_kernel_regularizer,
+                            constraint=self.attn_kernel_constraint)
+            for h in range(self.attn_heads)]
 
-        # per-edge-type attention ("key") biases: dim (E x h X F')
+        # per-edge-type attention ("key") biases: dim (F' x E)
         if self.use_key_bias:
-            self.attn_biases = self.add_weight(shape=(self.num_edge_types, self.attn_heads, self.F_),
-                                               initializer=self.attn_kernel_initializer,
-                                               name='att_biases',
-                                               regularizer=self.attn_kernel_regularizer,
-                                               constraint=self.attn_kernel_constraint)
+            self.attn_biases = [
+                self.add_weight(shape=(self.F_, self.num_edge_types),
+                                initializer=self.attn_kernel_initializer,
+                                name='att_biases_{}'.format(h),
+                                regularizer=self.attn_kernel_regularizer,
+                                constraint=self.attn_kernel_constraint)
+                for h in range(self.attn_heads)]
 
         self.input_spec = [InputSpec(shape=s) for s in input_shape]
         self.built = True
 
     def call(self, inputs):
         X = inputs[0]  # Node features (batch x N x F)
-        A = inputs[1]  # Adjacency matrices (batch x |E| x N x N)
+        A = inputs[1]  # Adjacency matrices (batch x N x N x E)
 
-        # Compute feature combinations
-        # Note: [[a_1], [a_2]]^T [[Wh_i], [Wh_2]] = [a_1]^T [Wh_i] + [a_2]^T [Wh_j]
-        attn_for_self = K.dot(X, self.attn_kernel_self)    # (batch x N x h x F'), [a_1]^T [Wh_i]
-        attn_for_neighs = K.dot(X, self.attn_kernel_neighs)  # (batch x N x h x F'), [a_2]^T [Wh_j]
+        N = K.shape(X)[1]
 
-        # calculate attention score by dot-producting the attention for self
-        # and attention for neighbors vectors for each head and each node
-        transpose_self = K.permute_dimensions(attn_for_self, (0, 2, 1, 3)) # (batch x h x N x F_)
-        transpose_neighs = K.permute_dimensions(attn_for_neighs, (0, 2, 3, 1)) # (batch x h x F_ x N)
+        outputs = []
+        for h in range(self.attn_heads):
+            kernel = self.kernels[h]
+            attn_kernel_self = self.attn_kernels_self[h]
+            attn_kernel_neighs = self.attn_kernels_neighs[h]
+            if self.use_value_bias:
+                value_bias = self.biases[h]
+            if self.use_key_bias:
+                key_bias = self.attn_biases[h]
+            # Note: [[a_1], [a_2]]^T [[Wh_i], [Wh_2]] = [a_1]^T [Wh_i] + [a_2]^T [Wh_j]
+            attn_for_self = K.dot(X, attn_kernel_self)    # (batch x N x F'), [a_1]^T [Wh_i]
+            attn_for_neighs = K.dot(X, attn_kernel_neighs)  # (batch x N x F'), [a_2]^T [Wh_j]
 
-        # expand to batch and node dims for broadcasting
-        key_tensor = K.expand_dims(transpose_neighs, 1)
-        if self.use_key_bias:
-            expanded_biases = K.expand_dims(K.expand_dims(self.attn_biases, 0), -1)
-            key_tensor = key_tensor + expanded_biases # (batch x E x h x F_ x N)
-        else:
-            key_tensor = K.repeat_elements(key_tensor, self.num_edge_types, 1)
+            # calculate attention score by dot-producting the attention for self
+            # and attention for neighbors vectors for each head and each node
+            dotproduct = K.batch_dot(attn_for_self, attn_for_neighs, axes=[2, 2]) # (batch x N x N)
 
-        # expand the self (query) tensor across edge types
-        tranpose_self_expand = K.expand_dims(transpose_self, 1)
-        # no implementation of broadcasted batch matrix multiply, so we need to tile the
-        # self ("query") tensor across the edge-type dimension
-        tiled_transpose_self = K.repeat_elements(tranpose_self_expand,
-                                                 self.num_edge_types, 1)
-        attn_scores = K.batch_dot(tiled_transpose_self, key_tensor) # (batch x E x h x N x N)
+            if self.use_key_bias:
+                dotproduct_bias = K.dot(attn_for_self, key_bias) # (batch x N x E)
+                attn_scores = K.expand_dims(dotproduct, -1) + K.expand_dims(dotproduct_bias, 1) # (batch x N x N x E)
+            else:
+                attn_scores = K.expand_dims(dotproduct, -1)
 
-        # scaled dot-product: normalize by feature dimension
-        attn_scores = attn_scores / K.sqrt(K.constant(self.F_, dtype=attn_scores.dtype))
+            # scaled dot-product: normalize by feature dimension
+            attn_scores = attn_scores / K.sqrt(K.constant(self.F_, dtype=attn_scores.dtype))
 
-        expanded_A = K.expand_dims(A, 2) # same A matrices per attention head
+            # Mask values before activation (Vaswani et al., 2017)
+            mask = (1.0 - A) * -10e9
+            masked = attn_scores + mask
 
-        # Mask values before activation (Vaswani et al., 2017)
-        mask = (1.0 - expanded_A) * -10e9
-        masked = attn_scores + mask
+            # Feed masked values to softmax
+            attn_weights = K.softmax(masked, 2)  # (batch x N x N x E), attention coefficients
 
-        # Feed masked values to softmax
-        attn_weights = K.softmax(masked)  # (batch x E x h x N x N), attention coefficients
-        attn_weight_dropout = Dropout(self.attn_dropout)(attn_weights)
+            # if self.zero_isolated:
+            #     attn_weights = K.switch(K.sum(A, 2) >= 1, attn_weights, K.zeros_like(attn_weights))
+            attn_weight_dropout = Dropout(self.attn_dropout)(attn_weights)
 
-        # now compute the "value" transformations
-        features = K.dot(X, self.kernel)  # (batch x N x h x F')
-        # reshape the X-value tensor: swap head and node dimensions
-        permuted_value_x = K.permute_dimensions(features, (0, 2, 1, 3)) # (batch x h x N x F')
-        # add the edge-type dimension
-        expanded_value_x = K.expand_dims(permuted_value_x, 1)
-        # repeat over edge-type dimension
-        # (needed because broadcasted batch matrix multiply not implemented in tf)
-        value_x = K.repeat_elements(expanded_value_x, self.num_edge_types, 1)
-        # new dims: (batch x E x h x v x F')
+            # now compute the "value" transformations
+            features = K.dot(X, kernel)  # (batch x N x F')
 
-        # add edge-type-dependent bias vectors
-        if self.use_value_bias:
-            expanded_value_biases = K.expand_dims(K.expand_dims(self.biases, 0), -2)
-            value_x = value_x + expanded_value_biases
+            weight_slices = [attn_weight_dropout[...,e] for e in range(self.num_edge_types)]
+            if self.use_value_bias:
+                bias_slices = [value_bias[e] for e in range(self.num_edge_types)]
+                weighted_features = [K.batch_dot(ws, features + b) for ws, b in zip(weight_slices, bias_slices)]
+            else:
+                weighted_features = [K.batch_dot(ws, features) for ws in weight_slices]
+            weighted_sum_features = K.stack(weighted_features, 2) # (batch x N x E x F')
 
-        dropout_features = Dropout(self.feature_dropout)(value_x)
-
-        # Linear combination with neighbors' features
-        output = K.batch_dot(attn_weight_dropout, dropout_features)  # (batch x E x h x N x F')
-        output = K.permute_dimensions(output, (0, 3, 1, 2, 4)) # (batch x N x E x h x F')
+            outputs.append(weighted_sum_features)
 
         # Reduce the edge type output according to the specified reduction method
         if self.edge_type_reduction == 'concat':
-            shape = K.shape(output)
-            output = K.reshape(output, (shape[0], shape[1], shape[2]*shape[3], shape[4]))
+            outputs = [K.reshape(output, (-1, N, self.num_edge_types*self.F_)) for output in outputs]
         else:
-            output = K.mean(output, 2)
+            outputs = [K.mean(output, 2) for output in outputs]
 
         # Reduce the attention heads output according to the reduction method
         if self.attn_heads_reduction == 'concat':
-            shape = K.shape(output)
-            output = K.reshape(output, (shape[0], shape[1], shape[2]*shape[3]))
+            output = K.concatenate(outputs, -1)
         else:
-            output = K.mean(output, axis=2)  # (batch x N x F')
+            output = K.mean(K.stack(outputs, axis=0), axis=0)  # (batch x N x F')
 
         output = self.activation(output)
 
