@@ -297,3 +297,10 @@ class TrainModel(object):
     
     def get_average_interval(self):
         return self.average_interval
+    
+    def get_A(self):
+        return self.A
+    
+    def reset_num_features(self, num_features):
+        self.num_features = num_features
+        print('new num_features:', self.num_features)

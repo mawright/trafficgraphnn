@@ -26,11 +26,11 @@ class GenerateData(object):
                 grid_length = 600, 
                 num_lanes =3,
                 
-                end_time = 1400, #seconds                
-                period_lower_bound = 0.4, #lower bound for randomized period
-                period_upper_bound = 0.4, #upper bound for randomized period
+                end_time = 1700, #seconds                
+                period_lower_bound = 0.3, #lower bound for randomized period
+                period_upper_bound = 0.3, #upper bound for randomized period
 
-                binomial = 2,
+                binomial = 3,
                 seed = 50,
                 fringe_factor = 1000,
            
@@ -68,7 +68,7 @@ class GenerateData(object):
 
     def generate_X_Y_A(self):
         ### Creating Network and running simulation
-        config = ConfigGenerator(net_name='new_data')
+        config = ConfigGenerator(net_name='test_data_period_03')
         path = config.get_preprocessed_data_dir()
         
         # Parameters for network, trips and sensors (binomial must be an integer!!!)

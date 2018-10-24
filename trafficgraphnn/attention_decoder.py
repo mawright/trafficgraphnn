@@ -24,6 +24,8 @@ class AttentionDecoder(Recurrent):
     def __init__(self, units, output_dim,
                  causal=False,
                  causal_lag=0,
+                 use_attention_horizon = False,
+                 attn_horizon = 30,
                  activation=None,
                  return_probabilities=False,
                  name='AttentionDecoder',
@@ -52,6 +54,8 @@ class AttentionDecoder(Recurrent):
         self.return_probabilities = return_probabilities
         self.causal = causal
         self.causal_lag = causal_lag
+        self.use_attention_horizon = use_attention_horizon
+        self.attn_horizon = attn_horizon
         self.activation = activations.get(activation)
         self.kernel_initializer = initializers.get(kernel_initializer)
         self.recurrent_initializer = initializers.get(recurrent_initializer)
@@ -263,10 +267,18 @@ class AttentionDecoder(Recurrent):
         et = K.dot(activations.tanh(_Wxstm + self._uxpb),
                    K.expand_dims(self.V_a))
 
-        if self.causal:
+        if self.causal and not self.use_attention_horizon:
             is_future = K.greater(self._input_t, t)
             mask = K.cast(is_future, 'float32') * -10e9
             et = et + K.expand_dims(K.expand_dims(mask, -1), 0)
+        elif self.causal and self.use_attention_horizon:
+            is_future = K.greater(self._input_t, t)
+            is_beyond_horizon = K.less(self._input_t, t-self.attn_horizon)
+            mask_future = K.cast(is_future, 'float32') * -10e9
+            mask_past = K.cast(is_beyond_horizon, 'float32') * -10e9
+            mask = mask_future + mask_past
+            et = et + K.expand_dims(K.expand_dims(mask, -1), 0)            
+        
 
         at = K.softmax(et, axis=1)
 
