@@ -49,7 +49,8 @@ class ReshapeForOutput(Layer):
         return x_permuted
 
     def compute_output_shape(self, input_shape):
-        shape = [-1, input_shape[-2], self.num_lanes, input_shape[-1]]
+#        shape = [-1, input_shape[-2], self.num_lanes, input_shape[-1]]
+        shape = [None, input_shape[-2], self.num_lanes, input_shape[-1]] #test
         return tuple(shape)
 
     def get_config(self):
