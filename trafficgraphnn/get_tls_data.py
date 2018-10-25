@@ -5,11 +5,10 @@ Created on Fri Jul 20 14:58:02 2018
 
 @author: simon
 """
-import xml.etree.cElementTree as et
 
 
 def get_tls_data(parsed_xml_tls, lane_id):
-    
+
     search_finished = False
     duration_green_light = 0
     marker_toLane = None
@@ -30,5 +29,5 @@ def get_tls_data(parsed_xml_tls, lane_id):
                 marker_toLane = str(node.attrib.get('toLane'))
                 phase_start = end
                 search_finished = False
-                
+
     return phase_start, phase_length, duration_green_light
