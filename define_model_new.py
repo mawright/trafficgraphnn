@@ -66,13 +66,13 @@ def define_model(num_simulations, num_timesteps, num_lanes, num_features):
         #make sure that the reshape is made correctly!
         encoder_inputs = ReshapeForLSTM()(dropout4)
 
-        
-        
+
+
         decoder_inputs = GRU(n_units,
                               return_sequences=True)(encoder_inputs)
 
-        decoder_output = AttentionDecoder(n_units, 
-                                          2, 
+        decoder_output = AttentionDecoder(n_units,
+                                          2,
                                           causal=True,
                                           activation=linear,
                                           kernel_regularizer=l2(l2_reg))(decoder_inputs) #Attention! 2 output features now!
