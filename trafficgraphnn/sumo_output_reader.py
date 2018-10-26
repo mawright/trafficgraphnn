@@ -59,14 +59,19 @@ class SumoNetworkOutputReader(object):
                     lane_id = element.attrib['fromLane']
                     start = int(float(element.attrib['begin']))
                     end = int(float(element.attrib['end']))
-                    lane = self.lane_readers[lane_id]
-                    lane.add_green_interval(start, end)
                 except KeyError:
                     _logger.warning(
                         'Could not parse XML element %s. expected a "tlsSwitch"',
                         element)
+                    continue
                 finally:
                     element.clear()
+
+                try:
+                    lane = self.lane_readers[lane_id]
+                    lane.add_green_interval(start, end)
+                except KeyError: # lane not present
+                    pass
         for lane in self.lane_readers.values():
             lane.union_green_intervals()
 
