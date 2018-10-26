@@ -7,6 +7,7 @@ import os
 import numpy as np
 import pandas as pd
 
+import sumolib.net.lane
 from trafficgraphnn.utils import E1IterParseWrapper, E2IterParseWrapper
 from trafficgraphnn.get_tls_data import get_tls_data
 
@@ -34,11 +35,40 @@ class SumoNetworkOutputReader(object):
         self.lane_readers = OrderedDict()
 
     def add_lane_reader(self, lane_id, reader):
-        self.lane_readers[lane_id] = reader
+        if lane_id not in self.lane_readers:
+            self.lane_readers[lane_id] = reader
+        else:
+            old_reader = self.lane_readers[lane_id]
+            new_out_lane_ids = [out_lane_id for out_lane_id in reader.out_lane_ids
+                                if out_lane_id not in old_reader.out_lane_ids]
+            for new_id in new_out_lane_ids:
+                old_reader.add_out_lane(new_id)
 
     def get_tls_output_filenames_for_lanes(self):
         return {lane_id: lane.tls_output_filename
                 for lane_id, lane in self.lane_readers.items()}
+
+    def parse_phase_timings(self):
+        tls_output_files = {lane.tls_output_filename for lane
+                            in self.lane_readers.values()}
+
+        for xmlfile in tls_output_files:
+            parsed = etree.iterparse(xmlfile, tag='tlsSwitch')
+            for _, element in parsed:
+                try:
+                    lane_id = element.attrib['fromLane']
+                    start = int(float(element.attrib['begin']))
+                    end = int(float(element.attrib['end']))
+                    lane = self.lane_readers[lane_id]
+                    lane.add_green_interval(start, end)
+                except KeyError:
+                    _logger.warning(
+                        'Could not parse XML element %s. expected a "tlsSwitch"',
+                        element)
+                finally:
+                    element.clear()
+        for lane in self.lane_readers.values():
+            lane.union_green_intervals()
 
 
 class SumoLaneOutputReader(object):
@@ -66,7 +96,6 @@ class SumoLaneOutputReader(object):
         self.parsed_xml_e1_adv_detector = None
         self.parsed_xml_e2_detector = None
 
-        self.net_reader = net_reader
         self.lane_id = self.sumolib_in_lane.getID()
         self.networkx_node = self.graph.nodes[self.lane_id]
         self.dash_lane_id = self.lane_id.replace('/', '-')
@@ -172,13 +201,16 @@ class SumoLaneOutputReader(object):
         prev_red = prev_start # old naming
 
         ### assertions only valid under fixed cycle timing
-        start_old = int(self.phase_start + num_cycle*self.phase_length) #seconds #start begins with red phase
-        end_old = start_old + self.phase_length #seconds #end is end of green phase
-        assert start_old == start
-        assert end_old == end
+        try:
+            start_old = int(self.phase_start + num_cycle*self.phase_length) #seconds #start begins with red phase
+            end_old = start_old + self.phase_length #seconds #end is end of green phase
+            assert start_old == start
+            assert end_old == end
 
-        assert prev_red == start - self.phase_length or start - self.phase_length <= 0
-        assert next_green == end + self.phase_length
+            assert prev_red == start - self.phase_length or start - self.phase_length <= 0
+            assert next_green == end + self.phase_length
+        except AttributeError: # self.phase_start and similar items not initialized
+            pass
         #####
 
         # see if the iterparse xmls are seeked to the right time
@@ -203,12 +235,14 @@ class SumoLaneOutputReader(object):
         self.next_cycle_parsed = self._parse_xmls_for_cycle(last_cycle + 1)
 
     def add_out_lane(self, out_lane_id):
+        if isinstance(out_lane_id, sumolib.net.Lane):
+            out_lane_id = out_lane_id.getID()
         self.out_lane_ids.append(out_lane_id)
 
     def add_green_interval(self, start_time, end_time):
         self.green_intervals.append((start_time, end_time))
 
-    def union_green_intervals(self):
+    def union_green_intervals(self, assign_fixed_timing_heuristic=True):
         intervals = []
         for begin, end in sorted(self.green_intervals):
             if intervals and intervals[-1][1] >= begin - 1:
@@ -216,6 +250,9 @@ class SumoLaneOutputReader(object):
             else:
                 intervals.append([begin, end])
         self.green_intervals = intervals
+
+        if assign_fixed_timing_heuristic:
+            self._estimate_fixed_cycle_timings()
 
     def parse_cycle_data(self, num_phase):
         #parse the data from the dataframes and write to the arrays in every cycle
