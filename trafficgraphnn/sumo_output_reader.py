@@ -126,6 +126,7 @@ class SumoLaneOutputReader(object):
 
         if self.net_reader is not None:
             self.net_reader.add_lane_reader(self.lane_id, self)
+        self._initalized = False
 
     def _parse_detector_info(self):
         det_dict = self.networkx_node['detectors']
@@ -188,25 +189,26 @@ class SumoLaneOutputReader(object):
             cycle_start, start_cycle - 1, prev_start)
         self.next_cycle_parsed = self._parse_xmls_for_cycle(start_cycle)
 
+        self._initalized = True
+
     def _parse_xmls_for_cycle(self, num_cycle):
         if self.this_cycle_parsed is not None and num_cycle < self.this_cycle_parsed.num_period:
             self._init_detector_xml_parsers(num_cycle)
             return self.this_cycle_parsed
         start, end = self.nth_cycle_interval(num_cycle)
 
-        _, next_end = self.nth_cycle_interval(num_cycle + 1)
-
-        next_green = next_end # old naming
-
-        if num_cycle == 0:
-            prev_start = 0
-        else:
-            prev_start, _ = self.nth_cycle_interval(num_cycle - 1)
-
-        prev_red = prev_start # old naming
-
         ### assertions only valid under fixed cycle timing
         try:
+            _, next_end = self.nth_cycle_interval(num_cycle + 1)
+
+            next_green = next_end # old naming
+
+            if num_cycle == 0:
+                prev_start = 0
+            else:
+                prev_start, _ = self.nth_cycle_interval(num_cycle - 1)
+
+            prev_red = prev_start # old naming
             start_old = int(self.phase_start + num_cycle*self.phase_length) #seconds #start begins with red phase
             end_old = start_old + self.phase_length #seconds #end is end of green phase
             assert start_old == start
@@ -215,6 +217,8 @@ class SumoLaneOutputReader(object):
             assert prev_red == start - self.phase_length or start - self.phase_length <= 0
             assert next_green == end + self.phase_length
         except AttributeError: # self.phase_start and similar items not initialized
+            pass
+        except IndexError: # nth_cycle_interval(num_cycle + 1) breaks, we are at the end
             pass
         #####
 
@@ -261,6 +265,8 @@ class SumoLaneOutputReader(object):
 
     def parse_cycle_data(self, num_phase):
         #parse the data from the dataframes and write to the arrays in every cycle
+        if not self._initalized:
+            self._init_detector_xml_parsers()
 
         start, end = self.nth_cycle_interval(num_phase)
 
