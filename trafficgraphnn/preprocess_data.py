@@ -8,24 +8,25 @@ Created on Fri Jul 13 16:21:00 2018
 import logging
 import os
 import sys
-import xml.etree.cElementTree as et
+from lxml import etree
 import networkx as nx
 import math
+import re
 
 import numpy as np
 import pandas as pd
 import keras.backend as K
 
-from trafficgraphnn.get_tls_data import get_tls_data
-from trafficgraphnn.sumo_network import SumoNetwork
-from trafficgraphnn.utils import E2IterParseWrapper
+from trafficgraphnn.sumo_output_reader import SumoLaneOutputReader, SumoNetworkOutputReader
+from trafficgraphnn.utils import E1IterParseWrapper, E2IterParseWrapper, DetInfo
 
 _logger = logging.getLogger(__name__)
 
 class PreprocessData(object):
-    def __init__(self, sumo_network, simu_num):
-        self.sumo_network = sumo_network
-        self.graph = self.sumo_network.get_graph()
+    def __init__(self, sumo_network, simu_num=None):
+        self.net_reader = SumoNetworkOutputReader(sumo_network)
+        if simu_num is None:
+            simu_num = self._get_next_simulation_number()
         self.simu_num = simu_num
         self.liu_results_path = os.path.join(os.path.dirname(
                 self.sumo_network.netfile), 'liu_estimation_results'+ str(self.simu_num) + '.h5')
@@ -33,12 +34,44 @@ class PreprocessData(object):
                 self.sumo_network.netfile), 'output')
         self.df_liu_results = pd.DataFrame()
 
+        self.preprocess_file = os.path.join(
+            os.path.dirname(self.sumo_network.netfile),
+            'preprocessed_data', 'sim_{:04}.h5'.format(simu_num))
+        if not os.path.exists(os.path.dirname(self.preprocess_file)):
+            os.makedirs(os.path.dirname(self.preprocess_file))
+        self.store = pd.HDFStore(self.preprocess_file, complib='blosc', complevel=5)
+
         try:
             self.df_liu_results = pd.read_hdf(self.liu_results_path)
         except IOError:
-            print('An error occured trying to read the hdf file.')
+            _logger.warning('An error occured trying to read the hdf file.')
 
-        self.parsed_xml_tls = None
+        lanes = [lane for edge in self.sumolib_net.getEdges() for lane in edge.getLanes()]
+
+        for lane in lanes:
+            try:
+                out_lane = lane.getOutgoing()[0].getToLane()
+            except IndexError:  # this lane has no outgoing lanes
+                continue
+            lane_reader = SumoLaneOutputReader(lane, out_lane, self.net_reader)
+            for conn in lane.getOutgoing()[1:]:
+                lane_reader.add_out_lane(conn.getToLane().getID())
+
+    @property
+    def parsed_xml_tls(self):
+        return self.net_reader.parsed_xml_tls
+
+    @property
+    def sumo_network(self):
+        return self.net_reader.sumo_network
+
+    @property
+    def graph(self):
+        return self.sumo_network.graph
+
+    @property
+    def sumolib_net(self):
+        return self.sumo_network.net
 
     def get_liu_results(self, lane_ID, phase):
         series_results = self.df_liu_results.loc[phase, lane_ID]
@@ -55,10 +88,10 @@ class PreprocessData(object):
             phase_end = self.df_liu_results.loc[phase, (lane_ID, 'phase end')]
             if point_of_time >= phase_start and point_of_time < phase_end:
                 return phase
-            
-        print('Point of time out of time window!')
-        return np.nan 
-    
+
+        _logger.warning('Point of time out of time window!')
+        return np.nan
+
     def get_nVehSeen_from_e2(self, detector_ID, start_time, duration_in_sec, average_interval, num_rows):
         seq_nVehSeen = np.zeros((start_time+duration_in_sec))
         file_list = os.listdir(self.detector_data_path)
@@ -94,7 +127,7 @@ class PreprocessData(object):
         str_tls = 'tls_output.xml'
 
         for interval in average_intervals:
-            print('processing interval ', interval)
+            _logger.info('processing interval %g', interval)
             self.df_interval_results = pd.DataFrame() #reset df for every interval
 
             for filename in file_list:
@@ -123,7 +156,72 @@ class PreprocessData(object):
                             [self.df_interval_results, df_detector], axis = 1)
             self.df_interval_results.to_hdf(os.path.join(os.path.dirname(self.sumo_network.netfile),
                 'e1_detector_data_tls_interval' + str(num_index) + '.h5'),
-                key = 'preprocessed e1_detector_data')
+                key = 'preprocessed_e1_detector_data')
+
+    def read_data_for_lane_for_det_type(self, lane_id, det_type, features,
+                                        start_time=0, end_time=np.inf):
+        nx_node = self.graph.nodes[lane_id]
+
+        if det_type == 'e1':
+            det_type_longname = 'e1Detector'
+        elif det_type == 'e2':
+            det_type_longname = 'e2Detector'
+        else:
+            raise ValueError('Unknown detector type {}'.format(det_type))
+
+        lane_detectors = nx_node['detectors']
+        e1_detectors = [DetInfo(k, v) for k,v in lane_detectors.items()
+                        if v['type'] == det_type_longname]
+
+        det_by_pos = sorted(e1_detectors, key=lambda x: x.info['pos'])
+
+        lane_data = {}
+        for detector in det_by_pos:
+            filename = os.path.join(os.path.dirname(self.sumo_network.netfile),
+                                    detector.info['file'])
+
+            parser = E1IterParseWrapper(filename, validate=True)
+            data = {feat: [] for feat in features}
+            data['time'] = []
+            for _ in parser.iterate_until(start_time):
+                continue
+            for interval in parser.iterate_until(end_time):
+                for feat in features:
+                    data[feat].append(float(interval.attrib.get(feat)))
+                data['time'].append(float(interval.attrib.get('begin')))
+            df = pd.DataFrame(data)
+            df = df.set_index('time')
+            lane_data[detector.id] = df
+
+        return lane_data
+
+    def read_e1_data_for_lane(self, lane_id, start_time=0, end_time=np.inf,
+                              features=['nVehContrib',
+                                        'flow',
+                                        'occupancy',
+                                        'speed',
+                                        'length']):
+
+        return self.read_data_for_lane_for_det_type(lane_id, 'e1', features=features,
+                                       start_time=start_time, end_time=end_time)
+
+    def read_e2_data_for_lane(self, lane_id, start_time=0, end_time=np.inf,
+                              features=['nVehSeen',
+                                        'maxJamLengthInMeters',
+                                        'maxJamLengthInVehicles']):
+
+        return self.read_data_for_lane_for_det_type(lane_id, 'e2', features=features,
+                                       start_time=start_time, end_time=end_time)
+
+    def _get_next_simulation_number(self):
+        data_dir = os.path.join(os.path.dirname(self.sumo_network.netfile),
+                                'preprocessed_data')
+
+        files = [f for f in os.listdir(data_dir)
+                 if os.path.isfile(f) and re.match(r'sim_\d+.h5', os.path.basename(f))]
+        numbers = [int(re.search(r'\d+', f).group()) for f in files]
+
+        return max(numbers, default=0) + 1
 
     def process_e1_data(self, filename, interval, start_time = 0,  average_over_cycle = False):
         append_cnt=0    #counts how often new data were appended
@@ -256,7 +354,7 @@ class PreprocessData(object):
                         'liu_estimation_results' + str(simu_num) + '.h5'))
 
         except IOError:
-            print('No file for liu estimation results found.')
+            _logger.warning('No file for liu estimation results found.')
 
         if ord_lanes == None and simu_num == 0:
             subgraph = self.get_subgraph(self.graph)
@@ -325,7 +423,7 @@ class PreprocessData(object):
         if sample_time_sequence:
 
             num_samples = math.ceil(X_unsampled.shape[0]/sample_size)
-            print('number of samples:', num_samples)
+            _logger.info('number of samples: %g', num_samples)
             X_sampled = np.zeros((num_samples, sample_size, len(ord_lanes), 8))
             Y_sampled = np.zeros((num_samples, sample_size, len(ord_lanes), 2))
             for cnt_sample in range(num_samples):
@@ -559,4 +657,3 @@ def reshape_for_4Dim(input_arr):
 #        cnt_lanes += 1
 
     return output_arr
-
