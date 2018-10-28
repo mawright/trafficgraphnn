@@ -116,10 +116,7 @@ class PreprocessData(object):
             for filename in file_list:
                 if str_e1 in filename:
                     lane_id = self.get_lane_id_from_filename(filename)
-                    phase_length, phase_start = self.calc_tls_data(lane_id, filename_tls)
-#                    print('lane_id:', lane_id)
-#                    print('phase_length:', phase_length)
-#                    print('phase_start:', phase_start)
+                    phase_length, phase_start = self.calc_tls_data(lane_id)
                     df_detector = self.process_e1_data(filename, phase_length,
                                 start_time = phase_start,  average_over_cycle = True)
                     self.df_interval_results = pd.concat(
@@ -221,19 +218,10 @@ class PreprocessData(object):
 
         return df_detector
 
-    def calc_tls_data(self, lane_id, filename_tls):
+    def calc_tls_data(self, lane_id):
+        reader = self.net_reader.lane_readers[lane_id]
 
-        if self.parsed_xml_tls == None:
-            try:
-                self.parsed_xml_tls = et.parse(
-                        os.path.join(self.detector_data_path, filename_tls))
-            except:
-                IOError('Could not load tls_xml_file')
-
-        phase_start, phase_length, _ = get_tls_data(self.parsed_xml_tls, lane_id)
-
-        return phase_length, phase_start
-
+        return reader.phase_length, reader.phase_start
 
     def get_lane_id_from_filename(self, filename):
         search_str_start = 'e1_'
