@@ -8,7 +8,7 @@ Created on Fri Jul 13 16:21:00 2018
 import logging
 import os
 import sys
-from lxml import etree
+from xml.etree import cElementTree as et
 import networkx as nx
 import math
 import re
