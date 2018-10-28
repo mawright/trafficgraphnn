@@ -72,10 +72,10 @@ class PreprocessData(object):
                     nVehSeen = interval.attrib.get('nVehSeen')
                     assert det_id == detector_ID
                     seq_nVehSeen[interval_time] = nVehSeen
-                    
+
                 #crop out the right time frame
                 seq_nVehSeen = seq_nVehSeen[start_time:start_time+duration_in_sec]
-                
+
                 #average over average interval
                 averaged_nVehSeen = np.zeros((num_rows))
                 for index in range(num_rows):
@@ -413,8 +413,6 @@ class PreprocessData(object):
         arr_ground_truth_average_interval = arr_ground_truth_average_interval[0:num_rows] #make sure, that no dimension problems occur
         return arr_ground_truth_average_interval
 
-        
-    
     def get_tls_binary_signal(self, start_time, duration_in_sec, lane_id, average_interval, num_rows):
         time_lane = self.df_liu_results.loc[:, (lane_id, 'time')]
         arr_tls_binary = np.array([])
