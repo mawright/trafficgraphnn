@@ -6,24 +6,18 @@ Created on Tue Oct  9 17:33:45 2018
 @author: simon
 """
 
-
-import numpy as np
-
-import tensorflow as tf
-import keras.backend as K
-from keras.callbacks import EarlyStopping
-from keras.layers import Input, Dropout, Dense, TimeDistributed, Lambda, LSTM, Reshape, Permute, GRU, Concatenate
+from keras.layers import Input, Dropout, Dense, TimeDistributed, GRU, Concatenate
 from keras.models import Model
 from keras.optimizers import Adam
 from keras.regularizers import l2
-from keras.activations import linear, elu, relu
-from trafficgraphnn.batch_graph_attention_layer import  BatchGraphAttention
-from trafficgraphnn.time_distributed_multi_input import TimeDistributedMultiInput
+from keras.activations import linear, relu
+from trafficgraphnn.layers import BatchGraphAttention
+from trafficgraphnn.layers import TimeDistributedMultiInput
 from keras.utils.vis_utils import plot_model
 
-from trafficgraphnn.attention_decoder import AttentionDecoder
+from trafficgraphnn.layers import AttentionDecoder
 #from trafficgraphnn.preprocess_data import reshape_for_4Dim, reshape_for_3Dim
-from trafficgraphnn.reshape_layers import ReshapeForLSTM, ReshapeForOutput
+from trafficgraphnn.layers import ReshapeForLSTM, ReshapeForOutput
 
 
 ### Configuration of the deep learning model

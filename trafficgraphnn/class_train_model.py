@@ -8,35 +8,19 @@ Created on Mon Oct  1 14:18:48 2018
 
 from __future__ import division
 from trafficgraphnn.genconfig import ConfigGenerator
-from trafficgraphnn.sumo_network import SumoNetwork
 import numpy as np
-import pandas as pd
-import math
 import pickle
 import os
-from trafficgraphnn.liumethod import LiuEtAlRunner
 
-from trafficgraphnn.preprocess_data import PreprocessData, reshape_for_3Dim, reshape_for_4Dim
-
-import tensorflow as tf
-import keras.backend as K
 from keras.callbacks import EarlyStopping, ModelCheckpoint
-from keras.layers import Input, Dropout, Dense, TimeDistributed, Reshape, Lambda, LSTM
-from keras.models import Model, Sequential
-from keras.optimizers import Adam, SGD, Adagrad
-from keras.regularizers import l2
-from keras.activations import linear
-from trafficgraphnn.batch_graph_attention_layer import  BatchGraphAttention
-from trafficgraphnn.time_distributed_multi_input import TimeDistributedMultiInput
-from trafficgraphnn.reshape_layers import ReshapeForLSTM, ReshapeForOutput
-from keras.utils.vis_utils import plot_model
-from trafficgraphnn.attention_decoder import AttentionDecoder
-from trafficgraphnn.postprocess_predictions import store_predictions_in_df, resample_predictions
+from trafficgraphnn.layers import BatchGraphAttention
+from trafficgraphnn.layers import TimeDistributedMultiInput
+from trafficgraphnn.layers import ReshapeForLSTM, ReshapeForOutput
+from trafficgraphnn.layers import AttentionDecoder
+from trafficgraphnn.postprocess_predictions import store_predictions_in_df
 from define_model_new import define_model
 from define_model_multi_gat import define_model_multi_gat
 from keras.models import load_model
-from scipy import sparse
-from scipy.sparse import csr_matrix
 
 
 class TrainModel(object):

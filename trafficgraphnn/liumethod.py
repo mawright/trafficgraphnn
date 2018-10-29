@@ -1,7 +1,6 @@
 import logging
 import os
 from collections import OrderedDict, namedtuple
-from lxml import etree
 
 import numpy as np
 import pandas as pd
@@ -65,6 +64,7 @@ class LiuEtAlRunner(object):
                           for lane_id, lane in lane_dict.items()}
 
         self.parse_phase_timings()
+        self._init_max_per_green_estimates()
         self._init_detector_xml_parsers()
 
     @property
@@ -79,27 +79,12 @@ class LiuEtAlRunner(object):
     def parsed_xml_tls(self):
         return self.reader.parsed_xml_tls
 
-    def parse_phase_timings(self):
-        tls_output_files = {lane.tls_output_filename for lane
-                            in self.liu_lanes.values()}
-
-        for xmlfile in tls_output_files:
-            parsed = etree.iterparse(xmlfile, tag='tlsSwitch')
-            for _, element in parsed:
-                try:
-                    lane_id = element.attrib['fromLane']
-                    start = int(float(element.attrib['begin']))
-                    end = int(float(element.attrib['end']))
-                    lane = self.liu_lanes[lane_id]
-                    lane.add_green_interval(start, end)
-                except KeyError:
-                    _logger.warning(
-                        'Could not parse XML element %s. expected a "tlsSwitch"',
-                        element)
-                finally:
-                    element.clear()
+    def _init_max_per_green_estimates(self):
         for lane in self.liu_lanes.values():
-            lane.union_green_intervals()
+            lane._init_max_per_green_estimate()
+
+    def parse_phase_timings(self):
+        self.reader.parse_phase_timings()
 
     def _init_detector_xml_parsers(self):
         for lane in self.liu_lanes.values():
@@ -499,17 +484,6 @@ class LiuLane(object):
 
     def add_green_interval(self, start_time, end_time):
         self.reader.add_green_interval(start_time, end_time)
-
-    def union_green_intervals(self,
-                              init_max_per_green_estimate=True,
-                              assign_fixed_timing_heuristic=True):
-        self.reader.union_green_intervals()
-
-        if assign_fixed_timing_heuristic:
-            self._estimate_fixed_cycle_timings()
-
-        if init_max_per_green_estimate:
-            self._init_max_per_green_estimate()
 
     def _init_max_per_green_estimate(self):
         # initialize value (empirical), but will be estimated during simulation run

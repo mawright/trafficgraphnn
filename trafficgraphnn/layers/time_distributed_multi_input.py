@@ -30,10 +30,8 @@ class TimeDistributedMultiInput(TimeDistributed):
         batch_sizes = [shape[0] for shape in input_shape if shape is not None]
         batch_sizes = set(batch_sizes)
         batch_sizes -= set([None])
-        # TODO?: Allow batch size of 1 if an input is to be broadcasted
-        # batch_sizes -= set([1])
-        # self._broadcast_batch = [shape[0] == 1 if shape is not None else False
-        #                          for shape in input_shape]
+        # Allow batch size of 1 if an input is to be broadcasted
+        batch_sizes -= set([1])
 
         if len(batch_sizes) > 1:
             raise ValueError('Receieved tensors with incompatible batch sizes. '
@@ -41,10 +39,8 @@ class TimeDistributedMultiInput(TimeDistributed):
         timesteps = [shape[1] for shape in input_shape if shape is not None]
         timesteps = set(timesteps)
         timesteps -= set([None])
-        # TODO? Allow 1 timestep if an input is to be broadcasted
-        # timesteps -= set([1])
-        # self._broadcast_time = [shape[1] == 1 if shape is not None else False
-        #                          for shape in input_shape]
+        # Allow 1 timestep if an input is to be broadcasted
+        timesteps -= set([1])
 
         if len(timesteps) > 1:
             raise ValueError('Receieved tensors with incompatible number of timesteps. '

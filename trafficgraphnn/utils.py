@@ -1,5 +1,3 @@
-from __future__ import absolute_import, print_function, division
-
 import os
 import sys
 import collections
@@ -75,7 +73,10 @@ class IterParseWrapper(object):
         while self.interval_end() <= stop_time:
             yield self.item
             self.item.clear()
-            self.get_next()
+            try:
+                self.get_next()
+            except StopIteration:
+                return
 
     def interval_end(self):
         return float(self.item.attrib.get('end'))
