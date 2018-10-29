@@ -125,8 +125,10 @@ class GenerateData(object):
 
             ### preprocess data for deep learning model
             preprocess = PreprocessData(sn, simu_num)
-            preproccess_end_time = preprocess.get_preprocessing_end_time(liu_runner.get_liu_lane_IDs(), 
-                                                                         self.average_interval)
+            preproccess_end_time = preprocess.get_preprocessing_end_time(
+                                                liu_runner.get_liu_lane_IDs(), 
+                                                self.average_interval)
+            
             A_list, X, Y, order_lanes = preprocess.preprocess_A_X_Y(
                     average_interval = self.average_interval, 
                     sample_size = self.sample_size, 

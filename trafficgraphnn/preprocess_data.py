@@ -481,17 +481,25 @@ class PreprocessData(object):
                 first_phase_start = phase_start
                 previous_ground_truth = 0
                 
-            ground_truth = self.df_liu_results.loc[phase, (lane_id, ground_truth_name)] 
+            ground_truth = self.df_liu_results.loc[
+                                        phase, (lane_id, ground_truth_name)] 
             if interpolate_ground_truth == False:
-                temp_arr_ground_truth = np.full((int(phase_end-phase_start), 1), ground_truth)
+                temp_arr_ground_truth = np.full((int(phase_end-phase_start), 1),
+                                                ground_truth)
             else:
-                temp_arr_ground_truth = np.linspace(previous_ground_truth, ground_truth, num = int(phase_end-phase_start))
-                temp_arr_ground_truth = np.reshape(temp_arr_ground_truth, (int(phase_end-phase_start), 1))
+                temp_arr_ground_truth = np.linspace(
+                                            previous_ground_truth, 
+                                            ground_truth, 
+                                            num = int(phase_end-phase_start))
+                temp_arr_ground_truth = np.reshape(
+                                            temp_arr_ground_truth, 
+                                            (int(phase_end-phase_start), 1))
                 
             if arr_ground_truth.size == 0:
                 arr_ground_truth = temp_arr_ground_truth
             else:
-                arr_ground_truth = np.vstack((arr_ground_truth, temp_arr_ground_truth))
+                arr_ground_truth = np.vstack((arr_ground_truth, 
+                                              temp_arr_ground_truth))
             
             previous_ground_truth = ground_truth
 
@@ -499,40 +507,62 @@ class PreprocessData(object):
        
         lower_bound = int(start_time)-int(first_phase_start)
         upper_bound = int(start_time)+duration_in_sec-int(first_phase_start)      
-        arr_ground_truth_1second = np.reshape(arr_ground_truth[lower_bound:upper_bound, 0], upper_bound-lower_bound)
+        arr_ground_truth_1second = np.reshape(
+                                arr_ground_truth[lower_bound:upper_bound, 0], 
+                                upper_bound-lower_bound)
+        
         #just take the points of data from the average -interval
         #example: average interval 5 sec -> take one value every five seconds!
         arr_ground_truth_average_interval = arr_ground_truth_1second[0::average_interval]
-        arr_ground_truth_average_interval = arr_ground_truth_average_interval[0:num_rows] #make sure, that no dimension problems occur
+        #make sure that no dimension problem occurs
+        arr_ground_truth_average_interval = arr_ground_truth_average_interval[0:num_rows]
         return arr_ground_truth_average_interval
     
         
     
-    def get_tls_binary_signal(self, start_time, duration_in_sec, lane_id, average_interval, num_rows):
+    def get_tls_binary_signal(self, 
+                              start_time, 
+                              duration_in_sec, 
+                              lane_id, 
+                              average_interval, 
+                              num_rows):
+        
         time_lane = self.df_liu_results.loc[:, (lane_id, 'time')] 
         arr_tls_binary = np.array([])     
         for phase in range(len(time_lane)):
-            phase_start = self.df_liu_results.loc[phase, (lane_id, 'phase start')]
-            phase_end = self.df_liu_results.loc[phase, (lane_id, 'phase end')]
-            green_start = self.df_liu_results.loc[phase, (lane_id, 'tls start')]
+            phase_start = self.df_liu_results.loc[phase, 
+                                                  (lane_id, 'phase start')]
+            phase_end = self.df_liu_results.loc[phase, 
+                                                (lane_id, 'phase end')]
+            green_start = self.df_liu_results.loc[phase, 
+                                                  (lane_id, 'tls start')]
             if phase == 0:
                 first_phase_start = phase_start
-            temp_array_red_phase = np.full((int(green_start-phase_start), 1), 0) #red phase from phase start to green start (0)
-            temp_array_green_phase = np.full((int(phase_end-green_start), 1), 1) #green phase from green start to phase end (1)
+            
+            #red phase from phase start to green start (0)
+            temp_array_red_phase = np.full((int(green_start-phase_start), 1), 0) 
+            #green phase from green start to phase end (1)
+            temp_array_green_phase = np.full((int(phase_end-green_start), 1), 1) 
             if arr_tls_binary.size == 0:
                 arr_tls_binary = temp_array_red_phase
-                arr_tls_binary = np.vstack((arr_tls_binary, temp_array_green_phase))
+                arr_tls_binary = np.vstack((arr_tls_binary, 
+                                            temp_array_green_phase))
             else:
-                arr_tls_binary =  np.vstack((arr_tls_binary, temp_array_red_phase))
-                arr_tls_binary = np.vstack((arr_tls_binary, temp_array_green_phase))  
+                arr_tls_binary =  np.vstack((arr_tls_binary, 
+                                             temp_array_red_phase))
+                arr_tls_binary = np.vstack((arr_tls_binary, 
+                                            temp_array_green_phase))  
                 
         lower_bound = int(start_time)-int(first_phase_start)
         upper_bound = int(start_time)+duration_in_sec-int(first_phase_start)      
-        arr_tls_binary_1second = np.reshape(arr_tls_binary[lower_bound:upper_bound, 0], upper_bound-lower_bound)
+        arr_tls_binary_1second = np.reshape(
+                                    arr_tls_binary[lower_bound:upper_bound, 0], 
+                                    upper_bound-lower_bound)
         #just take the points of data from the average -interval
         #example: average interval 5 sec -> take one value every five seconds!
         arr_tls_binary_average_interval = arr_tls_binary_1second[0::average_interval]
-        arr_tls_binary_average_interval = arr_tls_binary_average_interval[0:num_rows] #make sure, that no dimension problems occur
+        #make sure, that no dimension problems occur
+        arr_tls_binary_average_interval = arr_tls_binary_average_interval[0:num_rows] 
         return arr_tls_binary_average_interval
         
     def unload_data(self):
@@ -545,15 +575,20 @@ class PreprocessData(object):
         for lane in liu_lanes:
             df_last_row = self.df_liu_results.iloc[-1, :]  
             list_end_time.append(df_last_row.loc[(lane,'phase end')])
-            end_time = min(list_end_time)-10 #10seconds reserve, otherwise complications occur
-            end_time = int(end_time/average_interval) * average_interval #make sure, that end time is matching with average_interval
+            #10seconds reserve, otherwise complications occur
+            end_time = min(list_end_time)-10 
+            #make sure, that end time is matching with average_interval
+            end_time = int(end_time/average_interval) * average_interval 
             self.preprocess_end_time = end_time
             return end_time
         
     def get_A_for_neighboring_lanes(self, order_lanes):
-        indexes = [] #list with tuple of indexes (input_lane_index, neighbor_lane_index)
+        #list with tuple of indexes (input_lane_index, neighbor_lane_index)
+        indexes = [] 
         for lane_id, input_lane_index in zip(order_lanes, range(len(order_lanes))):
-            neighbor_lanes = self.sumo_network.get_neighboring_lanes(lane_id, include_input_lane=True)
+            neighbor_lanes = self.sumo_network.get_neighboring_lanes(
+                                                    lane_id, 
+                                                    include_input_lane=True)
             for neighbor in neighbor_lanes:
                 if neighbor in order_lanes:
                     neighbor_lane_index = order_lanes.index(neighbor)
@@ -578,82 +613,13 @@ class PreprocessData(object):
         A_up = np.transpose(A_down)     
         
         #get adjacency matrix for all neigboring lanes (e.g. for lane changing)       
-        A_neighbors = self.get_A_for_neighboring_lanes(order_lanes) #Skip using neighbors for the beginning            
+        A_neighbors = self.get_A_for_neighboring_lanes(order_lanes)          
         A_neighbors = np.eye(N, N) + A_neighbors
         A_neighbors = np.minimum(A_neighbors, np.ones((N,N)))     
           
         return A_down, A_up, A_neighbors
                 
                 
-def reshape_for_3Dim(input_arr):
-    '''
-    reshapes input from shape (samples x timesteps x lanes x features)
-    to output of shape (samples*lanes x timesteps x features)
-    '''
-    
-    assert len(input_arr.shape) == 4
-    input_arr_dim = input_arr.get_shape().as_list()
-    num_samples = input_arr_dim[0]
-    num_timesteps = input_arr_dim[1]
-    num_lanes = input_arr_dim[2]
-    num_features = input_arr_dim[3]
-    
-    # we need to use permute_dimensions first to (samples, lanes, timesteps, features)
-    input_arr_permuted = K.permute_dimensions(input_arr, (0, 2, 1, 3))
-    
-    #then we can reshape
-    output_arr = K.reshape(input_arr_permuted, (num_samples*num_lanes, -1, num_features))
-    
-#    output_arr = np.zeros((num_samples*num_lanes, num_timesteps, num_targets))
-#    for sample in range(num_samples):
-#        for lane in range(num_lanes):
-#            lane_data = input_arr[sample, :, lane, :]
-#            output_arr[sample * num_lanes + lane, :, :] = lane_data
-    return output_arr
-
-def reshape_for_4Dim(input_arr):
-    '''
-    reshapes input from shape (samples*lanes x timesteps x features) 
-    to output of shape (samples x timesteps x lanes x features)
-    
-    in future:
-    input list: [input_array, number of lanes]; neccesary to do it with a list because of keras lambda layer
-    additional info: number of lanes per road network; neccessary for reshaping;
-                                    information about num_lanes got lost during reshape_for_LSTM
-    '''     
-#    sess = tf.Session()  
-#    input_arr = input_list[0]
-    input_arr_dim = input_arr.get_shape().as_list()
-    
-    num_lanes = 120 #of course not a solution, but multiple Inputs into lambda layer does not work right now...
-#    num_lanes = int(K.eval(input_list[1]))
-#    num_lanesXsamples = input_arr_dim[0]
-    num_timesteps = input_arr_dim[1]
-    num_features = input_arr_dim[2]
-        
-    assert len(input_arr.shape) == 3
-    
-    #reshape tensor back to dimension (samples x lanes x timesteps x features)
-    input_arr_reshaped = K.reshape(input_arr, (-1, num_lanes, num_timesteps, num_features))
-    
-    #permute array to (samples x timesteps x lanes x features)
-    output_arr = K.permute_dimensions(input_arr_reshaped, (0, 2, 1, 3))
-    
-# alternative approch, can be deleted as soon as upper approach works
-#    output_arr = np.zeros((num_lanesXsamples//num_lanes, num_timesteps, num_lanes, num_features))
-#    
-#    cnt_lanes = 0
-#    cnt_samples = 0
-#    for lane in range(num_lanesXsamples):
-#        if cnt_lanes == num_lanes:
-#            cnt_samples += 1
-#            cnt_lanes = 0        
-#        lane_data = input_arr[lane, :, :]
-#        lane_index = lane - num_lanes*cnt_samples
-#        output_arr[cnt_samples, :, lane_index, :] = lane_data   
-#        cnt_lanes += 1
-    
-    return output_arr
 
 
 

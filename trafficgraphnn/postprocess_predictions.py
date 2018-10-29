@@ -135,7 +135,7 @@ def plot_predictions_1_df(df_predictions_1, df_liu_results):
         plt.yticks(np.arange(0, 800, 100))
         plt.yticks(fontsize=18)
         plt.xlim(time_predictions[0],time_predictions[-1])
-        plt.ylim(0, 300)
+        plt.ylim(0, 600)
         if lane == 'bottom2to2/0_2':
             plt.ylim(0,300)
         if lane == '0/0to1/0_0':
@@ -168,7 +168,7 @@ def plot_predictions_1_df(df_predictions_1, df_liu_results):
         plt.yticks(np.arange(0, 800, 10))
         plt.yticks(fontsize=18)
         plt.xlim(time_predictions[0],time_predictions[-1])
-        plt.ylim(0, 20)
+        plt.ylim(0, 50)
         
         if lane == 'bottom2to2/0_2':
             plt.ylim(0,35)
