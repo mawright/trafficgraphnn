@@ -170,10 +170,10 @@ class PreprocessData(object):
             raise ValueError('Unknown detector type {}'.format(det_type))
 
         lane_detectors = nx_node['detectors']
-        e1_detectors = [DetInfo(k, v) for k,v in lane_detectors.items()
+        dets_of_type = [DetInfo(k, v) for k,v in lane_detectors.items()
                         if v['type'] == det_type_longname]
 
-        det_by_pos = sorted(e1_detectors, key=lambda x: x.info['pos'])
+        det_by_pos = sorted(dets_of_type, key=lambda x: x.info['pos'])
 
         lane_data = {}
         for detector in det_by_pos:
