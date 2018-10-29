@@ -8,12 +8,10 @@ import numpy as np
 import pandas as pd
 
 import sumolib.net.lane
-from trafficgraphnn.utils import E1IterParseWrapper, E2IterParseWrapper
+from trafficgraphnn.utils import E1IterParseWrapper, E2IterParseWrapper, DetInfo
 from trafficgraphnn.get_tls_data import get_tls_data
 
 _logger = logging.getLogger(__name__)
-
-_DetInfo = namedtuple('det_info', ['id', 'info'])
 
 _Queueing_Period_Data = namedtuple(
     'QueueingPeriodData',
@@ -131,7 +129,7 @@ class SumoLaneOutputReader(object):
     def _parse_detector_info(self):
         det_dict = self.networkx_node['detectors']
         # loop (e1) detectors
-        e1_detectors = [_DetInfo(k, v) for k, v in det_dict.items()
+        e1_detectors = [DetInfo(k, v) for k, v in det_dict.items()
                         if v['type'] == 'e1Detector']
 
         # stopbar detector is the one with the largest "pos" (position) value
@@ -144,7 +142,7 @@ class SumoLaneOutputReader(object):
         self.adv_detector_id = adv_detector.id
 
         # lane area (e2) detectors
-        e2_detectors = [_DetInfo(k, v) for k, v in det_dict.items()
+        e2_detectors = [DetInfo(k, v) for k, v in det_dict.items()
                         if v['type'] == 'e2Detector']
         if len(e2_detectors) > 1:
             e2_detector = max(e2_detectors, key=lambda x: x.info['length'])

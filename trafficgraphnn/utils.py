@@ -46,6 +46,9 @@ def load_data(network_name, output_tag):
     pass
 
 
+DetInfo = collections.namedtuple('det_info', ['id', 'info'])
+
+
 class IterParseWrapper(object):
     _tag = None
     _schema_file = None
@@ -84,6 +87,10 @@ class IterParseWrapper(object):
     def interval_begin(self):
         return float(self.item.attrib.get('begin'))
 
+
+class TLSSwitchIterParseWrapper(IterParseWrapper):
+    _tag = 'tlsSwitch'
+    _schema_file = os.path.join(get_sumo_dir(), 'data', 'xsd', 'tlsswitches_file.xsd')
 
 class E1IterParseWrapper(IterParseWrapper):
     _tag = 'interval'
