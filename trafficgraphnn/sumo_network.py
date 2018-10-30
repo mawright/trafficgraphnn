@@ -416,7 +416,7 @@ def get_lane_graph(netfile,
 
     for edge in net.getEdges():
         for lane in edge.getLanes():
-            graph.add_node(lane.getID())
+            graph.add_node(lane.getID(), length=lane.getLength())
 
     tls_to_edges = {}
 

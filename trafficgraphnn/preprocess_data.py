@@ -12,6 +12,7 @@ from xml.etree import cElementTree as et
 import networkx as nx
 import math
 import re
+from collections import OrderedDict
 
 import numpy as np
 import pandas as pd
@@ -23,7 +24,8 @@ from trafficgraphnn.utils import E1IterParseWrapper, E2IterParseWrapper, DetInfo
 _logger = logging.getLogger(__name__)
 
 class PreprocessData(object):
-    def __init__(self, sumo_network, simu_num=None):
+    def __init__(self, sumo_network, simu_num=None, lane_order=None,
+                 detector_data_dir='output'):
         self.net_reader = SumoNetworkOutputReader(sumo_network)
         if simu_num is None:
             simu_num = self._get_next_simulation_number()
@@ -31,7 +33,7 @@ class PreprocessData(object):
         self.liu_results_path = os.path.join(os.path.dirname(
                 self.sumo_network.netfile), 'liu_estimation_results'+ str(self.simu_num) + '.h5')
         self.detector_data_path =  os.path.join(os.path.dirname(
-                self.sumo_network.netfile), 'output')
+                self.sumo_network.netfile), detector_data_dir)
         self.df_liu_results = pd.DataFrame()
 
         self.preprocess_file = os.path.join(
@@ -48,6 +50,9 @@ class PreprocessData(object):
 
         lanes = [lane for edge in self.sumolib_net.getEdges() for lane in edge.getLanes()]
 
+        if lane_order is not None:
+            lanes = [lane for lane in lane_order if lane in lanes]
+
         for lane in lanes:
             try:
                 out_lane = lane.getOutgoing()[0].getToLane()
@@ -56,6 +61,20 @@ class PreprocessData(object):
             lane_reader = SumoLaneOutputReader(lane, out_lane, self.net_reader)
             for conn in lane.getOutgoing()[1:]:
                 lane_reader.add_out_lane(conn.getToLane().getID())
+
+    def read_data(self, start_time=0, end_time=np.inf,
+                  e1_features=None, e2_features=None):
+
+        self.light_timings = self.read_light_timings(start_time=start_time, end_time=end_time)
+
+        for lane in self.lanes:
+            e1_data = self.read_e1_data_for_lane(lane, start_time, end_time,
+                                                 features=e1_features)
+            e2_data = self.read_e2_data_for_lane(lane, start_time, end_time,
+                                                 features=e2_features)
+
+
+
 
     @property
     def parsed_xml_tls(self):
@@ -72,6 +91,10 @@ class PreprocessData(object):
     @property
     def sumolib_net(self):
         return self.sumo_network.net
+
+    @property
+    def lanes(self):
+        return self.net_reader.lane_readers.keys()
 
     def get_liu_results(self, lane_ID, phase):
         series_results = self.df_liu_results.loc[phase, lane_ID]
@@ -164,8 +187,10 @@ class PreprocessData(object):
 
         if det_type == 'e1':
             det_type_longname = 'e1Detector'
+            parse_class = E1IterParseWrapper
         elif det_type == 'e2':
             det_type_longname = 'e2Detector'
+            parse_class = E2IterParseWrapper
         else:
             raise ValueError('Unknown detector type {}'.format(det_type))
 
@@ -175,32 +200,58 @@ class PreprocessData(object):
 
         det_by_pos = sorted(dets_of_type, key=lambda x: x.info['pos'])
 
-        lane_data = {}
+        lane_data = OrderedDict()
         for detector in det_by_pos:
             filename = os.path.join(os.path.dirname(self.sumo_network.netfile),
                                     detector.info['file'])
 
-            parser = E1IterParseWrapper(filename, validate=True)
+            try:
+                features.remove('pos')
+                pos = float(detector.info['pos'])
+            except ValueError:
+                pass
+            try:
+                features.remove('rel_pos')
+                rel_pos = float(detector.info['pos']) / float(nx_node['length'])
+            except ValueError:
+                pass
+
+            parser = parse_class(filename, validate=True)
             data = {feat: [] for feat in features}
-            data['time'] = []
+            interval_begins = []
             for _ in parser.iterate_until(start_time):
                 continue
             for interval in parser.iterate_until(end_time):
                 for feat in features:
                     data[feat].append(float(interval.attrib.get(feat)))
-                data['time'].append(float(interval.attrib.get('begin')))
+                interval_begins.append(int(float(interval.attrib.get('begin'))))
             df = pd.DataFrame(data)
-            df = df.set_index('time')
+
+            index = pd.Int64Index(interval_begins, name='time')
+            df = df.set_index(index)
+
+            try:
+                df['pos'] = pos
+                df['pos'] = df['pos'].astype('category')
+            except UnboundLocalError:
+                pass
+            try:
+                df['rel_pos'] = rel_pos
+                df['rel_pos'] = df['rel_pos'].astype('category')
+            except UnboundLocalError:
+                pass
+
             lane_data[detector.id] = df
 
         return lane_data
 
     def read_e1_data_for_lane(self, lane_id, start_time=0, end_time=np.inf,
                               features=['nVehContrib',
-                                        'flow',
                                         'occupancy',
                                         'speed',
-                                        'length']):
+                                        'length',
+                                        'pos',
+                                        'rel_pos']):
 
         return self.read_data_for_lane_for_det_type(lane_id, 'e1', features=features,
                                        start_time=start_time, end_time=end_time)
@@ -212,6 +263,32 @@ class PreprocessData(object):
 
         return self.read_data_for_lane_for_det_type(lane_id, 'e2', features=features,
                                        start_time=start_time, end_time=end_time)
+
+    def read_light_timings(self, lane_subset=None, start_time=0, end_time=np.inf):
+        self.net_reader.parse_phase_timings()
+
+        if lane_subset is None:
+            lane_subset = self.net_reader.lane_readers.keys()
+
+        green_intervals_by_lane = {
+            lane: self.net_reader.lane_readers[lane].green_intervals
+            for lane in lane_subset}
+
+        if np.isinf(end_time):
+            end_time = max(interval[-1][-1] for interval in
+                           green_intervals_by_lane.values())
+
+        data_dict = {}
+        for lane in lane_subset:
+            green_intervals = self.net_reader.lane_readers[lane].green_intervals
+            green_binary = [any(itv[0] <= x < itv[1] for itv in green_intervals)
+                            for x in range(start_time, end_time)]
+            data_dict[lane] = green_binary
+
+        data_df = pd.DataFrame(data_dict)
+        data_df.index.set_names('times', inplace=True)
+
+        return data_df
 
     def _get_next_simulation_number(self):
         data_dir = os.path.join(os.path.dirname(self.sumo_network.netfile),
