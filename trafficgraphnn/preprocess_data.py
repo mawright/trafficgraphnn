@@ -41,7 +41,6 @@ class PreprocessData(object):
             'preprocessed_data', 'sim_{:04}.h5'.format(simu_num))
         if not os.path.exists(os.path.dirname(self.preprocess_file)):
             os.makedirs(os.path.dirname(self.preprocess_file))
-        self.store = pd.HDFStore(self.preprocess_file, complib='blosc', complevel=5)
 
         try:
             self.df_liu_results = pd.read_hdf(self.liu_results_path)
