@@ -201,20 +201,21 @@ class PreprocessData(object):
         det_by_pos = sorted(dets_of_type, key=lambda x: x.info['pos'])
 
         lane_data = OrderedDict()
-        for detector in det_by_pos:
+        try:
+            features.remove('pos')
+            pos = [float(detector.info['pos']) for detector in det_by_pos]
+        except ValueError:
+            pass
+        try:
+            features.remove('rel_pos')
+            rel_pos = [float(detector.info['pos']) / float(nx_node['length'])
+                       for detector in det_by_pos]
+        except ValueError:
+            pass
+
+        for d, detector in enumerate(det_by_pos):
             filename = os.path.join(os.path.dirname(self.sumo_network.netfile),
                                     detector.info['file'])
-
-            try:
-                features.remove('pos')
-                pos = float(detector.info['pos'])
-            except ValueError:
-                pass
-            try:
-                features.remove('rel_pos')
-                rel_pos = float(detector.info['pos']) / float(nx_node['length'])
-            except ValueError:
-                pass
 
             parser = parse_class(filename, validate=True)
             data = {feat: [] for feat in features}
@@ -231,12 +232,12 @@ class PreprocessData(object):
             df = df.set_index(index)
 
             try:
-                df['pos'] = pos
+                df['pos'] = pos[d]
                 df['pos'] = df['pos'].astype('category')
             except UnboundLocalError:
                 pass
             try:
-                df['rel_pos'] = rel_pos
+                df['rel_pos'] = rel_pos[d]
                 df['rel_pos'] = df['rel_pos'].astype('category')
             except UnboundLocalError:
                 pass
@@ -246,20 +247,23 @@ class PreprocessData(object):
         return lane_data
 
     def read_e1_data_for_lane(self, lane_id, start_time=0, end_time=np.inf,
-                              features=['nVehContrib',
-                                        'occupancy',
-                                        'speed',
-                                        'length',
-                                        'pos',
-                                        'rel_pos']):
-
+                              features=None):
+        if features is None:
+            features = ['nVehContrib',
+                        'occupancy',
+                        'speed',
+                        'length',
+                        'pos',
+                        'rel_pos']
         return self.read_data_for_lane_for_det_type(lane_id, 'e1', features=features,
                                        start_time=start_time, end_time=end_time)
 
     def read_e2_data_for_lane(self, lane_id, start_time=0, end_time=np.inf,
-                              features=['nVehSeen',
-                                        'maxJamLengthInMeters',
-                                        'maxJamLengthInVehicles']):
+                              features=None):
+        if features is None:
+            features = ['nVehSeen',
+                        'maxJamLengthInMeters',
+                        'maxJamLengthInVehicles']
 
         return self.read_data_for_lane_for_det_type(lane_id, 'e2', features=features,
                                        start_time=start_time, end_time=end_time)
