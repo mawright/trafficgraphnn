@@ -20,6 +20,7 @@ import keras.backend as K
 
 from trafficgraphnn.sumo_output_reader import SumoLaneOutputReader, SumoNetworkOutputReader
 from trafficgraphnn.utils import E1IterParseWrapper, E2IterParseWrapper, DetInfo
+from trafficgraphnn.liumethod import LiuEtAlRunner
 
 _logger = logging.getLogger(__name__)
 
@@ -60,6 +61,12 @@ class PreprocessData(object):
             lane_reader = SumoLaneOutputReader(lane, out_lane, self.net_reader)
             for conn in lane.getOutgoing()[1:]:
                 lane_reader.add_out_lane(conn.getToLane().getID())
+
+    def run_liu_method(self):
+        liu_runner = LiuEtAlRunner(
+            self.sumo_network, lane_subset=self.lanes, simu_num=self.simu_num)
+        num_liu_phases = liu_runner.get_max_num_phase()
+        liu_runner.run_up_to_phase(num_liu_phases)
 
     def read_data(self, start_time=0, end_time=np.inf,
                   e1_features=None, e2_features=None,
