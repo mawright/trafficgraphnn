@@ -63,17 +63,26 @@ class PreprocessData(object):
                 lane_reader.add_out_lane(conn.getToLane().getID())
 
     def read_data(self, start_time=0, end_time=np.inf,
-                  e1_features=None, e2_features=None):
+                  e1_features=None, e2_features=None,
+                  complib='zlib', complevel=5):
 
-        self.light_timings = self.read_light_timings(start_time=start_time, end_time=end_time)
+        light_timings = self.read_light_timings(start_time=start_time, end_time=end_time)
 
-        for lane in self.lanes:
-            e1_data = self.read_e1_data_for_lane(lane, start_time, end_time,
-                                                 features=e1_features)
-            e2_data = self.read_e2_data_for_lane(lane, start_time, end_time,
-                                                 features=e2_features)
+        with pd.HDFStore(self.preprocess_file, complevel=complevel, complib=complib) as store:
+            for lane in self.lanes:
+                e1_data = self.read_e1_data_for_lane(lane, start_time, end_time,
+                                                    features=e1_features)
+                for det, data in e1_data.items():
+                    store.append('{}/{}/{}'.format(lane, 'e1', det), data)
 
+                e2_data = self.read_e2_data_for_lane(lane, start_time, end_time,
+                                                    features=e2_features)
+                for det, data in e2_data.items():
+                    store.append('{}/{}/{}'.format(lane, 'e2', det), data)
 
+                store.append('{}/green'.format(lane), light_timings[lane].rename('green'))
+
+        return store.filename
 
 
     @property
