@@ -26,11 +26,11 @@ class GenerateData(object):
                 grid_length = 600, 
                 num_lanes =3,
                 
-                end_time = 1400, #seconds                
-                period_lower_bound = 0.4, #lower bound for randomized period
-                period_upper_bound = 0.4, #upper bound for randomized period
+                end_time = 1700, #seconds                
+                period_lower_bound = 0.45, #lower bound for randomized period
+                period_upper_bound = 0.25, #upper bound for randomized period
 
-                binomial = 2,
+                binomial = 3,
                 seed = 50,
                 fringe_factor = 1000,
            
@@ -68,7 +68,7 @@ class GenerateData(object):
 
     def generate_X_Y_A(self):
         ### Creating Network and running simulation
-        config = ConfigGenerator(net_name='new_data')
+        config = ConfigGenerator(net_name='test_data_random_period')
         path = config.get_preprocessed_data_dir()
         
         # Parameters for network, trips and sensors (binomial must be an integer!!!)
@@ -125,8 +125,10 @@ class GenerateData(object):
 
             ### preprocess data for deep learning model
             preprocess = PreprocessData(sn, simu_num)
-            preproccess_end_time = preprocess.get_preprocessing_end_time(liu_runner.get_liu_lane_IDs(), 
-                                                                         self.average_interval)
+            preproccess_end_time = preprocess.get_preprocessing_end_time(
+                                                liu_runner.get_liu_lane_IDs(), 
+                                                self.average_interval)
+            
             A_list, X, Y, order_lanes = preprocess.preprocess_A_X_Y(
                     average_interval = self.average_interval, 
                     sample_size = self.sample_size, 
@@ -136,7 +138,7 @@ class GenerateData(object):
                     interpolate_ground_truth = self.interpolate_ground_truth,
                     sample_time_sequence = self.sample_time_sequence,
                     ord_lanes = self.order_of_lanes)
-            
+
             #Store X, Y 
             np.save(path + '/X_' + str(simu_num) + '.npy', X)
             np.save(path + '/Y_' + str(simu_num) + '.npy', Y)
@@ -149,6 +151,7 @@ class GenerateData(object):
                 np.save(path + '/average_interval.npy', self.average_interval)
                 with open(path + '/order_lanes.txt', "wb") as fp:   #Pickling
                     pickle.dump(order_lanes, fp)
+                self.order_of_lanes = order_lanes
                 print('Save A, average interval and order of lanes for testing to npy file')
                 
     def get_order_of_lanes(self, data_path):

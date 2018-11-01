@@ -94,13 +94,22 @@ def plot_predictions_1_df(df_predictions_1, df_liu_results):
     print(list_lanes)
     time_predictions = df_predictions_1.index.values
     #print('time_predictions:', time_predictions)
+    
+    plot_lane_list = ['left1to0/1_2']
+
+    list_MAPE_queue = []
+    list_MAE_queue = []
+    list_MAPE_nVehSeen = []
+    list_MAE_nVehSeen = []
+    list_MAPE_liu = []
+    list_MAE_liu = []
 
     for lane in list_lanes:
         print('plot for lane:', lane)
         
         #---- plot for queue -------------
         fig = plt.figure()
-        fig.set_figheight(5)
+        fig.set_figheight(3)
         fig.set_figwidth(12)
             
         time_liu_results = df_liu_results.loc[:, (lane, 'phase end')]
@@ -114,19 +123,23 @@ def plot_predictions_1_df(df_predictions_1, df_liu_results):
                                    c='r', label= 'Liu et al.')
         
         ground_truth_new, = plt.plot(time_predictions, df_predictions_1.loc[:, (lane, 'ground-truth queue')],
-                                   c='b', label= 'ground-truth new')
+                                   c='b', label= 'ground-truth')
         
         dl_prediction_1, = plt.plot(time_predictions, df_predictions_1.loc[:, (lane, 'prediction queue')],
-                                   c='g', label= 'long time seq')
+                                   c='g', label= 'DL model')
 
-        plt.legend(handles=[ground_truth_old, liu_estimation, ground_truth_new, dl_prediction_1], fontsize = 18)
+        plt.legend(handles=[ground_truth_new, liu_estimation, dl_prediction_1], fontsize = 18)
                 
-        plt.xticks(np.arange(0, 6000, 100))
+        plt.xticks(np.arange(0, 6000, 250))
         plt.xticks(fontsize=18)
-        plt.yticks(np.arange(0, 800, 50))
+        plt.yticks(np.arange(0, 800, 100))
         plt.yticks(fontsize=18)
         plt.xlim(time_predictions[0],time_predictions[-1])
-        plt.ylim(0, 300)
+        plt.ylim(0, 600)
+        if lane == 'bottom2to2/0_2':
+            plt.ylim(0,300)
+        if lane == '0/0to1/0_0':
+            plt.ylim(0,300)
         
         #TODO: implement background color by using tls data
         
@@ -134,38 +147,60 @@ def plot_predictions_1_df(df_predictions_1, df_liu_results):
         plt.ylabel('queue length [m]', fontsize = 18)
         plt.show()
         
+        if lane in plot_lane_list:
+            fig.savefig("DL_result_queue_"+ lane.replace('/', '-') +".pdf", bbox_inches='tight')
+        
         # ------- plot for nVehSeen ----------------------------------------------------
         fig1 = plt.figure()
-        fig1.set_figheight(5)
+        fig1.set_figheight(3)
         fig1.set_figwidth(12)
         
         ground_truth_new, = plt.plot(time_predictions, df_predictions_1.loc[:, (lane, 'ground-truth nVehSeen')],
                                    c='b', label= 'ground-truth')
         
         prediction_nVehSeen, = plt.plot(time_predictions, df_predictions_1.loc[:, (lane, 'prediction nVehSeen')],
-                                   c='g', label= 'estimated nVehSeen')
+                                   c='g', label= 'DL model')
             
         plt.legend(handles=[ground_truth_new, prediction_nVehSeen], fontsize = 18)
                 
-        plt.xticks(np.arange(0, 6000, 100))
+        plt.xticks(np.arange(0, 6000, 250))
         plt.xticks(fontsize=18)
-        plt.yticks(np.arange(0, 800, 2))
+        plt.yticks(np.arange(0, 800, 10))
         plt.yticks(fontsize=18)
         plt.xlim(time_predictions[0],time_predictions[-1])
-        plt.ylim(0, 20)
+        plt.ylim(0, 50)
+        
+        if lane == 'bottom2to2/0_2':
+            plt.ylim(0,35)
         
         #TODO: implement background color by using tls data
         
         plt.xlabel('time [s]', fontsize = 18)
-        plt.ylabel('nVehSeen [m]', fontsize = 18)
+        plt.ylabel('nVehSeen', fontsize = 18)
         plt.show()
+        
+        if lane in plot_lane_list:
+            fig1.savefig("DL_result_nVehSeen_"+ lane.replace('/', '_') +".pdf", bbox_inches='tight')
         
         
         print('MAPE for df_predictions_1')
-        calc_MAPE_of_predictions(lane, df_predictions_1)
-        calc_MAPE_of_liu(lane, df_liu_results)
-        print('-------------------------------------------------------------------------')
+        MAPE_queue, MAE_queue, MAPE_nVehSeen, MAE_nVehSeen = calc_MAPE_of_predictions(lane, df_predictions_1)
+        MAPE_liu, MAE_liu = calc_MAPE_of_liu(lane, df_liu_results)
 
+        list_MAPE_queue.append(MAPE_queue)
+        list_MAE_queue.append(MAE_queue)
+        list_MAPE_nVehSeen.append(MAPE_nVehSeen)
+        list_MAE_nVehSeen.append(MAE_nVehSeen)
+        list_MAPE_liu.append(MAPE_liu)
+        list_MAE_liu.append(MAE_liu)       
+        print('-------------------------------------------------------------------------')
+    
+    print('Metrics for the entire network:\n\nAverage MAPE_queue:', np.mean(list_MAPE_queue))
+    print('Average MAE_queue:', np.mean(list_MAE_queue))  
+    print('Average MAPE_nVehSeen:', np.mean(list_MAPE_nVehSeen))  
+    print('Average MAE_nVehSeen:', np.mean(list_MAE_nVehSeen))  
+    print('Average MAPE_liu:', np.mean(list_MAPE_liu))  
+    print('Average MAE_liu:', np.mean(list_MAE_liu))
         
 def plot_predictions_2_df(df_predictions_1, df_liu_results, df_predictions_2):
     list_lanes = df_predictions_1.columns
@@ -239,14 +274,18 @@ def calc_MAPE_of_predictions(lane, df_predictions):
     MAE_nVehSeen = K.eval(mean_absolute_error(ground_truth_nVehSeen, prediction_nVehSeen))
     print('MAE nVehSeen:', MAE_nVehSeen)
     
+    return MAPE_queue, MAE_queue, MAPE_nVehSeen, MAE_nVehSeen
+    
 def calc_MAPE_of_liu(lane, df_liu_results):
     ground_truth = df_liu_results.loc[:, (lane, 'ground-truth')]
     liu_estimations = df_liu_results.loc[:, (lane, 'estimated hybrid')]
     ground_truth = np.reshape(ground_truth.values, (ground_truth.values.shape[0]))
     liu_estimations = np.reshape(liu_estimations.values, (liu_estimations.values.shape[0]))
     
-    MAPE_queue = K.eval(mean_absolute_percentage_error(ground_truth, liu_estimations))
-    print('MAPE liu:', MAPE_queue)
+    MAPE_liu = K.eval(mean_absolute_percentage_error(ground_truth, liu_estimations))
+    print('MAPE liu:', MAPE_liu)
     
-    MAE_queue = K.eval(mean_absolute_error(ground_truth, liu_estimations))
-    print('MAE liu:', MAE_queue)
+    MAE_liu = K.eval(mean_absolute_error(ground_truth, liu_estimations))
+    print('MAE liu:', MAE_liu)
+    
+    return MAPE_liu, MAE_liu

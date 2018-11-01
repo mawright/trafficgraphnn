@@ -41,12 +41,15 @@ class TrainModel(object):
 
         self.multi_gat = multi_gat
         
-        if self.multi_gat:
-            self.A_down = np.load(self.data_path +'A_downstream.npy') 
-            self.A_up = np.load(self.data_path +'A_upstream.npy') 
-            self.A_neig = np.load(self.data_path +'A_neighbors.npy') 
-        else:
-            self.A = np.load(self.data_path +'A.npy') #A does not change
+        
+#        self.A_down = np.load(self.data_path +'A_downstream.npy') 
+#        self.A_up = np.load(self.data_path +'A_upstream.npy') 
+#        self.A_neig = np.load(self.data_path +'A_neighbors.npy') 
+#        
+#        A = self.A_down +self.A_up
+#        self.A = np.minimum(A, np.ones((A.shape[0], A.shape[1])))
+    
+        self.A = np.load(self.data_path +'A.npy') #only for old datasets
 
         with open(self.data_path +'order_lanes.txt', "rb") as fp:   # Unpickling
             self.order_lanes = pickle.load(fp)
@@ -114,6 +117,7 @@ class TrainModel(object):
                                        self.num_timesteps,
                                        self.num_lanes,
                                        self.num_features)
+
 
         A_stack = self.stack_A(self.A, num_simulations)
 
@@ -281,3 +285,10 @@ class TrainModel(object):
     
     def get_average_interval(self):
         return self.average_interval
+    
+    def get_A(self):
+        return self.A
+    
+    def reset_num_features(self, num_features):
+        self.num_features = num_features
+        print('new num_features:', self.num_features)
