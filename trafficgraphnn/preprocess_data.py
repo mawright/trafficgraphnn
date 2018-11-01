@@ -196,24 +196,33 @@ class PreprocessData(object):
                 'e1_detector_data_tls_interval' + str(num_index) + '.h5'),
                 key = 'preprocessed_e1_detector_data')
 
-    def read_data_for_lane_for_det_type(self, lane_id, det_type, features,
-                                        start_time=0, end_time=np.inf):
+    def lane_detectors_sorted_by_position(self, lane_id, det_type):
         nx_node = self.graph.nodes[lane_id]
+        lane_detectors = nx_node['detectors']
 
         if det_type == 'e1':
             det_type_longname = 'e1Detector'
-            parse_class = E1IterParseWrapper
         elif det_type == 'e2':
             det_type_longname = 'e2Detector'
-            parse_class = E2IterParseWrapper
         else:
             raise ValueError('Unknown detector type {}'.format(det_type))
 
-        lane_detectors = nx_node['detectors']
         dets_of_type = [DetInfo(k, v) for k,v in lane_detectors.items()
                         if v['type'] == det_type_longname]
 
         det_by_pos = sorted(dets_of_type, key=lambda x: x.info['pos'])
+        return det_by_pos
+
+    def read_data_for_lane_for_det_type(self, lane_id, det_type, features,
+                                        start_time=0, end_time=np.inf):
+        if det_type == 'e1':
+            parser_class = E1IterParseWrapper
+        elif det_type == 'e2':
+            parser_class = E2IterParseWrapper
+        else:
+            raise ValueError('Unknown detector type {}'.format(det_type))
+
+        det_by_pos = self.lane_detectors_sorted_by_position(lane_id, det_type)
 
         lane_data = OrderedDict()
         try:
@@ -223,6 +232,7 @@ class PreprocessData(object):
             pass
         try:
             features.remove('rel_pos')
+            nx_node = self.graph.nodes[lane_id]
             rel_pos = [float(detector.info['pos']) / float(nx_node['length'])
                        for detector in det_by_pos]
         except ValueError:
@@ -232,7 +242,7 @@ class PreprocessData(object):
             filename = os.path.join(os.path.dirname(self.sumo_network.netfile),
                                     detector.info['file'])
 
-            parser = parse_class(filename, validate=True)
+            parser = parser_class(filename, validate=True)
             data = {feat: [] for feat in features}
             interval_begins = []
             for _ in parser.iterate_until(start_time):
