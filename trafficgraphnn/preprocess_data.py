@@ -7,7 +7,6 @@ Created on Fri Jul 13 16:21:00 2018
 """
 import logging
 import os
-import sys
 from xml.etree import cElementTree as et
 import networkx as nx
 import math
@@ -122,11 +121,12 @@ class PreprocessData(object):
                                                     'maxJamLengthInMeters'],
                                    X_on_green_features=['liu_results'],
                                    Y_on_green_features=['maxJamLengthInMeters'],
-                                   complib='zlib', complevel=5):
+                                   complib='zlib', complevel=5,
+                                   delete_intermediate_tables=False):
 
         with pd.HDFStore(self.preprocess_file, complevel=complevel, complib=complib) as store:
+            _logger.info('Writing X and Y matrices to file %s...', store.filename)
             for lane in self.lanes:
-                _logger.info('Writing X and Y matrices for lane %s...', lane)
                 e1s = self.lane_detectors_sorted_by_position(lane, 'e1')
                 dfs_e1 = OrderedDict((det.id, store['{}/e1/{}'.format(lane, det.id)])
                                      for det in e1s)
@@ -162,7 +162,7 @@ class PreprocessData(object):
                     X_df = pd.concat([X_df, df_green], axis=1)
                     X_df['green'].fillna(method='ffill', inplace=True)
 
-                store.put('{}/X'.format(lane), X_df)
+                store.put('{}/X'.format(lane), X_df, format='t')
 
                 Y_df_e1 = pd.concat(Y_dfs_e1, axis=1)
                 Y_df_e2 = pd.concat(Y_dfs_e2, axis=1)
@@ -175,7 +175,21 @@ class PreprocessData(object):
                                               ].where(
                                         df_green.astype('uint8').shift(-1).diff() == 1)
 
-                store.put('{}/Y'.format(lane), Y_df)
+                store.put('{}/Y'.format(lane), Y_df, format='t')
+                if delete_intermediate_tables:
+                    for det in e1s:
+                        store.remove('{}/e1/{}'.format(lane, det.id))
+                    for det in e2s:
+                        store.remove('{}/e2/{}'.format(lane, det.id))
+                    try:
+                        store.remove('{}/green'.format(lane))
+                    except KeyError:
+                        pass
+                    try:
+                        store.remove('{}/liu_results'.format(lane))
+                    except KeyError:
+                        pass
+        _logger.info('Done.')
 
     @property
     def parsed_xml_tls(self):
