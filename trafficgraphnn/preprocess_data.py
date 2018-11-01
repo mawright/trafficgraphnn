@@ -68,6 +68,29 @@ class PreprocessData(object):
         num_liu_phases = liu_runner.get_max_num_phase()
         liu_runner.run_up_to_phase(num_liu_phases)
 
+    def extract_liu_results(self, lanes=None, complevel=5, complib='zlib'):
+        if lanes is None:
+            lanes = self.lanes
+        liu_output_file = os.path.join(os.path.dirname(self.sumo_network.netfile),
+                                       'liu_estimation_results{}.h5'.format(self.simu_num))
+
+        with pd.HDFStore(liu_output_file) as liu_store:
+            try:
+                liu_df = liu_store.get('df_estimation_results')
+            except KeyError:
+                _logger.warning(
+                    "Liu results not found. Try running the 'run_liu_method() method.")
+                return
+
+        with pd.HDFStore(self.preprocess_file, complevel=complevel, complib=complib) as store:
+            for lane in lanes:
+                lane_df = liu_df.iloc[:, (liu_df.columns.get_level_values(0) == lane)
+                                          & liu_df.columns.get_level_values(1).isin(
+                                              ['time', 'estimated hybrid'])]
+                lane_df.columns = ['time', 'liu_estimated']
+                store.append('{}/liu_results'.format(lane), lane_df)
+        _logger.info('Added liu results to file %s', store.filename)
+
     def read_data(self, start_time=0, end_time=np.inf,
                   e1_features=None, e2_features=None,
                   complib='zlib', complevel=5):
