@@ -113,6 +113,69 @@ class PreprocessData(object):
 
         return store.filename
 
+    def write_per_lane_fixed_table(self,
+                                   X_cont_features=['nvehContrib',
+                                                    'occupancy',
+                                                    'speed',
+                                                    'green'],
+                                   Y_cont_features=['nVehSeen',
+                                                    'maxJamLengthInMeters'],
+                                   X_on_green_features=['liu_results'],
+                                   Y_on_green_features=['maxJamLengthInMeters'],
+                                   complib='zlib', complevel=5):
+
+        with pd.HDFStore(self.preprocess_file, complevel=complevel, complib=complib) as store:
+            for lane in self.lanes:
+                _logger.info('Writing X and Y matrices for lane %s...', lane)
+                e1s = self.lane_detectors_sorted_by_position(lane, 'e1')
+                dfs_e1 = OrderedDict((det.id, store['{}/e1/{}'.format(lane, det.id)])
+                                     for det in e1s)
+                X_dfs_e1 = OrderedDict((id, df[[feat for feat in X_cont_features
+                                        if feat in df]])
+                                       for id, df in dfs_e1.items())
+                Y_dfs_e1 = OrderedDict((id, df[[feat for feat in Y_cont_features
+                                        if feat in df]])
+                                       for id, df in dfs_e1.items())
+
+                e2s = self.lane_detectors_sorted_by_position(lane, 'e2')
+                dfs_e2 = OrderedDict((det.id, store['{}/e2/{}'.format(lane, det.id)])
+                                     for det in e2s)
+                X_dfs_e2 = OrderedDict((id, df[[feat for feat in X_cont_features
+                                        if feat in df]])
+                                       for id, df in dfs_e2.items())
+                Y_dfs_e2 = OrderedDict((id, df[[feat for feat in Y_cont_features
+                                        if feat in df]])
+                                       for id, df in dfs_e2.items())
+
+                X_df_e1 = pd.concat(X_dfs_e1, axis=1)
+                X_df_e2 = pd.concat(X_dfs_e2, axis=1)
+                X_df = pd.concat([X_df_e1, X_df_e2], axis=1)
+
+                if 'liu_results' in X_on_green_features:
+                    df_liu = store['{}/liu_results'.format(lane)]
+                    X_df = pd.concat([X_df, df_liu.set_index('time')], axis=1)
+
+                df_green = store['{}/green'.format(lane)]
+                df_green = df_green.reindex_like(X_df)
+                df_green = df_green.fillna(method='ffill')
+                if 'green' in X_cont_features:
+                    X_df = pd.concat([X_df, df_green], axis=1)
+                    X_df['green'].fillna(method='ffill', inplace=True)
+
+                store.put('{}/X'.format(lane), X_df)
+
+                Y_df_e1 = pd.concat(Y_dfs_e1, axis=1)
+                Y_df_e2 = pd.concat(Y_dfs_e2, axis=1)
+                Y_df = pd.concat([Y_df_e1, Y_df_e2], axis=1)
+
+                if len(Y_on_green_features) > 0:
+                    for feat in Y_on_green_features:
+                        Y_df.loc[:, Y_df.columns.get_level_values(1) == feat
+                                 ] = Y_df.loc[:, Y_df.columns.get_level_values(1) == feat
+                                              ].where(
+                                        df_green.astype('uint8').shift(-1).diff() == 1)
+
+                store.put('{}/Y'.format(lane), Y_df)
 
     @property
     def parsed_xml_tls(self):
