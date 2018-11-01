@@ -305,7 +305,7 @@ class PreprocessData(object):
             data_dict[lane] = green_binary
 
         data_df = pd.DataFrame(data_dict)
-        data_df.index.set_names('times', inplace=True)
+        data_df.index.set_names('time', inplace=True)
 
         return data_df
 
