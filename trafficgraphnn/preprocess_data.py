@@ -277,7 +277,6 @@ class PreprocessData(object):
             features = ['nVehContrib',
                         'occupancy',
                         'speed',
-                        'length',
                         'pos',
                         'rel_pos']
         return self.read_data_for_lane_for_det_type(lane_id, 'e1', features=features,
