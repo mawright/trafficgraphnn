@@ -38,7 +38,7 @@ class LiuEtAlRunner(object):
             lane_subset = iterfy(lane_subset)
             lanes_not_in_graph = [
                 lane for lane in lane_subset
-                if lane not in self.sumo_network.nodes
+                if lane not in self.sumo_network.graph.nodes
             ]
             if len(lanes_not_in_graph) > 0:
                 _logger.warning(
@@ -48,7 +48,7 @@ class LiuEtAlRunner(object):
                 )
                 self.lane_subset = [
                     lane for lane in lane_subset
-                    if lane in self.sumo_network.nodes
+                    if lane in self.sumo_network.graph.nodes
                 ]
 
         # create LiuIntersection objects for each intersection
