@@ -1,7 +1,5 @@
 import numpy as np
-import scipy.sparse
 import six
-from collections import OrderedDict
 import logging
 import os
 import networkx as nx

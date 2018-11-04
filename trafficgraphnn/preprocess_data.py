@@ -15,7 +15,6 @@ from collections import OrderedDict
 
 import numpy as np
 import pandas as pd
-import keras.backend as K
 
 from trafficgraphnn.sumo_output_reader import SumoLaneOutputReader, SumoNetworkOutputReader
 from trafficgraphnn.utils import E1IterParseWrapper, E2IterParseWrapper, DetInfo
