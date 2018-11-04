@@ -109,8 +109,37 @@ class PreprocessData(object):
                     store.append('{}/{}/{}'.format(lane, 'e2', det), data)
 
                 store.append('{}/green'.format(lane), light_timings[lane].rename('green'))
+        self.store_adjacency_tables(complevel=complevel, complib=complib)
 
         return store.filename
+
+    def store_adjacency_tables(self,
+                               downstream=True,
+                               upstream=True,
+                               neighboring_lanes=True,
+                               turn=False,
+                               thru=False,
+                               complevel=5,
+                               complib='zlib'):
+
+        with pd.HDFStore(self.preprocess_file, complevel=complevel, complib=complib) as store:
+            if downstream:
+                store.put('A_downstream', nx.to_pandas_adjacency(self.graph))
+            if upstream:
+                store.put('A_upstream', nx.to_pandas_adjacency(self.graph.reverse()))
+            if neighboring_lanes:
+                A = self.sumo_network.get_lane_graph_for_neighboring_lanes(
+                                include_self_adjacency=False)
+                store.put('A_neighbors',
+                        nx.to_pandas_adjacency(A))
+            if turn:
+                A = self.sumo_network.get_lane_graph_for_turn_movements()
+                store.put('A_turn_movements',
+                        nx.to_pandas_adjacency(A))
+            if thru:
+                A = self.sumo_network.get_lane_graph_for_thru_movements()
+                store.put('A_through_movements',
+                        nx.to_pandas_adjacency(A))
 
     def write_per_lane_fixed_table(self,
                                    X_cont_features=['nvehContrib',
