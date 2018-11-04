@@ -201,8 +201,8 @@ class SumoNetwork(object):
             ids.remove(lane_id)
         return ids
 
-    def get_adj_matrix_for_neighboring_lanes(self, include_self_adjacency=True):
-        """Return adjacency matrix with A[i,j] = 1 iff i, j in the same road (ie same Sumo `edge').
+    def get_lane_graph_for_neighboring_lanes(self, include_self_adjacency=True):
+        """Return networkx graph with edges connecting lanes in the same road (ie same Sumo `edge').
 
         :param include_self_adjacency: If True, include A[i,i] = 1.
         :type include_self_adjacency: bool
@@ -216,8 +216,7 @@ class SumoNetwork(object):
             for neigh in neigh_lanes:
                 graph_copy.add_edge(lane, neigh)
 
-        A = nx.adjacency_matrix(graph_copy)
-        return A
+        return graph_copy
 
     def _graph_shallow_copy(self, no_edges=False):
         """Utility function: Get copy of graph without data (nodes/edges only).
@@ -231,10 +230,10 @@ class SumoNetwork(object):
             copy.add_edges_from(self.graph.edges())
         return copy
 
-    def get_lane_adj_matrix_for_conn_type(self,
-                                          edge_classes,
-                                          edge_class_field='direction'):
-        """Return adjacency matrix for only certain class(es) of connection (e.g., direction: l, r).
+    def get_lane_graph_for_conn_type(self,
+                                     edge_classes,
+                                     edge_class_field='direction'):
+        """Return networkx graph with edges for only certain class(es) of connection (e.g., direction: l, r).
 
         :param edge_classes: List of strings of class(es) requested
         :type edge_classes: list
@@ -252,24 +251,23 @@ class SumoNetwork(object):
             if edge_class in edge_classes:
                 graph_copy.add_edge(in_lane, out_lane)
 
-        A = nx.adjacency_matrix(graph_copy)
-        return A
+        return graph_copy
 
-    def get_lane_adj_matrix_for_thru_movements(self):
-        """Gets the adjacency matrix A with A[i,j] = 1 iff i,j is a through (straight) movement.
-
-        :return: Adjacency matrix
-        :rtype: Scipy sparse matrix
-        """
-        return self.get_lane_adj_matrix_for_conn_type(['s'])
-
-    def get_lane_adj_matrix_for_turn_movements(self):
-        """Gets the adjacency matrix A with A[i,j] = 1 iff i,j is a turn movement.
+    def get_lane_graph_for_thru_movements(self):
+        """Gets the networkx graph with edges only for through (straight) movements.
 
         :return: Adjacency matrix
-        :rtype: Scipy sparse matrix
+        :rtype: networkx.DiGraph
         """
-        return self.get_lane_adj_matrix_for_conn_type(['l', 'r'])
+        return self.get_lane_graph_for_conn_type(['s'])
+
+    def get_lane_graph_for_turn_movements(self):
+        """Gets the networkx graph with edges only for turn movements.
+
+        :return: Adjacency matrix
+        :rtype: networkx.DiGraph
+        """
+        return self.get_lane_graph_for_conn_type(['l', 'r'])
 
     def get_adjacency_matrix(self, undirected=False):
         """Gets the adjacency matrix for the loaded graph.
