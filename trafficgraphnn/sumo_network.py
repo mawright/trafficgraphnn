@@ -196,10 +196,7 @@ class SumoNetwork(object):
         """
         if not isinstance(lane_id, str):
             raise TypeError('Expected str, got %s', type(lane_id))
-        try:
-            sumolib_lane = self.net.getLane(lane_id)
-        except:
-            raise
+        sumolib_lane = self.net.getLane(lane_id)
         parent_edge = sumolib_lane.getEdge()
         ids = [lane.getID() for lane in parent_edge.getLanes()]
         if not include_input_lane:
