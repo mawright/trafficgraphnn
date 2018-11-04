@@ -123,23 +123,26 @@ class PreprocessData(object):
                                complib='zlib'):
 
         with pd.HDFStore(self.preprocess_file, complevel=complevel, complib=complib) as store:
+            lanes = self.lanes
             if downstream:
-                store.put('A_downstream', nx.to_pandas_adjacency(self.graph))
+                store.put('A_downstream', nx.to_pandas_adjacency(self.graph,
+                                                                 nodelist=lanes))
             if upstream:
-                store.put('A_upstream', nx.to_pandas_adjacency(self.graph.reverse()))
+                store.put('A_upstream', nx.to_pandas_adjacency(self.graph.reverse(),
+                                                               nodelist=lanes))
             if neighboring_lanes:
                 A = self.sumo_network.get_lane_graph_for_neighboring_lanes(
                                 include_self_adjacency=False)
                 store.put('A_neighbors',
-                        nx.to_pandas_adjacency(A))
+                        nx.to_pandas_adjacency(A, nodelist=lanes))
             if turn:
                 A = self.sumo_network.get_lane_graph_for_turn_movements()
                 store.put('A_turn_movements',
-                        nx.to_pandas_adjacency(A))
+                        nx.to_pandas_adjacency(A, nodelist=lanes))
             if thru:
                 A = self.sumo_network.get_lane_graph_for_thru_movements()
                 store.put('A_through_movements',
-                        nx.to_pandas_adjacency(A))
+                        nx.to_pandas_adjacency(A, nodelist=lanes))
 
     def write_per_lane_fixed_table(self,
                                    X_cont_features=['nvehContrib',
@@ -151,6 +154,7 @@ class PreprocessData(object):
                                    X_on_green_features=['liu_results'],
                                    Y_on_green_features=['maxJamLengthInMeters'],
                                    complib='zlib', complevel=5,
+                                   X_on_green_empty_value=-1,
                                    delete_intermediate_tables=False):
 
         with pd.HDFStore(self.preprocess_file, complevel=complevel, complib=complib) as store:
@@ -183,6 +187,7 @@ class PreprocessData(object):
                 if 'liu_results' in X_on_green_features:
                     df_liu = store['{}/liu_results'.format(lane)]
                     X_df = pd.concat([X_df, df_liu.set_index('time')], axis=1)
+                    X_df['liu_estimated'].fillna(X_on_green_empty_value, inplace=True)
 
                 df_green = store['{}/green'.format(lane)]
                 df_green = df_green.reindex_like(X_df)
