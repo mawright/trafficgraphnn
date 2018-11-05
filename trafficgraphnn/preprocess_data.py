@@ -100,12 +100,12 @@ class PreprocessData(object):
         with pd.HDFStore(self.preprocess_file, complevel=complevel, complib=complib) as store:
             for lane in self.lanes:
                 e1_data = self.read_e1_data_for_lane(lane, start_time, end_time,
-                                                    features=e1_features)
+                                                     features=e1_features)
                 for det, data in e1_data.items():
                     store.append('{}/{}/{}'.format(lane, 'e1', det), data)
 
                 e2_data = self.read_e2_data_for_lane(lane, start_time, end_time,
-                                                    features=e2_features)
+                                                     features=e2_features)
                 for det, data in e2_data.items():
                     store.append('{}/{}/{}'.format(lane, 'e2', det), data)
 
