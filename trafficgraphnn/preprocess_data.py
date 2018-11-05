@@ -22,6 +22,7 @@ from trafficgraphnn.liumethod import LiuEtAlRunner
 
 _logger = logging.getLogger(__name__)
 
+
 class PreprocessData(object):
     def __init__(self, sumo_network, simu_num=None, lane_order=None,
                  detector_data_dir='output'):
@@ -45,7 +46,7 @@ class PreprocessData(object):
         try:
             self.df_liu_results = pd.read_hdf(self.liu_results_path)
         except IOError:
-            _logger.warning('An error occured trying to read the hdf file.')
+            _logger.warning('An error occurred trying to read the hdf file.')
 
         lanes = [lane for edge in self.sumolib_net.getEdges() for lane in edge.getLanes()]
 
