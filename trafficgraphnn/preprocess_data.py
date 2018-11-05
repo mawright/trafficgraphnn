@@ -45,11 +45,6 @@ class PreprocessData(object):
         if not os.path.exists(os.path.dirname(self.preprocess_file)):
             os.makedirs(os.path.dirname(self.preprocess_file))
 
-        try:
-            self.df_liu_results = pd.read_hdf(self.liu_results_path)
-        except IOError:
-            _logger.warning('An error occurred trying to read the hdf file.')
-
         lanes = [lane for edge in self.sumolib_net.getEdges() for lane in edge.getLanes()]
 
         if lane_order is not None:
