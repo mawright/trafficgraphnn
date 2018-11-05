@@ -2,6 +2,7 @@ import os
 import sys
 import collections
 import logging
+import re
 
 import six
 import pandas as pd
@@ -100,6 +101,11 @@ class E1IterParseWrapper(IterParseWrapper):
 class E2IterParseWrapper(IterParseWrapper):
     _tag = 'interval'
     _schema_file = os.path.join(get_sumo_dir(), 'data', 'xsd', 'det_e2_file.xsd')
+
+
+def get_preprocessed_filenames(directory):
+    return [f for f in os.listdir(directory)
+            if os.path.isfile(f) and re.match(r'sim_\d+.h5', os.path.basename(f))]
 
 
 def xml_to_list_of_dicts(

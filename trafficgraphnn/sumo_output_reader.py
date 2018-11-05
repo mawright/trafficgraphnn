@@ -46,6 +46,10 @@ class SumoNetworkOutputReader(object):
         return {lane_id: lane.tls_output_filename
                 for lane_id, lane in self.lane_readers.items()}
 
+    def reset_phase_timing_info(self):
+        for reader in self.lane_readers.values():
+            reader.green_intervals = []
+
     def parse_phase_timings(self):
         tls_output_files = {lane.tls_output_filename for lane
                             in self.lane_readers.values()}

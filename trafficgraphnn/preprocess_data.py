@@ -12,34 +12,36 @@ import networkx as nx
 import math
 import re
 from collections import OrderedDict
+import six
 
 import numpy as np
 import pandas as pd
+from tables.exceptions import NoSuchNodeError
 
 from trafficgraphnn.sumo_output_reader import SumoLaneOutputReader, SumoNetworkOutputReader
-from trafficgraphnn.utils import E1IterParseWrapper, E2IterParseWrapper, DetInfo
+from trafficgraphnn.utils import (
+    E1IterParseWrapper, E2IterParseWrapper, DetInfo, get_preprocessed_filenames)
 from trafficgraphnn.liumethod import LiuEtAlRunner
 
 _logger = logging.getLogger(__name__)
 
 
 class PreprocessData(object):
-    def __init__(self, sumo_network, simu_num=None, lane_order=None,
-                 detector_data_dir='output'):
+    def __init__(self, sumo_network, preproc_file_number=None, lane_order=None, detector_data_dir='output'):
         self.net_reader = SumoNetworkOutputReader(sumo_network)
-        if simu_num is None:
-            simu_num = self._get_next_simulation_number()
-        self.simu_num = simu_num
+        if preproc_file_number is None:
+            preproc_file_number = self._next_file_number()
+        self.preproc_file_number = preproc_file_number
         self.liu_results_path = os.path.join(os.path.dirname(
                 self.sumo_network.netfile),
-                'liu_estimation_results'+ str(self.simu_num) + '.h5')
+                'liu_estimation_results' + str(self.preproc_file_number) + '.h5')
         self.detector_data_path =  os.path.join(os.path.dirname(
                 self.sumo_network.netfile), detector_data_dir)
         self.df_liu_results = pd.DataFrame()
 
         self.preprocess_file = os.path.join(
             os.path.dirname(self.sumo_network.netfile),
-            'preprocessed_data', 'sim_{:04}.h5'.format(simu_num))
+            'preprocessed_data', 'sim_{:04}.h5'.format(preproc_file_number))
         if not os.path.exists(os.path.dirname(self.preprocess_file)):
             os.makedirs(os.path.dirname(self.preprocess_file))
 
@@ -62,9 +64,15 @@ class PreprocessData(object):
             for conn in lane.getOutgoing()[1:]:
                 lane_reader.add_out_lane(conn.getToLane().getID())
 
+    def run_defaults(self, lanes=None, complevel=5, complib='zlib'):
+        self.run_liu_method()
+        self.read_data(complevel=complevel, complib=complib)
+        self.extract_liu_results(complevel=complevel, complib=complib)
+        self.write_per_lane_fixed_table(complevel=complevel, complib=complib)
+
     def run_liu_method(self):
         liu_runner = LiuEtAlRunner(
-            self.sumo_network, lane_subset=self.lanes, simu_num=self.simu_num)
+            self.sumo_network, lane_subset=self.lanes, simu_num=self.preproc_file_number)
         num_liu_phases = liu_runner.get_max_num_phase()
         liu_runner.run_up_to_phase(num_liu_phases)
 
@@ -72,7 +80,7 @@ class PreprocessData(object):
         if lanes is None:
             lanes = self.lanes
         liu_output_file = os.path.join(os.path.dirname(self.sumo_network.netfile),
-                                       'liu_estimation_results{}.h5'.format(self.simu_num))
+                                       'liu_estimation_results{}.h5'.format(self.preproc_file_number))
 
         with pd.HDFStore(liu_output_file) as liu_store:
             try:
@@ -83,12 +91,13 @@ class PreprocessData(object):
                 return
 
         with pd.HDFStore(self.preprocess_file, complevel=complevel, complib=complib) as store:
+            sim_number = self._next_simulation_number(store)
             for lane in lanes:
                 lane_df = liu_df.iloc[:, (liu_df.columns.get_level_values(0) == lane)
                                           & liu_df.columns.get_level_values(1).isin(
                                               ['time', 'estimated hybrid'])]
                 lane_df.columns = ['time', 'liu_estimated']
-                store.append('{}/liu_results'.format(lane), lane_df)
+                store.append('{}/liu_results/_{:04}'.format(lane, sim_number), lane_df)
         _logger.info('Added liu results to file %s', store.filename)
 
     def read_data(self, start_time=0, end_time=np.inf,
@@ -98,21 +107,23 @@ class PreprocessData(object):
         light_timings = self.read_light_timings(start_time=start_time, end_time=end_time)
 
         with pd.HDFStore(self.preprocess_file, complevel=complevel, complib=complib) as store:
+            sim_number = self._next_simulation_number(store)
             for lane in self.lanes:
                 e1_data = self.read_e1_data_for_lane(lane, start_time, end_time,
                                                      features=e1_features)
                 for det, data in e1_data.items():
-                    store.append('{}/{}/{}'.format(lane, 'e1', det), data)
+                    store.append('{}/e1/{}/_{:04}'.format(lane, det, sim_number),
+                                 data)
 
                 e2_data = self.read_e2_data_for_lane(lane, start_time, end_time,
                                                      features=e2_features)
                 for det, data in e2_data.items():
-                    store.append('{}/{}/{}'.format(lane, 'e2', det), data)
+                    store.append('{}/e2/{}/_{:04}'.format(lane, det, sim_number),
+                                 data)
 
-                store.append('{}/green'.format(lane), light_timings[lane].rename('green'))
+                store.append('{}/green/_{:04}'.format(lane, sim_number),
+                             light_timings[lane].rename('green'))
         self.store_adjacency_tables(complevel=complevel, complib=complib)
-
-        return store.filename
 
     def store_adjacency_tables(self,
                                downstream=True,
@@ -156,13 +167,16 @@ class PreprocessData(object):
                                    Y_on_green_features=['maxJamLengthInMeters'],
                                    complib='zlib', complevel=5,
                                    X_on_green_empty_value=-1,
-                                   delete_intermediate_tables=False):
+                                   delete_intermediate_tables=True):
 
         with pd.HDFStore(self.preprocess_file, complevel=complevel, complib=complib) as store:
             _logger.info('Writing X and Y matrices to file %s...', store.filename)
+            sim_number = self._next_simulation_number(store)
+            sim_string = '_{:04}'.format(sim_number)
             for lane in self.lanes:
                 e1s = self.lane_detectors_sorted_by_position(lane, 'e1')
-                dfs_e1 = OrderedDict((det.id, store['{}/e1/{}'.format(lane, det.id)])
+                dfs_e1 = OrderedDict((det.id,
+                                      store['{}/e1/{}/{}'.format(lane, det.id, sim_string)])
                                      for det in e1s)
                 X_dfs_e1 = OrderedDict((id, df[[feat for feat in X_cont_features
                                         if feat in df]])
@@ -172,7 +186,8 @@ class PreprocessData(object):
                                        for id, df in dfs_e1.items())
 
                 e2s = self.lane_detectors_sorted_by_position(lane, 'e2')
-                dfs_e2 = OrderedDict((det.id, store['{}/e2/{}'.format(lane, det.id)])
+                dfs_e2 = OrderedDict((det.id,
+                                      store['{}/e2/{}/{}'.format(lane, det.id, sim_string)])
                                      for det in e2s)
                 X_dfs_e2 = OrderedDict((id, df[[feat for feat in X_cont_features
                                         if feat in df]])
@@ -186,11 +201,11 @@ class PreprocessData(object):
                 X_df = pd.concat([X_df_e1, X_df_e2], axis=1)
 
                 if 'liu_results' in X_on_green_features:
-                    df_liu = store['{}/liu_results'.format(lane)]
+                    df_liu = store['{}/liu_results/{}'.format(lane, sim_string)]
                     X_df = pd.concat([X_df, df_liu.set_index('time')], axis=1)
                     X_df['liu_estimated'].fillna(X_on_green_empty_value, inplace=True)
 
-                df_green = store['{}/green'.format(lane)]
+                df_green = store['{}/green/{}'.format(lane, sim_string)]
                 df_green = df_green.reindex_like(X_df)
                 df_green = df_green.fillna(method='ffill')
                 if 'green' in X_cont_features:
@@ -198,7 +213,7 @@ class PreprocessData(object):
                     X_df['green'].fillna(method='ffill', inplace=True)
 
                 X_df.columns = _concat_colnames(X_df.columns)
-                store.put('{}/X'.format(lane), X_df, format='f')
+                store.put('{}/X/{}'.format(lane, sim_string), X_df, format='f')
 
                 Y_df_e1 = pd.concat(Y_dfs_e1, axis=1)
                 Y_df_e2 = pd.concat(Y_dfs_e2, axis=1)
@@ -212,18 +227,18 @@ class PreprocessData(object):
                                         df_green.astype('uint8').shift(-1).diff() == 1)
 
                 Y_df.columns = _concat_colnames(Y_df.columns)
-                store.put('{}/Y'.format(lane), Y_df)
+                store.put('{}/Y/{}'.format(lane, sim_string), Y_df)
                 if delete_intermediate_tables:
                     for det in e1s:
-                        store.remove('{}/e1/{}'.format(lane, det.id))
+                        store.remove('{}/e1/{}/{}'.format(lane, det.id, sim_string))
                     for det in e2s:
-                        store.remove('{}/e2/{}'.format(lane, det.id))
+                        store.remove('{}/e2/{}/{}'.format(lane, det.id, sim_string))
                     try:
-                        store.remove('{}/green'.format(lane))
+                        store.remove('{}/green/{}'.format(lane, sim_string))
                     except KeyError:
                         pass
                     try:
-                        store.remove('{}/liu_results'.format(lane))
+                        store.remove('{}/liu_results/{}'.format(lane, sim_string))
                     except KeyError:
                         pass
         _logger.info('Done.')
@@ -431,6 +446,7 @@ class PreprocessData(object):
                                        start_time=start_time, end_time=end_time)
 
     def read_light_timings(self, lane_subset=None, start_time=0, end_time=np.inf):
+        self.net_reader.reset_phase_timing_info()
         self.net_reader.parse_phase_timings()
 
         if lane_subset is None:
@@ -456,13 +472,24 @@ class PreprocessData(object):
 
         return data_df
 
-    def _get_next_simulation_number(self):
+    def _next_file_number(self):
         data_dir = os.path.join(os.path.dirname(self.sumo_network.netfile),
                                 'preprocessed_data')
 
-        files = [f for f in os.listdir(data_dir)
-                 if os.path.isfile(f) and re.match(r'sim_\d+.h5', os.path.basename(f))]
+        files = get_preprocessed_filenames(data_dir)
         numbers = [int(re.search(r'\d+', f).group()) for f in files]
+
+        return max(numbers, default=0) + 1
+
+    def _next_simulation_number(self, store):
+        lane = list(self.lanes)[0]
+        try:
+            X_subelements = dir(store.root.__getattr__(lane).X)
+        except NoSuchNodeError:
+            return 1
+
+        samples = filter(lambda e: re.match(r'_\d{4,5}', e), X_subelements)
+        numbers = list(map(lambda e: int(re.search(r'\d{4,5}', e).group()), samples))
 
         return max(numbers, default=0) + 1
 
