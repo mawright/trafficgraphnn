@@ -482,16 +482,19 @@ class PreprocessData(object):
         return max(numbers, default=0) + 1
 
     def _next_simulation_number(self, store):
-        lane = list(self.lanes)[0]
-        try:
+
+        def sim_numbers_for_lane(lane):
             X_subelements = dir(store.root.__getattr__(lane).X)
+            samples = filter(lambda e: re.match(r'_\d{4,5}', e), X_subelements)
+            return list(map(lambda e: int(re.search(r'\d{4,5}', e).group()), samples))
+
+        try:
+            sim_numbers = sim_numbers_for_lane(list(self.lanes)[0])
         except NoSuchNodeError:
             return 1
 
-        samples = filter(lambda e: re.match(r'_\d{4,5}', e), X_subelements)
-        numbers = list(map(lambda e: int(re.search(r'\d{4,5}', e).group()), samples))
-
-        return max(numbers, default=0) + 1
+        assert all((sim_numbers_for_lane(lane) == sim_numbers for lane in self.lanes))
+        return max(sim_numbers, default=0) + 1
 
     def process_e1_data(self, filename, interval, start_time = 0,  average_over_cycle = False):
         append_cnt=0    #counts how often new data were appended
