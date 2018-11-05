@@ -197,7 +197,8 @@ class PreprocessData(object):
                     X_df = pd.concat([X_df, df_green], axis=1)
                     X_df['green'].fillna(method='ffill', inplace=True)
 
-                store.put('{}/X'.format(lane), X_df, format='t')
+                X_df.columns = _concat_colnames(X_df.columns)
+                store.put('{}/X'.format(lane), X_df, format='f')
 
                 Y_df_e1 = pd.concat(Y_dfs_e1, axis=1)
                 Y_df_e2 = pd.concat(Y_dfs_e2, axis=1)
@@ -210,7 +211,8 @@ class PreprocessData(object):
                                               ].where(
                                         df_green.astype('uint8').shift(-1).diff() == 1)
 
-                store.put('{}/Y'.format(lane), Y_df, format='t')
+                Y_df.columns = _concat_colnames(Y_df.columns)
+                store.put('{}/Y'.format(lane), Y_df)
                 if delete_intermediate_tables:
                     for det in e1s:
                         store.remove('{}/e1/{}'.format(lane, det.id))
@@ -929,3 +931,8 @@ class PreprocessData(object):
         A_neighbors = np.minimum(A_neighbors, np.ones((N,N)))
 
         return A_down, A_up, A_neighbors
+
+
+def _concat_colnames(cols):
+    return ['/'.join(col) if not isinstance(col, six.string_types) else col
+            for col in cols]
