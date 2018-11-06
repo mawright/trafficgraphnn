@@ -472,7 +472,8 @@ class PreprocessData(object):
                                 'preprocessed_data')
 
         files = get_preprocessed_filenames(data_dir)
-        numbers = [int(re.search(r'\d+', f).group()) for f in files]
+        fnames = [os.path.basename(f) for f in files]
+        numbers = [int(re.search(r'\d+', f).group()) for f in fnames]
 
         return max(numbers, default=0) + 1
 
