@@ -209,7 +209,8 @@ class PreprocessData(object):
                     X_df = pd.concat([X_df, df_green], axis=1)
                     X_df['green'].fillna(method='ffill', inplace=True)
 
-                X_df.columns = _concat_colnames(X_df.columns)
+                X_df.columns = _prune_det_id_in_colnames(
+                    _concat_colnames(X_df.columns), lane)
                 store.put('{}/X/{}'.format(lane, sim_string), X_df, format='f')
 
                 Y_df_e1 = pd.concat(Y_dfs_e1, axis=1)
@@ -223,7 +224,8 @@ class PreprocessData(object):
                                               ].where(
                                         df_green.astype('uint8').shift(-1).diff() == 1)
 
-                Y_df.columns = _concat_colnames(Y_df.columns)
+                Y_df.columns = _prune_det_id_in_colnames(
+                    _concat_colnames(Y_df.columns), lane)
                 store.put('{}/Y/{}'.format(lane, sim_string), Y_df)
                 if delete_intermediate_tables:
                     for det in e1s:
@@ -959,6 +961,10 @@ class PreprocessData(object):
         A_neighbors = np.minimum(A_neighbors, np.ones((N,N)))
 
         return A_down, A_up, A_neighbors
+
+
+def _prune_det_id_in_colnames(colnames, lane_id):
+    return [re.sub(f'{lane_id}_', '', col) for col in colnames]
 
 
 def _concat_colnames(cols):
