@@ -184,15 +184,6 @@ def parse_tls_output_xml(data_file):
     return df
 
 
-def verify_xml_schema(xml_file):
-    tools_dir = get_sumo_tools_dir()
-    schemacheck_py_file = os.path.join(
-        tools_dir, 'xml', 'schemaCheck.py')
-
-    # schemaCheck.py errors when you send it a valid tls output file?
-    raise NotImplementedError
-
-
 def in_interval(value, interval):
     assert(len(interval)) == 2
     return interval[0] <= value <= interval[1]
