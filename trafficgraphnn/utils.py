@@ -104,7 +104,8 @@ class E2IterParseWrapper(IterParseWrapper):
 
 
 def get_preprocessed_filenames(directory):
-    return [f for f in os.listdir(directory)
+    return [os.path.join(directory, f)
+            for f in os.listdir(directory)
             if os.path.isfile(os.path.join(directory, f))
             and re.match(r'sim_\d+.h5', os.path.basename(f))]
 
