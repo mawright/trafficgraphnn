@@ -132,24 +132,26 @@ class PreprocessData(object):
         with pd.HDFStore(self.preprocess_file, complevel=complevel, complib=complib) as store:
             lanes = self.lanes
             if downstream:
-                store.put('A_downstream', nx.to_pandas_adjacency(self.graph,
-                                                                 nodelist=lanes))
+                store.put('A_downstream',
+                          nx.to_pandas_adjacency(self.graph,
+                                                 nodelist=lanes).astype('bool'))
             if upstream:
-                store.put('A_upstream', nx.to_pandas_adjacency(self.graph.reverse(),
-                                                               nodelist=lanes))
+                store.put('A_upstream',
+                          nx.to_pandas_adjacency(self.graph.reverse(),
+                                                 nodelist=lanes).astype('bool'))
             if neighboring_lanes:
                 A = self.sumo_network.get_lane_graph_for_neighboring_lanes(
                                 include_self_adjacency=False)
                 store.put('A_neighbors',
-                        nx.to_pandas_adjacency(A, nodelist=lanes))
+                          nx.to_pandas_adjacency(A, nodelist=lanes).astype('bool'))
             if turn:
                 A = self.sumo_network.get_lane_graph_for_turn_movements()
                 store.put('A_turn_movements',
-                        nx.to_pandas_adjacency(A, nodelist=lanes))
+                          nx.to_pandas_adjacency(A, nodelist=lanes).astype('bool'))
             if thru:
                 A = self.sumo_network.get_lane_graph_for_thru_movements()
                 store.put('A_through_movements',
-                        nx.to_pandas_adjacency(A, nodelist=lanes))
+                          nx.to_pandas_adjacency(A, nodelist=lanes).astype('bool'))
 
     def write_per_lane_fixed_table(self,
                                    X_cont_features=['nvehContrib',
