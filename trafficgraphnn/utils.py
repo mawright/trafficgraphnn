@@ -104,11 +104,13 @@ class E2IterParseWrapper(IterParseWrapper):
 
 
 def get_preprocessed_filenames(directory):
-    return [os.path.join(directory, f)
-            for f in os.listdir(directory)
-            if os.path.isfile(os.path.join(directory, f))
-            and re.match(r'sim_\d+.h5', os.path.basename(f))]
-
+    try:
+        return [os.path.join(directory, f)
+                for f in os.listdir(directory)
+                if os.path.isfile(os.path.join(directory, f))
+                and re.match(r'sim_\d+.h5', os.path.basename(f))]
+    except FileNotFoundError:
+        return []
 
 def xml_to_list_of_dicts(
     xml_file, tags_to_filter=None, attributes_to_get=None
