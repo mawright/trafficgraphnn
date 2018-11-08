@@ -206,7 +206,7 @@ class ConfigGenerator(object):
             self.non_detector_addl_files.append(addl_file)
 
         return os.path.realpath(addl_file)
-    
+
     def get_preprocessed_data_dir(self):
         return self.preprocessed_data_dir
 
