@@ -5,7 +5,6 @@ from collections import OrderedDict, namedtuple
 import numpy as np
 import pandas as pd
 import math
-from matplotlib import pyplot as plt
 
 from trafficgraphnn.utils import iterfy
 from trafficgraphnn.sumo_output_reader import SumoNetworkOutputReader, SumoLaneOutputReader
@@ -840,6 +839,7 @@ class LiuLane(object):
         return self._mape_from_lists(true, est)
 
     def plot(self, show_graph, show_infos):
+        from matplotlib import pyplot as plt
         if show_graph == True:
             start = 0
             fig = plt.figure()
