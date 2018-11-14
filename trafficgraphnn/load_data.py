@@ -229,22 +229,21 @@ def generator_from_file(
         assert all((all(lane_list == A.index) for A in A_list))
         A = np.stack([A.values for A in A_list])
         try:
-            while True:
-                col_select_X = [[store[
-                    '{}/X/_{:04}'.format(lane, simulation_number)].loc[:, feat]
-                                 for lane in lane_list]
-                                for feat in x_feature_subset]
-                col_select_Y = [[store[
-                    '{}/Y/_{:04}'.format(lane, simulation_number)].loc[:, feat]
-                                 for lane in lane_list]
-                                for feat in y_feature_subset]
+            col_select_X = [[store[
+                '{}/X/_{:04}'.format(lane, simulation_number)].loc[:, feat]
+                                for lane in lane_list]
+                            for feat in x_feature_subset]
+            col_select_Y = [[store[
+                '{}/Y/_{:04}'.format(lane, simulation_number)].loc[:, feat]
+                                for lane in lane_list]
+                            for feat in y_feature_subset]
 
-                X_iter = _colwise_iterator(col_select_X, True)
-                Y_iter = _colwise_iterator(col_select_Y, False)
+            X_iter = _colwise_iterator(col_select_X, True)
+            Y_iter = _colwise_iterator(col_select_Y, False)
 
-                for tx, y, in zip(X_iter, Y_iter):
-                    t, x = tx
-                    yield [A, x, y, t]
+            for tx, y, in zip(X_iter, Y_iter):
+                t, x = tx
+                yield [A, x, y, t]
         except KeyError:
             return
 
