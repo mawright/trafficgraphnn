@@ -7,7 +7,7 @@ import six
 
 from trafficgraphnn.utils import (flatten, get_preprocessed_filenames,
                                   get_sim_numbers_in_preprocess_store, grouper,
-                                  paditerable)
+                                  iterfy, paditerable)
 
 pad_value_for_feature = defaultdict(lambda: 0,
                                     occupancy=0.,
@@ -59,9 +59,79 @@ class Batch(object):
             filenames, sim_indeces, window_size, A_name_list, x_feature_subset,
             y_feature_subset)
 
+        self._batch_sources = [f'{filename}-{sim_number}'
+                               for filename, sim_number
+                               in zip(filenames, sim_indeces)]
+
     def iterate(self):
         for output in self.readers:
             yield pad_and_stack_batch(output, self.pad_scalars)
+
+    @classmethod
+    def from_file(cls,
+                  filename,
+                  window_size,
+                  sim_subset=None,
+                  A_name_list=['A_downstream',
+                               'A_upstream',
+                               'A_neighbors'],
+                  x_feature_subset=['e1_0/occupancy',
+                                    'e1_0/speed',
+                                    'e1_1/occupancy',
+                                    'e1_1/speed',
+                                    'liu_estimated',
+                                    'green'],
+                  y_feature_subset=['e2_0/nVehSeen',
+                                    'e2_0/maxJamLengthInMeters']):
+        if sim_subset is None:
+            sim_subset = get_sim_numbers_in_file(filename)
+        return cls([filename] * len(sim_subset), sim_subset, window_size,
+                   A_name_list=A_name_list, x_feature_subset=x_feature_subset,
+                   y_feature_subset=y_feature_subset)
+
+
+def batches_from_directories(directories,
+                             batch_size,
+                             window_size,
+                             shuffle=True,
+                             A_name_list=['A_downstream',
+                                          'A_upstream',
+                                          'A_neighbors'],
+                             x_feature_subset=['e1_0/occupancy',
+                                               'e1_0/speed',
+                                               'e1_1/occupancy',
+                                               'e1_1/speed',
+                                               'liu_estimated',
+                                               'green'],
+                             y_feature_subset=['e2_0/nVehSeen',
+                                               'e2_0/maxJamLengthInMeters']):
+
+    directories = iterfy(directories)
+    filenames = flatten([get_preprocessed_filenames(directory)
+                         for directory in directories])
+    file_and_sims = []
+
+    for filename in filenames:
+        for sim_number in get_sim_numbers_in_file(filename):
+            file_and_sims.append((filename, sim_number))
+
+    if shuffle:
+        np.random.shuffle(file_and_sims)
+
+    filenames, sim_indeces = list(map(list, zip(*file_and_sims)))
+
+    batched_filenames = [filenames[i:i + batch_size]
+                         for i in range(0, len(filenames), batch_size)]
+    batched_sim_indeces = [sim_indeces[i:i + batch_size]
+                         for i in range(0, len(sim_indeces), batch_size)]
+
+    batches = [Batch(f_batch, si_batch, window_size, A_name_list=A_name_list,
+                     x_feature_subset=x_feature_subset,
+                     y_feature_subset=y_feature_subset)
+               for f_batch, si_batch
+               in zip(batched_filenames, batched_sim_indeces)]
+
+    return batches
 
 
 def get_pad_scalars(x_feature_subset, y_feature_subset):
@@ -78,7 +148,8 @@ def max_num_lanes_in_batch(output_list):
     maximum number of lanes of all simulations in the batch.
 
     """
-    A_matrix_size_per_gen = [np.shape(gen[0][0]) for gen in output_list]
+    A_matrix_size_per_gen = [np.shape(gen[0][0]) for gen in output_list
+                             if gen[0] is not None]
 
     # sanity check: make sure adjacency matrices are square
     assert all(A_shape[-1] == A_shape[-2] for A_shape in A_matrix_size_per_gen)
@@ -88,7 +159,8 @@ def max_num_lanes_in_batch(output_list):
 
 def get_max_A_depth(output_list):
     """Returns the max depth (number of edge types) in the batch"""
-    A_matrix_size_per_gen = [np.shape(gen[0][0]) for gen in output_list]
+    A_matrix_size_per_gen = [np.shape(gen[0][0]) for gen in output_list
+                             if gen[0] is not None]
 
     return max(A_shape[0] for A_shape in A_matrix_size_per_gen)
 
