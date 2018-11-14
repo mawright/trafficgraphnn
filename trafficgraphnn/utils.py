@@ -1,13 +1,14 @@
-import os
-import sys
 import collections
 import logging
+import os
 import re
+import sys
+from itertools import zip_longest, chain, repeat
 
-import six
 import pandas as pd
+import six
 from lxml import etree
-
+from tables.exceptions import NoSuchNodeError
 
 _logger = logging.getLogger(__name__)
 
@@ -112,6 +113,25 @@ def get_preprocessed_filenames(directory):
     except FileNotFoundError:
         return []
 
+
+def get_sim_numbers_in_preprocess_store(store, lane_list=None):
+    if lane_list is None:
+        lane_list = store['A_downstream'].columns
+
+    def sim_numbers_for_lane(lane):
+            X_subelements = dir(store.root.__getattr__(lane).X)
+            samples = filter(lambda e: re.match(r'_\d{4,5}', e), X_subelements)
+            return list(map(lambda e: int(re.search(r'\d{4,5}', e).group()), samples))
+
+    try:
+        sim_numbers = sim_numbers_for_lane(list(lane_list)[0])
+    except NoSuchNodeError:
+        return []
+
+    assert all((sim_numbers_for_lane(lane) == sim_numbers for lane in lane_list))
+    return sim_numbers
+
+
 def xml_to_list_of_dicts(
     xml_file, tags_to_filter=None, attributes_to_get=None
 ):
@@ -197,3 +217,26 @@ def iterfy(x):
         return x
     else:
         return (x,)
+
+
+def grouper(iterable, n, fillvalue=None):
+    "Collect data into fixed-length chunks or blocks"
+    # grouper('ABCDEFG', 3, 'x') --> ABC DEF Gxx"
+    # From itertools recipe page
+    args = [iter(iterable)] * n
+    return zip_longest(*args, fillvalue=fillvalue)
+
+
+def paditerable(iterable, pad_value=None):
+    """Returns the sequence elements and then returns None indefinitely.
+
+    Useful for emulating the behavior of the built-in map() function.
+    """
+    # From itertools recipe page
+    return chain(iterable, repeat(pad_value))
+
+
+def flatten(listOfLists):
+    "Flatten one level of nesting"
+    # From itertools recipe page
+    return chain.from_iterable(listOfLists)
