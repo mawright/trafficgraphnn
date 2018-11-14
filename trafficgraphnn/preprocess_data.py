@@ -20,7 +20,8 @@ from tables.exceptions import NoSuchNodeError
 
 from trafficgraphnn.sumo_output_reader import SumoLaneOutputReader, SumoNetworkOutputReader
 from trafficgraphnn.utils import (
-    E1IterParseWrapper, E2IterParseWrapper, DetInfo, get_preprocessed_filenames)
+    E1IterParseWrapper, E2IterParseWrapper, DetInfo, get_preprocessed_filenames,
+    get_sim_numbers_in_preprocess_file)
 from trafficgraphnn.liumethod import LiuEtAlRunner
 
 _logger = logging.getLogger(__name__)
@@ -483,17 +484,8 @@ class PreprocessData(object):
 
     def _next_simulation_number(self, store):
 
-        def sim_numbers_for_lane(lane):
-            X_subelements = dir(store.root.__getattr__(lane).X)
-            samples = filter(lambda e: re.match(r'_\d{4,5}', e), X_subelements)
-            return list(map(lambda e: int(re.search(r'\d{4,5}', e).group()), samples))
-
-        try:
-            sim_numbers = sim_numbers_for_lane(list(self.lanes)[0])
-        except NoSuchNodeError:
-            return 1
-
-        assert all((sim_numbers_for_lane(lane) == sim_numbers for lane in self.lanes))
+        sim_numbers = get_sim_numbers_in_preprocess_file(
+            self.preprocess_file, lane_list=self.lanes)
         return max(sim_numbers, default=0) + 1
 
     def process_e1_data(self, filename, interval, start_time = 0,  average_over_cycle = False):
