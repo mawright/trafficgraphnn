@@ -81,13 +81,15 @@ class RandTripGeneratorWrapper(object):
             '--net-file', self.netfile,
             '--output-trip-file', tripfile,
             '--route-file', routefile,
-            '--binomial', str(self.binomial),
             '--period', str(self.period),
             '--begin', str(self.start_time),
             '--end', str(self.end_time),
             '--trip-attributes', self.trip_attrib,
             '--vehicle-class', 'passenger',
         ]
+        if self.binomial is not None:
+            randtrip_args.extend([
+                '--binomial', str(self.binomial)])
         if self.thru_only:
             randtrip_args.extend([
                 '--weights-prefix', trip_weights_prefix])
