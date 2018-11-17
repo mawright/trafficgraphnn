@@ -1,7 +1,6 @@
 from __future__ import absolute_import, print_function, division
 
 import os
-import sys
 import numpy as np
 import six
 from lxml import etree
@@ -11,7 +10,7 @@ import logging
 from sumolib import checkBinary
 import sumolib
 
-from trafficgraphnn.utils import get_sumo_tools_dir, get_net_dir, get_net_name
+from trafficgraphnn.utils import get_net_dir, get_net_name
 from trafficgraphnn.genconfig import detectors, tls_config
 from trafficgraphnn.gendata import RandTripGeneratorWrapper
 
@@ -149,11 +148,12 @@ class ConfigGenerator(object):
         distance_to_tls=5,
         frequency=60,
         detector_length=None,
+        verbose=True,
     ):
         def_filepath, output_filepath = detectors.generate_detector_set(
             self.net_output_file, detector_type, distance_to_tls,
             detector_def_file, detector_output_file, detector_length,
-            frequency)
+            frequency, verbose=verbose)
 
         self.detector_def_files.append(def_filepath)
         self.detector_output_files.append(output_filepath)
@@ -164,11 +164,13 @@ class ConfigGenerator(object):
         detector_output_file=None,
         distance_to_tls=5,
         frequency=60,
+        verbose=True,
     ):
         def_filepath, output_filepath = detectors.generate_e1_detectors(
             self.net_output_file, distance_to_tls=distance_to_tls,
             detector_def_file=detector_def_file_name,
-            detector_output_file=detector_output_file, frequency=frequency)
+            detector_output_file=detector_output_file, frequency=frequency,
+            verbose=verbose)
 
         self.detector_def_files.append(def_filepath)
         self.detector_output_files.append(output_filepath)
@@ -180,12 +182,14 @@ class ConfigGenerator(object):
         distance_to_tls=0,
         detector_length=None,
         frequency=60,
+        verbose=True,
     ):
         def_filepath, output_filepath = detectors.generate_e2_detectors(
             self.net_output_file, distance_to_tls=distance_to_tls,
             detector_def_file=detector_def_file_name,
             detector_output_file=detector_output_file,
-            detector_length=detector_length, frequency=frequency)
+            detector_length=detector_length, frequency=frequency,
+            verbose=verbose)
 
         self.detector_def_files.append(def_filepath)
         self.detector_output_files.append(output_filepath)

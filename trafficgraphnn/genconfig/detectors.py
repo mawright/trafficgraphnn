@@ -59,7 +59,8 @@ detector_type_tag_dict = {
 def generate_detector_set(netfile, detector_type, distance_to_tls,
                           detector_def_file=None,
                           detector_output_file=None, detector_length=None,
-                          frequency=60, per_detector_output_files=True):
+                          frequency=60, per_detector_output_files=True,
+                          verbose=True):
 
     if detector_type not in ['e1', 'e2']:
         raise ValueError('Unknown detector type: {}'.format(detector_type))
@@ -88,12 +89,12 @@ def generate_detector_set(netfile, detector_type, distance_to_tls,
         detector_output_file = os.path.join(
             default_output_data_dir,
             '{}_{}_output.xml'.format(
-                net_name, detector_type)            
+                net_name, detector_type)
         )
         relative_output_filename = os.path.relpath(
             detector_output_file,
             os.path.dirname(detector_def_file))
-        
+
     detector_tag = detector_type_tag_dict[detector_type]
 
     detectors_xml = sumolib.xml.create_document("additional")
@@ -107,11 +108,13 @@ def generate_detector_set(netfile, detector_type, distance_to_tls,
             lane_length = lane.getLength()
             lane_id = lane.getID()
 
-            logger.debug("Creating detector for lane %s", str(lane_id))
+            if verbose:
+                logger.debug("Creating detector for lane %s", str(lane_id))
 
             if lane_id in lanes_with_detectors:
-                logger.warning(
-                    "Detectors for lane %s already generated", str(lane_id))
+                if verbose:
+                    logger.warning(
+                        "Detectors for lane %s already generated", str(lane_id))
                 continue
 
             lanes_with_detectors.add(lane_id)
@@ -125,19 +128,17 @@ def generate_detector_set(netfile, detector_type, distance_to_tls,
                     "{}_{}_{}".format(
                         detector_type, lane_id, i).replace('/', '-')
                 )
-                # --- inserted by simon ---
                 if per_detector_output_files == True: #manipulated by simon
                     detector_output_file = os.path.join(
                         default_output_data_dir,
                         '{}_{}_{}_{}_output.xml'.format(
                             net_name, detector_type, lane_id, i).replace('/', '-')
                     )
-                    
+
                 relative_output_filename = os.path.relpath(
                     detector_output_file,
                     os.path.dirname(detector_def_file))
-                    
-                # --- end ---
+
                 detector_xml.setAttribute("file", relative_output_filename)
                 detector_xml.setAttribute("lane", str(lane_id))
 
@@ -169,15 +170,16 @@ def generate_detector_set(netfile, detector_type, distance_to_tls,
 
 
 def generate_e1_detectors(netfile, distance_to_tls, detector_def_file=None,
-                          detector_output_file=None, frequency=60):
+                          detector_output_file=None, frequency=60,
+                          verbose=True):
     return generate_detector_set(
         netfile, 'e1', iterfy(distance_to_tls), detector_def_file,
-        detector_output_file, frequency=frequency)
+        detector_output_file, frequency=frequency, verbose=verbose)
 
 
 def generate_e2_detectors(netfile, distance_to_tls, detector_def_file=None,
                           detector_output_file=None, detector_length=250,
-                          frequency=60):
+                          frequency=60, verbose=True):
 
     distance_to_tls = iterfy(distance_to_tls)
     detector_length = iterfy(detector_length)
@@ -196,4 +198,4 @@ def generate_e2_detectors(netfile, distance_to_tls, detector_def_file=None,
 
     return generate_detector_set(
         netfile, 'e2', distance_to_tls, detector_def_file,
-        detector_output_file, detector_length, frequency)
+        detector_output_file, detector_length, frequency, verbose)
