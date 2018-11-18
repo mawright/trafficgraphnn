@@ -33,7 +33,7 @@ class ReshapeFoldInLanes(Layer):
         return x_reshaped
 
     def compute_output_shape(self, input_shape):
-        if input_shape[0] is not None:
+        if input_shape[0] is not None and input_shape[2] is not None:
             first_dim = input_shape[0] * input_shape[2]
         else:
             first_dim = None
