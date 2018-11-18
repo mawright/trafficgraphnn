@@ -63,9 +63,11 @@ class Batch(object):
                                for filename, sim_number
                                in zip(filenames, sim_indeces)]
 
-    def iterate(self):
+    def iterate(self, try_broadcast_A=False):
         for output in self.readers:
-            yield pad_and_stack_batch(output, self.pad_scalars)
+            yield pad_and_stack_batch(output,
+                                      self.pad_scalars,
+                                      try_broadcast_A=try_broadcast_A)
 
     @classmethod
     def from_file(cls,
@@ -175,7 +177,7 @@ def can_broadcast_A_matrices_over_time(output_list):
     return all_same_As
 
 
-def pad_and_stack_batch(outputs, pad_scalars):
+def pad_and_stack_batch(outputs, pad_scalars, try_broadcast_A=False):
     empty_timesteps_per_gen = [[timestep is None for timestep in gen] for
                                gen in outputs]
 
@@ -220,7 +222,7 @@ def pad_and_stack_batch(outputs, pad_scalars):
     X_per_gen = [[variables[1] for variables in output] for output in outputs]
     Y_per_gen = [[variables[2] for variables in output] for output in outputs]
 
-    if can_broadcast_A_matrices_over_time(outputs):
+    if try_broadcast_A and can_broadcast_A_matrices_over_time(outputs):
         A = np.expand_dims(
             np.stack([A_t[0] for A_t in A_matrices]), 1)
     else:
