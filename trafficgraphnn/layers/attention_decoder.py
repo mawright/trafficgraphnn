@@ -82,6 +82,9 @@ class AttentionDecoder(Recurrent):
 
         self.batch_size, self.timesteps, self.input_dim = input_shape
 
+        self.input_spec = [
+            InputSpec(shape=(self.batch_size, self.timesteps, self.input_dim))]
+
         if self.stateful:
             super(AttentionDecoder, self).reset_states()
 
@@ -212,8 +215,6 @@ class AttentionDecoder(Recurrent):
                                    regularizer=self.recurrent_regularizer,
                                    constraint=self.recurrent_constraint)
 
-        self.input_spec = [
-            InputSpec(shape=(self.batch_size, self.timesteps, self.input_dim))]
         self.built = True
 
     def call(self, x):
@@ -223,7 +224,8 @@ class AttentionDecoder(Recurrent):
         # counter of number of input timesteps
         if self.causal:
             start = self.causal_lag
-            stop = self.timesteps + start
+            length = self.timesteps or K.shape(x)[1]
+            stop = length + start
             self._input_t = K.arange(start, stop)
 
         # apply the a dense layer over the time dimension of the sequence
@@ -277,8 +279,7 @@ class AttentionDecoder(Recurrent):
             mask_future = K.cast(is_future, 'float32') * -10e9
             mask_past = K.cast(is_beyond_horizon, 'float32') * -10e9
             mask = mask_future + mask_past
-            et = et + K.expand_dims(K.expand_dims(mask, -1), 0)            
-        
+            et = et + K.expand_dims(K.expand_dims(mask, -1), 0)
 
         at = K.softmax(et, axis=1)
 
