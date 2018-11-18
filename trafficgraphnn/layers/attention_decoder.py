@@ -85,10 +85,9 @@ class AttentionDecoder(Recurrent):
         self.input_spec = [
             InputSpec(shape=(self.batch_size, self.timesteps, self.input_dim))]
 
+        self.states = [None, None, None]  # y, s
         if self.stateful:
             super(AttentionDecoder, self).reset_states()
-
-        self.states = [None, None, None]  # y, s
 
         """
             Matrices for creating the context vector
