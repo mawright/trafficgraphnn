@@ -16,7 +16,6 @@ import six
 
 import numpy as np
 import pandas as pd
-from tables.exceptions import NoSuchNodeError
 
 from trafficgraphnn.sumo_output_reader import SumoLaneOutputReader, SumoNetworkOutputReader
 from trafficgraphnn.utils import (
