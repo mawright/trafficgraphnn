@@ -85,7 +85,7 @@ def generate_detector_set(netfile, detector_type, distance_to_tls,
             '{}_{}.add.xml'.format(
                 net_name, detector_type)
         )
-    if detector_output_file is None and per_detector_output_files == False: #manipulated by simon
+    if detector_output_file is None and per_detector_output_files == False:
         detector_output_file = os.path.join(
             default_output_data_dir,
             '{}_{}_output.xml'.format(
@@ -128,7 +128,7 @@ def generate_detector_set(netfile, detector_type, distance_to_tls,
                     "{}_{}_{}".format(
                         detector_type, lane_id, i).replace('/', '-')
                 )
-                if per_detector_output_files == True: #manipulated by simon
+                if per_detector_output_files == True:
                     detector_output_file = os.path.join(
                         default_output_data_dir,
                         '{}_{}_{}_{}_output.xml'.format(
@@ -171,15 +171,17 @@ def generate_detector_set(netfile, detector_type, distance_to_tls,
 
 def generate_e1_detectors(netfile, distance_to_tls, detector_def_file=None,
                           detector_output_file=None, frequency=60,
-                          verbose=True):
+                          per_detector_output_files=True, verbose=True):
     return generate_detector_set(
         netfile, 'e1', iterfy(distance_to_tls), detector_def_file,
-        detector_output_file, frequency=frequency, verbose=verbose)
+        detector_output_file, frequency=frequency,
+        per_detector_output_files=per_detector_output_files, verbose=verbose)
 
 
 def generate_e2_detectors(netfile, distance_to_tls, detector_def_file=None,
                           detector_output_file=None, detector_length=250,
-                          frequency=60, verbose=True):
+                          frequency=60, per_detector_output_files=True,
+                          verbose=True):
 
     distance_to_tls = iterfy(distance_to_tls)
     detector_length = iterfy(detector_length)
@@ -198,4 +200,5 @@ def generate_e2_detectors(netfile, distance_to_tls, detector_def_file=None,
 
     return generate_detector_set(
         netfile, 'e2', distance_to_tls, detector_def_file,
-        detector_output_file, detector_length, frequency, verbose)
+        detector_output_file, detector_length, frequency,
+        per_detector_output_files=per_detector_output_files, verbose=verbose)
