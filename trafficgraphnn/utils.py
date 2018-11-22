@@ -54,30 +54,56 @@ DetInfo = collections.namedtuple('det_info', ['id', 'info'])
 class IterParseWrapper(object):
     _tag = None
     _schema_file = None
-    def __init__(self, xml_file, validate=False):
+    def __init__(self, xml_file, validate=False, id_subset=None):
         if validate:
             try:
                 schema_file = self._schema_file
                 schema = etree.XMLSchema(file=schema_file)
-                tree = etree.iterparse(xml_file, schema=schema, tag=self._tag)
+                tree = etree.iterparse(xml_file,
+                                       schema=schema,
+                                       events=('start', 'end'))
             except etree.XMLSchemaParseError:
                 _logger.warning(
                     'Error in xml validation of %s, skipping validation.',
                     xml_file,
                     exc_info=True)
-                tree = etree.iterparse(xml_file, tag=self._tag)
+                tree = etree.iterparse(xml_file, events=('start', 'end'))
         else:
-            tree = etree.iterparse(xml_file, tag=self._tag)
+            tree = etree.iterparse(xml_file, events=('start', 'end'))
         self.tree = tree
+        _, self.root = six.next(tree)
+        if id_subset is not None:
+            self.get_next = self.__get_next_in_subset
+            self.id_subset = iterfy(id_subset)
+        else:
+            self.get_next = self.__get_next_unfiltered
         self.get_next()
 
-    def get_next(self):
-        _, self.item = six.next(self.tree)
+    def __get_next_unfiltered(self):
+        while True:
+            event, elem = six.next(self.tree)
+            if event == 'end' and elem.tag == self._tag:
+                self.item = elem
+                return
+
+    def __get_next_in_subset(self):
+        while True:
+            event, elem = six.next(self.tree)
+            if (event == 'end'
+                and elem.tag == self._tag
+                and elem.get('id') in self.id_subset
+            ):
+                self.item = elem
+                return
+            else:
+                # elem.clear()
+                self.root.clear()
 
     def iterate_until(self, stop_time):
         while self.interval_end() <= stop_time:
             yield self.item
-            self.item.clear()
+            # self.item.clear()
+            self.root.clear()
             try:
                 self.get_next()
             except StopIteration:
