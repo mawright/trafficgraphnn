@@ -4,7 +4,10 @@ import os
 import re
 import sys
 from itertools import zip_longest, chain, repeat
+import warnings
+import tables
 
+import numpy as np
 import pandas as pd
 import six
 from lxml import etree
@@ -128,6 +131,92 @@ class E1IterParseWrapper(IterParseWrapper):
 class E2IterParseWrapper(IterParseWrapper):
     _tag = 'interval'
     _schema_file = os.path.join(get_sumo_dir(), 'data', 'xsd', 'det_e2_file.xsd')
+
+
+_col_dtype_key = {
+    'begin': float,
+    'end': float,
+    'id': str,
+    'nVehContrib': int,
+    'flow': float,
+    'occupancy': float,
+    'speed': float,
+    'length': float,
+    # e2
+    'sampledSeconds': float,
+    'nVehEntered': int,
+    'nVehLeft': int,
+    'nVehSeen': int,
+    'meanSpeed': float,
+    'meanTimeLoss': float,
+    'meanOccupancy': float,
+    'maxOccupancy': float,
+    'meanMaxJamLengthInVehicles': float,
+    'meanMaxJamLengthInMeters': float,
+    'maxJamLengthInVehicles': int,
+    'maxJamLengthInMeters': float,
+    'jamLengthInVehiclesSum': int,
+    'jamLengthInMetersSum': float,
+    'meanHaltingDuration': float,
+    'maxHaltingDuration': float,
+    'haltingDurationSum': float,
+    'meanIntervalHaltingDuration': float,
+    'maxIntervalHaltingDuration': float,
+    'intervalHaltingDurationSum': float,
+    'startedHalts': float,
+    'meanVehicleNumber': float,
+    'maxVehicleNumber': int,
+    # tlsSwitch
+    'programID': str,
+    'duration': float,
+    'fromLane': str,
+    'toLane': str
+}
+
+
+def _append_to_store(store, buffer, all_ids):
+    converter = {col: _col_dtype_key[col]
+                      for col in buffer.keys()
+                      if col in _col_dtype_key}
+    df = pd.DataFrame.from_dict(buffer)
+    df = df.astype(converter)
+    df = df.set_index('begin')
+    for i in all_ids:
+        # sub_df = df.loc[df['id'] == i]
+        # sub_df = sub_df.set_index('begin')
+        sub_df = df.query(f"id == '{i}'")
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', tables.NaturalNameWarning)
+            store.append(f'raw_xml/{i}', sub_df)
+        assert len(store[f'raw_xml/{i}'].loc[0].shape) == 1
+
+
+def xml_to_df_hdf(parser,
+                  store_filename,
+                  complevel=7,
+                  complib='zlib',
+                  start_time=0,
+                  end_time=np.inf,
+                  buffer_size=1e5):
+    buffer = collections.defaultdict(list)
+    i = 0
+    all_ids = set()
+    with pd.HDFStore(
+        store_filename, complevel=complevel, complib=complib) as store:
+        for _ in parser.iterate_until(start_time):
+            pass
+        for row in parser.iterate_until(end_time):
+            for k, v in row.items():
+                buffer[k].append(v)
+            all_ids.add(row.get('id'))
+            i += 1
+            if i >= buffer_size:
+                _append_to_store(store, buffer, all_ids)
+                buffer = collections.defaultdict(list)
+                i = 0
+        _append_to_store(store, buffer, all_ids)
+        pass
+    pass
 
 
 def get_preprocessed_filenames(directory):
