@@ -87,9 +87,11 @@ class ConfigGenerator(object):
             tls_config.tls_config(self.net_output_file)
 
     def gen_rand_network(
-        self, check_lane_foes_all=True,
-        rand_iterations=200, seed=None,
-        tlstype='static', gen_editable_xml=False
+        self, check_lane_foes_all=True, random_grid=False,
+        min_length=100, max_length=250,
+        rand_iterations=200, num_lanes=3, left_turn_lanes=0,
+        left_turn_lane_length=100, seed=None,
+        tlstype='static', gen_editable_xml=False,
     ):
         netgenerate_bin = checkBinary('netgenerate')
 
@@ -100,13 +102,19 @@ class ConfigGenerator(object):
             netgenerate_bin, '--rand',
             '--seed', str(seed),
             '--rand.iterations', str(rand_iterations),
+            '--rand.max-distance', str(max_length),
+            '--rand.min-distance', str(min_length),
             '--default-junction-type', 'traffic_light',
             '--tls.guess', 'true',
             '--tls.default-type', tlstype,
-            '--default.lanenumber', '2',
+            '--default.lanenumber', str(num_lanes),
+            '--turn-lanes', str(left_turn_lanes),
+            '--turn-lanes.length', str(left_turn_lane_length),
             '--check-lane-foes.all', str(check_lane_foes_all).lower(),
             '-o', self.net_output_file,
         ]
+        if random_grid:
+            netgen_args.extend(['--rand.grid', 'true'])
         if gen_editable_xml:
             plain_output_dir = os.path.join(self.net_config_dir, self.net_name)
             os.makedirs(plain_output_dir)
@@ -148,12 +156,14 @@ class ConfigGenerator(object):
         distance_to_tls=5,
         frequency=60,
         detector_length=None,
+        per_detector_output_files=True,
         verbose=True,
     ):
         def_filepath, output_filepath = detectors.generate_detector_set(
             self.net_output_file, detector_type, distance_to_tls,
             detector_def_file, detector_output_file, detector_length,
-            frequency, verbose=verbose)
+            frequency, per_detector_output_files=per_detector_output_files,
+            verbose=verbose)
 
         self.detector_def_files.append(def_filepath)
         self.detector_output_files.append(output_filepath)
@@ -164,12 +174,14 @@ class ConfigGenerator(object):
         detector_output_file=None,
         distance_to_tls=5,
         frequency=60,
+        per_detector_output_files=True,
         verbose=True,
     ):
         def_filepath, output_filepath = detectors.generate_e1_detectors(
             self.net_output_file, distance_to_tls=distance_to_tls,
             detector_def_file=detector_def_file_name,
             detector_output_file=detector_output_file, frequency=frequency,
+            per_detector_output_files=per_detector_output_files,
             verbose=verbose)
 
         self.detector_def_files.append(def_filepath)
@@ -182,6 +194,7 @@ class ConfigGenerator(object):
         distance_to_tls=0,
         detector_length=None,
         frequency=60,
+        per_detector_output_files=True,
         verbose=True,
     ):
         def_filepath, output_filepath = detectors.generate_e2_detectors(
@@ -189,6 +202,7 @@ class ConfigGenerator(object):
             detector_def_file=detector_def_file_name,
             detector_output_file=detector_output_file,
             detector_length=detector_length, frequency=frequency,
+            per_detector_output_files=per_detector_output_files,
             verbose=verbose)
 
         self.detector_def_files.append(def_filepath)
