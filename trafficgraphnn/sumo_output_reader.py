@@ -32,6 +32,8 @@ class SumoNetworkOutputReader(object):
 
         self.lane_readers = OrderedDict()
 
+        self._hdf_stores = {}
+
     def add_lane_reader(self, lane_id, reader):
         if lane_id not in self.lane_readers:
             self.lane_readers[lane_id] = reader
@@ -77,9 +79,25 @@ class SumoNetworkOutputReader(object):
         for lane in self.lane_readers.values():
             lane.union_green_intervals()
 
+    def _open_or_get_hdfstore(self, store_filename):
+        if store_filename in self._hdf_stores.keys():
+            return self._hdf_stores[store_filename]
+        else:
+            store = pd.HDFStore(store_filename, 'r')
+            self._hdf_stores[store_filename] = store
+            return store
+
+    def close_hdfstores(self):
+        for store in self._hdf_stores.values():
+            store.close()
+        self._hdf_stores = {}
 
 class SumoLaneOutputReader(object):
-    def __init__(self, sumolib_in_lane, out_lane, net_reader=None):
+    def __init__(self,
+                 sumolib_in_lane,
+                 out_lane,
+                 net_reader=None,
+                 raw_hdfstore_filename=None):
         self.sumolib_in_lane = sumolib_in_lane
         self.sumolib_out_lane = out_lane
         self.net_reader = net_reader
@@ -130,6 +148,12 @@ class SumoLaneOutputReader(object):
             self.net_reader.add_lane_reader(self.lane_id, self)
         self._initalized = False
 
+        if raw_hdfstore_filename is not None:
+            self.read_from_hdf = True
+            self.raw_hdf_filename = raw_hdfstore_filename
+        else:
+            self.read_from_hdf = False
+
     def _parse_detector_info(self):
         det_dict = self.networkx_node['detectors']
         # loop (e1) detectors
@@ -166,13 +190,19 @@ class SumoLaneOutputReader(object):
         self.e2_output_file = os.path.join(net_dir,
                                            e2_detector.info['file'])
 
+    def _initialize_parser(self, start_cycle=0):
+        if self.read_from_hdf:
+            self._init_hdfstore_parser()
+        else:
+            self._init_detector_xml_parsers(start_cycle)
+
     def _init_detector_xml_parsers(self, start_cycle=0):
         self.parsed_xml_e1_stopbar_detector = E1IterParseWrapper(
-            self.stopbar_output_file, True)
+            self.stopbar_output_file, True, id_subset=self.stopbar_detector_id)
         self.parsed_xml_e1_adv_detector = E1IterParseWrapper(
-            self.adv_output_file, True)
+            self.adv_output_file, True, id_subset=self.adv_detector_id)
         self.parsed_xml_e2_detector = E2IterParseWrapper(
-            self.e2_output_file, True)
+            self.e2_output_file, True, id_subset=self.e2_detector_id)
 
         if start_cycle > 0:
             prev_start = self.nth_cycle_interval(start_cycle - 1)[0]
@@ -192,6 +222,60 @@ class SumoLaneOutputReader(object):
         self.next_cycle_parsed = self._parse_xmls_for_cycle(start_cycle)
 
         self._initalized = True
+
+    def _init_hdfstore_parser(self, start_cycle=0):
+        self.store = self.net_reader._open_or_get_hdfstore(self.raw_hdf_filename)
+
+        if start_cycle > 0:
+            self.this_cycle_parsed = self._read_cycle_from_hdf(start_cycle - 1)
+        else:
+            first_queue_period_start = self.nth_cycle_interval(0)[0]
+            self.this_cycle_parsed = self._read_period_from_hdf(-1, 0, first_queue_period_start)
+
+        self.next_cycle_parsed = self._read_cycle_from_hdf(start_cycle)
+        self._initalized = True
+
+    def _read_cycle_from_hdf(self, num_cycle):
+        start_time, end_time = self.nth_cycle_interval(num_cycle)
+        return self._read_period_from_hdf(num_cycle, start_time, end_time)
+
+    def _read_period_from_hdf(self, num_cycle, start_time=None, end_time=None):
+        if start_time is None or end_time is None:
+            start_time, end_time = self.nth_cycle_interval(num_cycle)
+
+        cycle_indexer = slice(start_time, end_time-1)
+
+        # advance detector
+        adv_detector_string = f'raw_xml/{self.adv_detector_id}'
+        list_time = list(self.store[adv_detector_string].loc[cycle_indexer].index)
+        list_occupancy = list(self.store[adv_detector_string].loc[cycle_indexer]['occupancy'])
+        list_nVehEntered = list(self.store[adv_detector_string].loc[cycle_indexer]['nVehEntered'])
+        list_nVehContrib = list(self.store[adv_detector_string].loc[cycle_indexer]['nVehContrib'])
+
+        # stopbar detector
+        stopbar_string = f'raw_xml/{self.stopbar_detector_id}'
+        list_time_stop = list(self.store[stopbar_string].loc[cycle_indexer].index)
+        list_nVehContrib_stop = list(self.store[stopbar_string].loc[cycle_indexer]['nVehContrib'])
+
+        # e2 detector
+        e2_string = f'raw_xml/{self.e2_detector_id}'
+        list_time_e2 = list(self.store[e2_string].loc[cycle_indexer].index)
+        list_startedHalts_e2 = list(self.store[e2_string].loc[cycle_indexer]['startedHalts'])
+        list_max_jam_length_m_e2 = list(self.store[e2_string].loc[cycle_indexer]['maxJamLengthInMeters'])
+        list_max_jam_length_veh_e2 = list(self.store[e2_string].loc[cycle_indexer]['maxJamLengthInVehicles'])
+        list_jam_length_sum_e2 = list(self.store[e2_string].loc[cycle_indexer]['jamLengthInMetersSum'])
+
+        interval_data = _Queueing_Period_Data(
+            num_cycle, start_time=start_time, end_time=end_time,
+            list_time_stop=list_time_stop, list_nVehContrib_stop=list_nVehContrib_stop,
+            list_time=list_time, list_occupancy=list_occupancy,
+            list_nVehEntered=list_nVehEntered, list_nVehContrib=list_nVehContrib,
+            list_time_e2=list_time_e2, list_startedHalts_e2=list_startedHalts_e2,
+            list_max_jam_length_m_e2=list_max_jam_length_m_e2,
+            list_max_jam_length_veh_e2=list_max_jam_length_veh_e2,
+            list_jam_length_sum_e2=list_jam_length_sum_e2)
+
+        return interval_data
 
     def _parse_xmls_for_cycle(self, num_cycle):
         if self.this_cycle_parsed is not None and num_cycle < self.this_cycle_parsed.num_period:
@@ -243,7 +327,10 @@ class SumoLaneOutputReader(object):
         self.this_cycle_parsed = self.next_cycle_parsed
         assert self.this_cycle_parsed is not None
         last_cycle = self.this_cycle_parsed.num_period
-        self.next_cycle_parsed = self._parse_xmls_for_cycle(last_cycle + 1)
+        if self.read_from_hdf:
+            self.next_cycle_parsed = self._read_cycle_from_hdf(last_cycle + 1)
+        else:
+            self.next_cycle_parsed = self._parse_xmls_for_cycle(last_cycle + 1)
 
     def add_out_lane(self, out_lane_id):
         if isinstance(out_lane_id, sumolib.net.Lane):
@@ -268,7 +355,7 @@ class SumoLaneOutputReader(object):
     def parse_cycle_data(self, num_phase):
         #parse the data from the dataframes and write to the arrays in every cycle
         if not self._initalized:
-            self._init_detector_xml_parsers()
+            self._initialize_parser(num_phase)
 
         start, end = self.nth_cycle_interval(num_phase)
 
@@ -407,9 +494,15 @@ class SumoLaneOutputReader(object):
         (phase_start_old, phase_length_old, duration_green_light_old
                     ) = get_tls_data(self.net_reader.parsed_xml_tls, self.lane_id)
 
-        assert phase_start_old == self.phase_start
-        assert phase_length_old == self.phase_length
-        assert duration_green_light_old == self.duration_green_light
+        if phase_start_old != self.phase_start:
+            _logger.warning('Lane %s: phase_start_old = %g, phase_start = %g',
+                            self.lane_id, phase_start_old, self.phase_start)
+        if phase_length_old != self.phase_length:
+            _logger.warning('Lane %s: phase_length_old = %g, phase_length = %g',
+                            self.lane_id, phase_length_old, self.phase_length)
+        if duration_green_light_old != self.duration_green_light:
+            _logger.warning('Lane %s: duration_green_light_old = %g, duration_green_light = %g',
+                            self.lane_id, duration_green_light_old, self.duration_green_light)
 
     def nth_green_phase_intervals(self, n):
         """
