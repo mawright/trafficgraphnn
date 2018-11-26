@@ -13,6 +13,9 @@ import math
 import re
 from collections import OrderedDict
 import six
+from contextlib import ExitStack
+import warnings
+import tables
 
 import numpy as np
 import pandas as pd
@@ -27,8 +30,13 @@ _logger = logging.getLogger(__name__)
 
 
 class PreprocessData(object):
-    def __init__(self, sumo_network, preproc_file_number=None, lane_order=None, detector_data_dir='output'):
-        self.net_reader = SumoNetworkOutputReader(sumo_network)
+    def __init__(self,
+                 sumo_network,
+                 preproc_file_number=None,
+                 lane_order=None,
+                 detector_data_dir='output',
+                 extracted_detector_hdf=None):
+        self.sumo_network = sumo_network
         if preproc_file_number is None:
             preproc_file_number = self._next_file_number()
         self.preproc_file_number = preproc_file_number
@@ -45,31 +53,29 @@ class PreprocessData(object):
         if not os.path.exists(os.path.dirname(self.preprocess_file)):
             os.makedirs(os.path.dirname(self.preprocess_file))
 
-        lanes = [lane for edge in self.sumolib_net.getEdges() for lane in edge.getLanes()]
+        self.extracted_detector_hdf = extracted_detector_hdf
+
+        self.lanes = [
+            lane.getID() for edge in self.sumolib_net.getEdges()
+            for lane in edge.getLanes() if len(lane.getOutgoing()) > 0]
 
         if lane_order is not None:
-            lanes = [lane for lane in lane_order if lane in lanes]
+            self.lanes = [lane for lane in lane_order if lane in self.lanes]
 
-        for lane in lanes:
-            try:
-                out_lane = lane.getOutgoing()[0].getToLane()
-            except IndexError:  # this lane has no outgoing lanes
-                continue
-            lane_reader = SumoLaneOutputReader(lane, out_lane, self.net_reader)
-            for conn in lane.getOutgoing()[1:]:
-                lane_reader.add_out_lane(conn.getToLane().getID())
-
-    def run_defaults(self, lanes=None, complevel=5, complib='zlib'):
-        self.run_liu_method()
+    def run_defaults(self, lanes=None, complevel=5, complib='zlib',
+                     input_data_hdf_file=None):
+        self.run_liu_method(input_data_hdf_file)
         self.read_data(complevel=complevel, complib=complib)
         self.extract_liu_results(complevel=complevel, complib=complib)
         self.write_per_lane_fixed_table(complevel=complevel, complib=complib)
 
-    def run_liu_method(self):
+    def run_liu_method(self, input_data_hdf=None):
         liu_runner = LiuEtAlRunner(
-            self.sumo_network, lane_subset=self.lanes, simu_num=self.preproc_file_number)
+            self.sumo_network, lane_subset=self.lanes,
+            simu_num=self.preproc_file_number, input_data_hdf_file=input_data_hdf)
         num_liu_phases = liu_runner.get_max_num_phase()
         liu_runner.run_up_to_phase(num_liu_phases)
+        liu_runner.reader.close_hdfstores()
 
     def extract_liu_results(self, lanes=None, complevel=5, complib='zlib'):
         if lanes is None:
@@ -92,7 +98,10 @@ class PreprocessData(object):
                                           & liu_df.columns.get_level_values(1).isin(
                                               ['time', 'estimated hybrid'])]
                 lane_df.columns = ['time', 'liu_estimated']
-                store.append('{}/liu_results/_{:04}'.format(lane, sim_number), lane_df)
+                lane_df = lane_df.drop_duplicates()
+                with warnings.catch_warnings():
+                    warnings.simplefilter('ignore', tables.NaturalNameWarning)
+                    store.append('{}/liu_results/_{:04}'.format(lane, sim_number), lane_df)
         _logger.info('Added liu results to file %s', store.filename)
 
     def read_data(self, start_time=0, end_time=np.inf,
@@ -101,24 +110,38 @@ class PreprocessData(object):
 
         light_timings = self.read_light_timings(start_time=start_time, end_time=end_time)
 
-        with pd.HDFStore(self.preprocess_file, complevel=complevel, complib=complib) as store:
+        with ExitStack() as store_stack:
+            store = store_stack.enter_context(
+                pd.HDFStore(self.preprocess_file, complevel=complevel, complib=complib))
+            if self.extracted_detector_hdf is not None:
+                extracted_detector_store = store_stack.enter_context(
+                    pd.HDFStore(self.extracted_detector_hdf, 'r'))
+            else:
+                extracted_detector_store = None
+
             sim_number = self._next_simulation_number(store)
-            for lane in self.lanes:
-                e1_data = self.read_e1_data_for_lane(lane, start_time, end_time,
-                                                     features=e1_features)
-                for det, data in e1_data.items():
-                    store.append('{}/e1/{}/_{:04}'.format(lane, det, sim_number),
-                                 data)
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', tables.NaturalNameWarning)
+                for lane in self.lanes:
+                    e1_data = self.read_e1_data_for_lane(
+                        lane, start_time, end_time,
+                        features=e1_features,
+                        extracted_detector_store=extracted_detector_store)
+                    for det, data in e1_data.items():
+                        store.append('{}/e1/{}/_{:04}'.format(lane, det, sim_number),
+                                     data)
 
-                e2_data = self.read_e2_data_for_lane(lane, start_time, end_time,
-                                                     features=e2_features)
-                for det, data in e2_data.items():
-                    store.append('{}/e2/{}/_{:04}'.format(lane, det, sim_number),
-                                 data)
+                    e2_data = self.read_e2_data_for_lane(
+                        lane, start_time, end_time,
+                        features=e2_features,
+                        extracted_detector_store=extracted_detector_store)
+                    for det, data in e2_data.items():
+                        store.append('{}/e2/{}/_{:04}'.format(lane, det, sim_number),
+                                     data)
 
-                store.append('{}/green/_{:04}'.format(lane, sim_number),
-                             light_timings[lane].rename('green'))
-        self.store_adjacency_tables(complevel=complevel, complib=complib)
+                    store.append('{}/green/_{:04}'.format(lane, sim_number),
+                                light_timings[lane].rename('green'))
+            self.store_adjacency_tables(complevel=complevel, complib=complib)
 
     def store_adjacency_tables(self,
                                downstream=True,
@@ -243,24 +266,12 @@ class PreprocessData(object):
         _logger.info('Done.')
 
     @property
-    def parsed_xml_tls(self):
-        return self.net_reader.parsed_xml_tls
-
-    @property
-    def sumo_network(self):
-        return self.net_reader.sumo_network
-
-    @property
     def graph(self):
         return self.sumo_network.graph
 
     @property
     def sumolib_net(self):
         return self.sumo_network.net
-
-    @property
-    def lanes(self):
-        return self.net_reader.lane_readers.keys()
 
     def get_liu_results(self, lane_ID, phase):
         # return series with parameter time, ground-truth,
@@ -286,7 +297,7 @@ class PreprocessData(object):
         for filename in file_list:
             if detector_ID in filename:
                 file_path = os.path.join(self.detector_data_path, filename)
-                parsed_xml_e2_detector = E2IterParseWrapper(file_path, True)
+                parsed_xml_e2_detector = E2IterParseWrapper(file_path, True, id_subset=detector_ID)
                 for interval in parsed_xml_e2_detector.iterate_until(start_time+duration_in_sec):
                     interval_time = int(float(interval.attrib.get('begin')))
                     det_id = interval.attrib.get('id')
@@ -366,7 +377,8 @@ class PreprocessData(object):
         return det_by_pos
 
     def read_data_for_lane_for_det_type(self, lane_id, det_type, features,
-                                        start_time=0, end_time=np.inf):
+                                        start_time=0, end_time=np.inf,
+                                        extracted_detector_store=None):
         if det_type == 'e1':
             parser_class = E1IterParseWrapper
         elif det_type == 'e2':
@@ -391,22 +403,27 @@ class PreprocessData(object):
             pass
 
         for d, detector in enumerate(det_by_pos):
-            filename = os.path.join(os.path.dirname(self.sumo_network.netfile),
-                                    detector.info['file'])
+            if extracted_detector_store is None:
+                filename = os.path.join(os.path.dirname(self.sumo_network.netfile),
+                                        detector.info['file'])
 
-            parser = parser_class(filename, validate=True)
-            data = {feat: [] for feat in features}
-            interval_begins = []
-            for _ in parser.iterate_until(start_time):
-                continue
-            for interval in parser.iterate_until(end_time):
-                for feat in features:
-                    data[feat].append(float(interval.attrib.get(feat)))
-                interval_begins.append(int(float(interval.attrib.get('begin'))))
-            df = pd.DataFrame(data)
+                parser = parser_class(filename, validate=True, id_subset=detector.id)
+                data = {feat: [] for feat in features}
+                interval_begins = []
+                for _ in parser.iterate_until(start_time):
+                    continue
+                for interval in parser.iterate_until(end_time):
+                    for feat in features:
+                        data[feat].append(float(interval.attrib.get(feat)))
+                    interval_begins.append(int(float(interval.attrib.get('begin'))))
+                df = pd.DataFrame(data)
 
-            index = pd.Int64Index(interval_begins, name='time')
-            df = df.set_index(index)
+                index = pd.Int64Index(interval_begins, name='time')
+                df = df.set_index(index)
+            else:
+                df = extracted_detector_store[f'raw_xml/{detector.id}']
+                df = df[features]
+                df.index.rename('time', inplace=True)
 
             try:
                 df['pos'] = pos[d]
@@ -424,36 +441,55 @@ class PreprocessData(object):
         return lane_data
 
     def read_e1_data_for_lane(self, lane_id, start_time=0, end_time=np.inf,
-                              features=None):
+                              features=None,
+                              extracted_detector_store=None):
         if features is None:
             features = ['nVehContrib',
                         'occupancy',
                         'speed',
                         'pos',
                         'rel_pos']
-        return self.read_data_for_lane_for_det_type(lane_id, 'e1', features=features,
-                                       start_time=start_time, end_time=end_time)
+        return self.read_data_for_lane_for_det_type(
+            lane_id, 'e1', features=features,
+            start_time=start_time, end_time=end_time,
+            extracted_detector_store=extracted_detector_store)
 
     def read_e2_data_for_lane(self, lane_id, start_time=0, end_time=np.inf,
-                              features=None):
+                              features=None,
+                              extracted_detector_store=None):
         if features is None:
             features = ['nVehSeen',
                         'maxJamLengthInMeters',
                         'maxJamLengthInVehicles']
 
-        return self.read_data_for_lane_for_det_type(lane_id, 'e2', features=features,
-                                       start_time=start_time, end_time=end_time)
+        return self.read_data_for_lane_for_det_type(
+            lane_id, 'e2', features=features,
+            start_time=start_time, end_time=end_time,
+            extracted_detector_store=extracted_detector_store)
 
     def read_light_timings(self, lane_subset=None, start_time=0, end_time=np.inf):
-        self.net_reader.reset_phase_timing_info()
-        self.net_reader.parse_phase_timings()
+        net_reader = SumoNetworkOutputReader(self.sumo_network)
 
         if lane_subset is None:
-            lane_subset = self.net_reader.lane_readers.keys()
+            lane_subset = self.lanes
+        else:
+            lane_subset = [lane for lane in lane_subset if lane in self.lanes]
+
+        for lane_id in lane_subset:
+            lane = self.sumolib_net.getLane(lane_id)
+            try:
+                out_lane = lane.getOutgoing()[0].getToLane()
+            except IndexError:  # this lane has no outgoing lanes
+                continue
+            lane_reader = SumoLaneOutputReader(
+                lane, out_lane, net_reader, self.extracted_detector_hdf)
+            for conn in lane.getOutgoing()[1:]:
+                lane_reader.add_out_lane(conn.getToLane().getID())
+        net_reader.parse_phase_timings()
 
         green_intervals_by_lane = {
-            lane: self.net_reader.lane_readers[lane].green_intervals
-            for lane in lane_subset}
+            lane: net_reader.lane_readers[lane].green_intervals
+            for lane in net_reader.lane_readers.keys()}
 
         if np.isinf(end_time):
             end_time = max(interval[-1][-1] for interval in
@@ -461,7 +497,7 @@ class PreprocessData(object):
 
         data_dict = {}
         for lane in lane_subset:
-            green_intervals = self.net_reader.lane_readers[lane].green_intervals
+            green_intervals = net_reader.lane_readers[lane].green_intervals
             green_binary = [any(itv[0] <= x < itv[1] for itv in green_intervals)
                             for x in range(start_time, end_time)]
             data_dict[lane] = green_binary
@@ -580,6 +616,7 @@ class PreprocessData(object):
         return df_detector
 
     def calc_tls_data(self, lane_id):
+        raise NotImplementedError
         reader = self.net_reader.lane_readers[lane_id]
 
         return reader.phase_length, reader.phase_start
