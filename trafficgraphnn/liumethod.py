@@ -16,6 +16,7 @@ JAM_DENSITY = 0.13333  # hardcoded jam density value (veh/meter)
 
 class LiuEtAlRunner(object):
     def __init__(self, sumo_network,
+                 input_data_hdf_file=None,
                  lane_subset=None,
                  time_window=None,
                  store_while_running = True,
@@ -29,6 +30,7 @@ class LiuEtAlRunner(object):
         self.use_started_halts = use_started_halts
         self.simu_num = simu_num
         self.test_data = test_data
+        self.input_data_hdf_file = input_data_hdf_file
         # verify all lanes requested are actually in the network
         if lane_subset is None:
             # process all lanes
@@ -64,7 +66,7 @@ class LiuEtAlRunner(object):
 
         self.parse_phase_timings()
         self._init_max_per_green_estimates()
-        self._init_detector_xml_parsers()
+        self._init_detector_parsers()
 
     @property
     def graph(self):
@@ -85,9 +87,9 @@ class LiuEtAlRunner(object):
     def parse_phase_timings(self):
         self.reader.parse_phase_timings()
 
-    def _init_detector_xml_parsers(self):
+    def _init_detector_parsers(self):
         for lane in self.liu_lanes.values():
-            lane._init_detector_xml_parsers()
+            lane._init_detector_parsers()
 
     def run_up_to_phase(self, max_num_phase):
         # iterate on the single-step methods for each intersection until
@@ -357,7 +359,8 @@ class LiuLane(object):
         # (and leftover queue for if we need to use the input/output method in
         # any steps)
         self.reader = SumoLaneOutputReader(
-            sumolib_in_lane, out_lane, parent.parent.reader)
+            sumolib_in_lane, out_lane, parent.parent.reader,
+            parent.parent.input_data_hdf_file)
         self.parent = parent
 
         self._init_result_arrays()
@@ -524,8 +527,8 @@ class LiuLane(object):
 
         return self.green_intervals[n + 1]
 
-    def _init_detector_xml_parsers(self):
-        self.reader._init_detector_xml_parsers()
+    def _init_detector_parsers(self):
+        self.reader._initialize_parser()
 
     def _estimate_fixed_cycle_timings(self):
         self.reader._estimate_fixed_cycle_timings()
@@ -547,11 +550,12 @@ class LiuLane(object):
         :param num_phase: phase index
         :type num_phase: int
         """
-        assert num_phase < self.get_num_phases()
+        if num_phase >= self.num_queueing_intervals() - 1:
+            return
 
         start, end, curr_e1_stopbar, curr_e1_adv_detector, curr_e2_detector = self.parse_cycle_data(num_phase)
         self.breakpoint_identification(num_phase, start, end, curr_e1_stopbar, curr_e1_adv_detector)
-        self.C_identification_short_queue(start, end, curr_e1_stopbar)
+        self.C_identification_short_queue(num_phase, start, end, curr_e1_stopbar)
         self.queue_estimate(num_phase, start, end, curr_e1_adv_detector, curr_e1_stopbar)
         self.get_ground_truth_queue(num_phase, start, end, curr_e2_detector)
 
@@ -569,10 +573,12 @@ class LiuLane(object):
 
         next_red = self.nth_cycle_interval(num_phase + 1)[1]
 
-        assert next_red == end + self.phase_length
+        if not next_red == end + self.phase_length:
+            _logger.info('lane %s, next_red = %g, end + self.phase_length = %g',
+                         self.lane_id, next_red, end + self.phase_length)
 
         try:
-            for t in range(start, end+self.phase_length):
+            for t in range(start, next_red):
                 if curr_e1_adv_detector['nVehEntered'][t] == 1: #new vehicle enters the detector: start timer new timer and save old measurements
                     time_gap_vehicles.append(time_cnt)
                     point_of_time.append(t)
@@ -643,14 +649,15 @@ class LiuLane(object):
         if not bool_C_found:
             self.arr_breakpoint_C.append(-1)  #store breakpoints
 
-    def C_identification_short_queue(self, start, end, curr_e1_stopbar):
+    def C_identification_short_queue(self, num_phase, start, end, curr_e1_stopbar):
         #Calculating the time gap between vehicles
         #I am assuming that there is maximum only one vehicle per second on the detector
         point_of_time = []
         time_gap_vehicles = []
         time_cnt = 0
 
-        for t in range(start, end+self.phase_length):
+        next_red = self.nth_cycle_interval(num_phase + 1)[1]
+        for t in range(start, next_red):
             if curr_e1_stopbar['nVehContrib'][t] == 1: #new vehicle enters the detector: start timer new timer and save old measurements
                 time_gap_vehicles.append(time_cnt)
                 point_of_time.append(t)
