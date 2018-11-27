@@ -127,13 +127,11 @@ def batches_from_directories(directories,
     batched_sim_indeces = [sim_indeces[i:i + batch_size]
                          for i in range(0, len(sim_indeces), batch_size)]
 
-    batches = [Batch(f_batch, si_batch, window_size, A_name_list=A_name_list,
-                     x_feature_subset=x_feature_subset,
-                     y_feature_subset=y_feature_subset)
-               for f_batch, si_batch
-               in zip(batched_filenames, batched_sim_indeces)]
-
-    return batches
+    for f_batch, si_batch in zip(batched_filenames, batched_sim_indeces):
+        batch = Batch(f_batch, si_batch, window_size, A_name_list=A_name_list,
+                      x_feature_subset=x_feature_subset,
+                      y_feature_subset=y_feature_subset)
+        yield batch
 
 
 def get_pad_scalars(x_feature_subset, y_feature_subset):
