@@ -238,8 +238,19 @@ def get_sim_numbers_in_preprocess_store(store, lane_list=None):
             samples = filter(lambda e: re.match(r'_\d{4,5}', e), X_subelements)
             return list(map(lambda e: int(re.search(r'\d{4,5}', e).group()), samples))
 
+    def sim_numbers_for_lane_2(lane):
+        query_string = '{}/X/_{:04}'
+        i = 1
+        try:
+            while True:
+                X = store.get(query_string.format(lane, i))
+                i += 1
+        except KeyError:
+            pass
+        return list(range(1, i))
+
     try:
-        sim_numbers = sim_numbers_for_lane(list(lane_list)[0])
+        sim_numbers = sim_numbers_for_lane_2(list(lane_list)[0])
     except NoSuchNodeError:
         return []
 
