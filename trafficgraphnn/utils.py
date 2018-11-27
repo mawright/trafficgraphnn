@@ -254,7 +254,7 @@ def get_sim_numbers_in_preprocess_store(store, lane_list=None):
     except NoSuchNodeError:
         return []
 
-    assert all((sim_numbers_for_lane(lane) == sim_numbers for lane in lane_list))
+    assert all((sim_numbers_for_lane_2(lane) == sim_numbers for lane in lane_list))
     return sim_numbers
 
 
