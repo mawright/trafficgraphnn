@@ -215,8 +215,6 @@ def xml_to_df_hdf(parser,
                 buffer = collections.defaultdict(list)
                 i = 0
         _append_to_store(store, buffer, all_ids)
-        pass
-    pass
 
 
 def get_preprocessed_filenames(directory):
@@ -254,7 +252,7 @@ def get_sim_numbers_in_preprocess_store(store, lane_list=None):
     except NoSuchNodeError:
         return []
 
-    assert all((sim_numbers_for_lane_2(lane) == sim_numbers for lane in lane_list))
+    # assert all((sim_numbers_for_lane_2(lane) == sim_numbers for lane in lane_list))
     return sim_numbers
 
 
