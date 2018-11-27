@@ -1,17 +1,11 @@
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function
 
 from six.moves import zip
-from keras.engine.base_layer import Layer
-from keras.engine.base_layer import InputSpec
-from keras.utils.generic_utils import has_arg
-from keras.utils.generic_utils import object_list_uid
-from keras.utils.generic_utils import to_list
-from keras import backend as K
 
-from keras.layers import recurrent
-from keras.layers.wrappers import Wrapper, TimeDistributed
+from keras import backend as K
+from keras.engine.base_layer import InputSpec
+from keras.layers.wrappers import TimeDistributed, Wrapper
+from keras.utils.generic_utils import has_arg, object_list_uid
 
 
 class TimeDistributedMultiInput(TimeDistributed):
@@ -35,7 +29,7 @@ class TimeDistributedMultiInput(TimeDistributed):
 
         if len(batch_sizes) > 1:
             raise ValueError('Receieved tensors with incompatible batch sizes. '
-                            'Got tensors with shapes : ' + str(input_shape))
+                             'Got tensors with shapes : ' + str(input_shape))
         timesteps = [shape[1] for shape in input_shape if shape is not None]
         timesteps = set(timesteps)
         timesteps -= set([None])
@@ -44,7 +38,7 @@ class TimeDistributedMultiInput(TimeDistributed):
 
         if len(timesteps) > 1:
             raise ValueError('Receieved tensors with incompatible number of timesteps. '
-                            'Got tensors with shapes : ' + str(input_shape))
+                             'Got tensors with shapes : ' + str(input_shape))
         self.timesteps = timesteps.pop() if len(timesteps) == 1 else None
         self.input_spec = [InputSpec(shape=s) for s in input_shape]
         child_input_shapes = [(shape[0],) + shape[2:] for shape in input_shape]
@@ -80,9 +74,11 @@ class TimeDistributedMultiInput(TimeDistributed):
         uses_learning_phase = False
 
         input_shapes = [K.int_shape(inp) for inp in inputs]
-        batch_sizes = [shape[0] for shape in input_shapes if shape is not None]
-        fixed_batch_size = any([bs is not None for bs in batch_sizes])
+        # batch_sizes = [shape[0] for shape in input_shapes if shape is not None]
+        # fixed_batch_size = any([bs is not None for bs in batch_sizes])
+        fixed_batch_size = False
         if fixed_batch_size:
+            raise NotImplementedError('K.rnn does not support multiple inputs.')
             # batch size matters, use rnn-based implementation
             def step(x, _):
                 global uses_learning_phase
