@@ -1,5 +1,5 @@
 from collections import defaultdict
-from itertools import takewhile
+from itertools import takewhile, zip_longest
 
 import numpy as np
 import pandas as pd
@@ -148,21 +148,22 @@ def max_num_lanes_in_batch(output_list):
     maximum number of lanes of all simulations in the batch.
 
     """
-    A_matrix_size_per_gen = [np.shape(gen[0][0]) for gen in output_list
-                             if gen[0] is not None]
+    A_matrix_size_per_gen = [np.shape(gen[0]) for gen in output_list
+                             if gen is not None]
 
     # sanity check: make sure adjacency matrices are square
     assert all(A_shape[-1] == A_shape[-2] for A_shape in A_matrix_size_per_gen)
-    max_num_lanes = max(A_shape[-2] for A_shape in A_matrix_size_per_gen)
+    max_num_lanes = max([A_shape[-2] for A_shape in A_matrix_size_per_gen],
+                        default=0)
     return max_num_lanes
 
 
 def get_max_A_depth(output_list):
     """Returns the max depth (number of edge types) in the batch"""
-    A_matrix_size_per_gen = [np.shape(gen[0][0]) for gen in output_list
-                             if gen[0] is not None]
+    A_matrix_size_per_gen = [np.shape(gen[0]) for gen in output_list
+                             if gen is not None]
 
-    return max(A_shape[0] for A_shape in A_matrix_size_per_gen)
+    return max([A_shape[-3] for A_shape in A_matrix_size_per_gen], default=0)
 
 
 def can_broadcast_A_matrices_over_time(output_list):
@@ -176,60 +177,78 @@ def can_broadcast_A_matrices_over_time(output_list):
 
 
 def pad_and_stack_batch(outputs, pad_scalars, try_broadcast_A=False):
-    empty_timesteps_per_gen = [[timestep is None for timestep in gen] for
-                               gen in outputs]
+    num_timesteps_per_gen = [len(gen[-1]) for gen in outputs if gen is not None]
 
-    # these timesteps can be sliced off
-    completely_empty_timesteps = np.asarray(empty_timesteps_per_gen).all(0)
-
-    outputs = _slice_off_empty_timesteps(outputs, completely_empty_timesteps)
-
+    max_timesteps = max(num_timesteps_per_gen, default=0)
     max_lanes = max_num_lanes_in_batch(outputs)
     max_A_depth = get_max_A_depth(outputs)
 
-    blank_A = np.full([max_A_depth, max_lanes, max_lanes], pad_scalars[0])
-    blank_x = [np.full([max_lanes], scalar) for scalar in pad_scalars[1]]
-    blank_y = [np.full([max_lanes], scalar) for scalar in pad_scalars[2]]
+    len_x = len(pad_scalars[1])
+    len_y = len(pad_scalars[2])
+
+    blank_A = np.zeros((0, 0, 0))
+    blank_x = np.zeros((0, 0, len_x))
+    blank_y = np.zeros((0, 0, len_y))
     blank_value = [blank_A, blank_x, blank_y]
 
     # pad everything
+    A_matrices = []
+    X_per_gen = []
+    Y_per_gen = []
     for g in range(len(outputs)):
-        for t in range(len(outputs[g])):
-            if outputs[g][t] is None: # pad the entire timestep with the pad value
-                outputs[g][t] = blank_value
-            else: # pad the data to the max number of lanes
-                A_shape = np.shape(outputs[g][t][0])
-                outputs[g][t][0] = np.pad(outputs[g][t][0],
-                                          [[0, A_shape[0] - max_A_depth],
-                                           [0, A_shape[1] - max_lanes],
-                                           [0, A_shape[2] - max_lanes]],
-                                          'constant',
-                                          constant_values=pad_scalars[0])
-                outputs[g][t][1] = [
-                    np.pad(x_feat, max_lanes - len(x_feat), 'constant',
-                           constant_values=scalar)
-                    for x_feat, scalar in zip(outputs[g][t][1], pad_scalars[1])
-                ]
-                outputs[g][t][2] = [
-                    np.pad(y_feat, max_lanes - len(y_feat), 'constant',
-                           constant_values=scalar)
-                    for y_feat, scalar in zip(outputs[g][t][2], pad_scalars[2])
-                ]
+        if outputs[g] is None:
+            A, X, Y = blank_value
+        else:
+            A = outputs[g][0]
+            X = outputs[g][1].astype(np.float32)
+            Y = outputs[g][2].astype(np.float32)
 
-    A_matrices = [[variables[0] for variables in output] for output in outputs]
-    X_per_gen = [[variables[1] for variables in output] for output in outputs]
-    Y_per_gen = [[variables[2] for variables in output] for output in outputs]
+        if np.ndim(A) == 2: # no depth or time dimensions
+            A = np.reshape(A, [1, 1, *A.shape])
+        elif np.ndim(A) == 3: # no time dimension
+            A = np.expand_dims(A, 0)
+
+        pad_A_depth = max_A_depth - A.shape[-3]
+        pad_timesteps = max_timesteps - X.shape[0]
+        pad_lanes = max_lanes - X.shape[1]
+
+        A_pad_dims = ((0, 0), (0, pad_A_depth), (0, pad_lanes), (0, pad_lanes))
+        A = np.pad(A, A_pad_dims, 'constant', constant_values=pad_scalars[0])
+        A_shape = A.shape
+        if A_shape[0] == 1:
+            A = np.broadcast_to(A, [max_timesteps, *A_shape[1:]])
+        else:
+            A = np.pad(A, ((0, pad_timesteps), (0, 0), (0, 0), (0, 0)),
+                       'constant', constant_values=pad_scalars[0])
+
+        data_pad_dims = ((0, pad_timesteps), (0, pad_lanes), (0, 0))
+        X = _split_pad_concat(X, data_pad_dims, pad_scalars[1])
+        Y = _split_pad_concat(Y, data_pad_dims, pad_scalars[2])
+
+        A_matrices.append(A)
+        X_per_gen.append(X)
+        Y_per_gen.append(Y)
 
     if try_broadcast_A and can_broadcast_A_matrices_over_time(outputs):
         A = np.expand_dims(
             np.stack([A_t[0] for A_t in A_matrices]), 1)
     else:
-        A = np.stack([np.stack([A for A in A_t]) for A_t in A_matrices])
+        A = np.stack(A_matrices)
 
-    X = np.stack([[np.stack(X_tg, -1) for X_tg in X_g] for X_g in X_per_gen])
-    Y = np.stack([[np.stack(Y_tg, -1) for Y_tg in Y_g] for Y_g in Y_per_gen])
+    X = np.stack(X_per_gen)
+    Y = np.stack(Y_per_gen)
 
     return A, X, Y
+
+
+def _split_pad_concat(array, pad_dims, scalars):
+    assert array.shape[-1] == len(scalars)
+    split = np.split(array, array.shape[-1], -1)
+    padded = [np.pad(part, pad_dims, 'constant', constant_values=scalar)
+              for part, scalar in zip(split, scalars)]
+    concatted = np.concatenate(padded, -1)
+    return concatted
+
 
 def _slice_off_empty_timesteps(nested_list, empty_timesteps):
     return [[ts for ts, empty in zip(list_for_gen, empty_timesteps)
@@ -254,25 +273,27 @@ def windowed_batch_of_generators(
 
     assert len(filenames) == len(sim_indeces)
     generators = [generator_from_file(f, si,
+                                      chunk_size=window_size,
                                       A_name_list=A_name_list,
                                       x_feature_subset=x_feature_subset,
                                       y_feature_subset=y_feature_subset)
                   for f, si in zip(filenames, sim_indeces)]
 
-    reader = window_and_batch_generators(generators, window_size)
+    # reader = batch_generators(generators)
+    reader = zip_longest(*generators)
     return reader
 
 
-def window_and_batch_generators(generators, window_size):
-    groupers = [grouper(paditerable(gen), window_size) for gen in generators]
-    batch = zip(*groupers)
-    reader = takewhile(lambda x: any(flatten(x)), batch)
+def batch_generators(generators):
+    batch = zip(*generators)
+    reader = takewhile(lambda x: any(x), batch)
     return reader
 
 
 def generator_from_file(
     filename,
     simulation_number,
+    chunk_size=None,
     A_name_list=['A_downstream',
                  'A_upstream',
                  'A_neighbors'],
@@ -301,22 +322,33 @@ def generator_from_file(
         assert all((all(lane_list == A.index) for A in A_list))
         A = np.stack([A.values for A in A_list])
         try:
-            col_select_X = [[store[
-                '{}/X/_{:04}'.format(lane, simulation_number)].loc[:, feat]
-                                for lane in lane_list]
-                            for feat in x_feature_subset]
-            col_select_Y = [[store[
-                '{}/Y/_{:04}'.format(lane, simulation_number)].loc[:, feat]
-                                for lane in lane_list]
-                            for feat in y_feature_subset]
+            slice_begin = 0
+            slice_end = chunk_size
+            while True:
+                time_slicer = slice(slice_begin, slice_end)
+                t = store['{}/X/_{:04}'.format(lane_list[0], simulation_number)
+                          ].iloc[time_slicer, 0].index
 
-            X_iter = _colwise_iterator(col_select_X, True)
-            Y_iter = _colwise_iterator(col_select_Y, False)
+                if t.empty:
+                    return
 
-            for tx, y, in zip(X_iter, Y_iter):
-                t, x = tx
-                yield [A, x, y, t]
-        except KeyError:
+                X_dfs = [store[
+                    '{}/X/_{:04}'.format(lane, simulation_number)].loc[
+                        t, x_feature_subset]
+                    for lane in lane_list]
+                Y_dfs = [store[
+                    '{}/Y/_{:04}'.format(lane, simulation_number)].loc[
+                        t, y_feature_subset]
+                    for lane in lane_list]
+
+                X = np.stack([df.values for df in X_dfs], 1)
+                Y = np.stack([df.values for df in Y_dfs], 1)
+
+                yield A, X, Y, t
+
+                slice_begin += chunk_size
+                slice_end += chunk_size
+        except TypeError:
             return
 
 
