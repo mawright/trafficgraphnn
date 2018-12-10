@@ -108,14 +108,7 @@ def batches_from_directories(directories,
                              y_feature_subset=['e2_0/nVehSeen',
                                                'e2_0/maxJamLengthInMeters']):
 
-    directories = iterfy(directories)
-    filenames = flatten([get_preprocessed_filenames(directory)
-                         for directory in directories])
-    file_and_sims = []
-
-    for filename in filenames:
-        for sim_number in get_sim_numbers_in_file(filename):
-            file_and_sims.append((filename, sim_number))
+    file_and_sims = get_file_and_sim_indeces_in_dirs(directories)
 
     if shuffle:
         np.random.shuffle(file_and_sims)
@@ -132,6 +125,18 @@ def batches_from_directories(directories,
                       x_feature_subset=x_feature_subset,
                       y_feature_subset=y_feature_subset)
         yield batch
+
+
+def get_file_and_sim_indeces_in_dirs(directories):
+    directories = iterfy(directories)
+    filenames = flatten([get_preprocessed_filenames(directory)
+                         for directory in directories])
+    file_and_sims = []
+
+    for filename in filenames:
+        for sim_number in get_sim_numbers_in_file(filename):
+            file_and_sims.append((filename, sim_number))
+    return file_and_sims
 
 
 def get_pad_scalars(x_feature_subset, y_feature_subset):
