@@ -15,7 +15,7 @@ pad_value_for_feature = defaultdict(lambda: 0,
                                     liu_estimated=-1.,
                                     green=0.,
                                     nVehSeen=0.,
-                                    maxJamLengthInMeters=np.nan,
+                                    maxJamLengthInMeters=-1.,
                                    )
 
 pad_value_for_feature.update(
@@ -24,7 +24,7 @@ pad_value_for_feature.update(
     ('e1_1/occupancy', 0.),
     ('e1_1/speed', -1.),
     ('e2_0/nVehSeen', 0.),
-    ('e2_0/maxJamLengthInMeters', np.nan)])
+    ('e2_0/maxJamLengthInMeters', -1.)])
 
 All_A_name_list = ['A_downstream', 'A_upstream', 'A_neighbors',
                    'A_turn_movements', 'A_through_movements']
@@ -54,6 +54,11 @@ class Batch(object):
         self.y_feature_subset = y_feature_subset
 
         self.pad_scalars = get_pad_scalars(self.x_feature_subset, self.y_feature_subset)
+
+        if isinstance(filenames, np.ndarray):
+            filenames = filenames.tolist()
+        if isinstance(sim_indeces, np.ndarray):
+            sim_indeces = sim_indeces.tolist()
 
         self.readers = windowed_batch_of_generators(
             filenames, sim_indeces, window_size, A_name_list, x_feature_subset,
@@ -311,8 +316,11 @@ def generator_from_file(
     y_feature_subset=['e2_0/nVehSeen',
                       'e2_0/maxJamLengthInMeters']):
 
-    if isinstance(simulation_number, six.string_types + (bytes,)):
+    if isinstance(filename, six.binary_type):
+        filename = filename.decode()
+    if isinstance(simulation_number, six.string_types + (six.binary_type,)):
         simulation_number = int(simulation_number)
+    A_name_list = iterfy(A_name_list)
     assert all([A_name in All_A_name_list for A_name in A_name_list])
     with pd.HDFStore(filename, 'r') as store:
         A_list = []
@@ -339,15 +347,15 @@ def generator_from_file(
 
                 X_dfs = [store[
                     '{}/X/_{:04}'.format(lane, simulation_number)].loc[
-                        t, x_feature_subset]
+                        t, x_feature_subset].fillna(pad_value_for_feature)
                     for lane in lane_list]
                 Y_dfs = [store[
                     '{}/Y/_{:04}'.format(lane, simulation_number)].loc[
-                        t, y_feature_subset]
+                        t, y_feature_subset].fillna(pad_value_for_feature)
                     for lane in lane_list]
 
-                X = np.stack([df.values for df in X_dfs], 1)
-                Y = np.stack([df.values for df in Y_dfs], 1)
+                X = np.stack([df.values.astype(np.float32) for df in X_dfs], 1)
+                Y = np.stack([df.values.astype(np.float32) for df in Y_dfs], 1)
 
                 yield A, X, Y, t
 
