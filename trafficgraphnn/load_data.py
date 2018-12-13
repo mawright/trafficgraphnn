@@ -6,8 +6,7 @@ import pandas as pd
 import six
 
 from trafficgraphnn.utils import (flatten, get_preprocessed_filenames,
-                                  get_sim_numbers_in_preprocess_store, grouper,
-                                  iterfy, paditerable)
+                                  get_sim_numbers_in_preprocess_store, iterfy)
 
 pad_value_for_feature = defaultdict(lambda: 0,
                                     occupancy=0.,
