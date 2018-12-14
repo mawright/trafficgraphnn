@@ -343,6 +343,10 @@ def iterfy(x):
         return (x,)
 
 
+def string_list_decode(x):
+    return [s.decode() if isinstance(s, six.binary_type) else s for s in x]
+
+
 def grouper(iterable, n, fillvalue=None):
     "Collect data into fixed-length chunks or blocks"
     # grouper('ABCDEFG', 3, 'x') --> ABC DEF Gxx"
