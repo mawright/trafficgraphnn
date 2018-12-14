@@ -344,6 +344,7 @@ def iterfy(x):
 
 
 def string_list_decode(x):
+    x = iterfy(x)
     return [s.decode() if isinstance(s, six.binary_type) else s for s in x]
 
 
