@@ -6,7 +6,7 @@ import pandas as pd
 import six
 
 from trafficgraphnn.utils import (flatten, get_preprocessed_filenames,
-                                  get_sim_numbers_in_preprocess_store, iterfy)
+                                  get_sim_numbers_in_preprocess_store, iterfy, string_list_decode)
 
 pad_value_for_feature = defaultdict(lambda: 0,
                                     occupancy=0.,
@@ -18,7 +18,7 @@ pad_value_for_feature = defaultdict(lambda: 0,
                                    )
 
 pad_value_for_feature.update(
-    [('e1_0/occupancy', 0),
+    [('e1_0/occupancy', 0.),
     ('e1_0/speed', -1.),
     ('e1_1/occupancy', 0.),
     ('e1_1/speed', -1.),
