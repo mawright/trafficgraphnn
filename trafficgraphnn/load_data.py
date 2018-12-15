@@ -299,10 +299,10 @@ def batch_generators(generators):
     return reader
 
 
-def generator_from_file(
+def read_from_file(
     filename,
     simulation_number,
-    chunk_size=None,
+    repeat_A_over_time=True,
     A_name_list=['A_downstream',
                  'A_upstream',
                  'A_neighbors'],
@@ -313,14 +313,20 @@ def generator_from_file(
                       'liu_estimated',
                       'green'],
     y_feature_subset=['e2_0/nVehSeen',
-                      'e2_0/maxJamLengthInMeters']):
+                      'e2_0/maxJamLengthInMeters'],
+    return_X_Y_as_dfs=False):
 
+    # Input handling if we came from TF
     if isinstance(filename, six.binary_type):
         filename = filename.decode()
     if isinstance(simulation_number, six.string_types + (six.binary_type,)):
         simulation_number = int(simulation_number)
-    A_name_list = iterfy(A_name_list)
+
+    A_name_list, x_feature_subset, y_feature_subset = map(
+        string_list_decode,
+        [A_name_list, x_feature_subset, y_feature_subset])
     assert all([A_name in All_A_name_list for A_name in A_name_list])
+
     with pd.HDFStore(filename, 'r') as store:
         A_list = []
         for A_name in A_name_list:
@@ -333,35 +339,95 @@ def generator_from_file(
         lane_list = A_list[0].index
         assert all((all(lane_list == A.index) for A in A_list))
         A = np.stack([A.values for A in A_list])
-        try:
-            slice_begin = 0
-            slice_end = chunk_size
-            while True:
-                time_slicer = slice(slice_begin, slice_end)
-                t = store['{}/X/_{:04}'.format(lane_list[0], simulation_number)
-                          ].iloc[time_slicer, 0].index
 
-                if t.empty:
-                    return
+        X_dfs = [store['{}/X/_{:04}'.format(lane, simulation_number)]
+                for lane in lane_list]
+        X_dfs = [df.loc[:, x_feature_subset] for df in X_dfs]
+        X_df = pd.concat(X_dfs, keys=lane_list, names=['lane', 'time'])
+        X_df = X_df.swaplevel().sort_index()
+        X_df = X_df.fillna(pad_value_for_feature).astype(np.float32)
 
-                X_dfs = [store[
-                    '{}/X/_{:04}'.format(lane, simulation_number)].loc[
-                        t, x_feature_subset].fillna(pad_value_for_feature)
-                    for lane in lane_list]
-                Y_dfs = [store[
-                    '{}/Y/_{:04}'.format(lane, simulation_number)].loc[
-                        t, y_feature_subset].fillna(pad_value_for_feature)
-                    for lane in lane_list]
+        Y_dfs = [store['{}/Y/_{:04}'.format(lane, simulation_number)]
+                for lane in lane_list]
+        Y_dfs = [df.loc[:, y_feature_subset] for df in Y_dfs]
+        Y_df = pd.concat(Y_dfs, keys=lane_list, names=['lane', 'time'])
+        Y_df = Y_df.swaplevel().sort_index()
+        Y_df = Y_df.fillna(pad_value_for_feature).astype(np.float32)
 
-                X = np.stack([df.values.astype(np.float32) for df in X_dfs], 1)
-                Y = np.stack([df.values.astype(np.float32) for df in Y_dfs], 1)
+    num_lanes = len(lane_list)
+    len_x = len(x_feature_subset)
+    len_y = len(y_feature_subset)
 
-                yield A, X, Y, t
+    if not return_X_Y_as_dfs:
+        X = X_df.values.reshape(-1, num_lanes, len_x)
+        Y = Y_df.values.reshape(-1, num_lanes, len_y)
+        num_timesteps = X.shape[0]
+    else:
+        X = X_df
+        Y = Y_df
+        num_timesteps = len(X.index.get_level_values(0).unique())
 
-                slice_begin += chunk_size
-                slice_end += chunk_size
-        except TypeError:
-            return
+    A = np.expand_dims(A, 0)
+    if repeat_A_over_time:
+        A = np.repeat(A, num_timesteps, axis=0)
+
+    return A, X, Y
+
+
+def generator_from_file(
+    filename,
+    simulation_number,
+    chunk_size=None,
+    repeat_A_over_time=True,
+    A_name_list=['A_downstream',
+                 'A_upstream',
+                 'A_neighbors'],
+    x_feature_subset=['e1_0/occupancy',
+                      'e1_0/speed',
+                      'e1_1/occupancy',
+                      'e1_1/speed',
+                      'liu_estimated',
+                      'green'],
+    y_feature_subset=['e2_0/nVehSeen',
+                      'e2_0/maxJamLengthInMeters']):
+
+    A, X_df, Y_df = read_from_file(filename,
+                                   simulation_number,
+                                   repeat_A_over_time,
+                                   A_name_list,
+                                   x_feature_subset,
+                                   y_feature_subset)
+    try:
+        slice_begin = 0
+        slice_end = chunk_size
+        num_lanes = A.shape[-1]
+        len_x = len(x_feature_subset)
+        len_y = len(y_feature_subset)
+
+        while True:
+            time_slicer = slice(slice_begin, slice_end)
+
+            X_df_slice = X_df.loc[time_slicer]
+            Y_df_slice = Y_df.loc[time_slicer]
+
+            t = X_df_slice.index.get_level_values(0).unique().values
+            if t.size == 0:
+                return
+
+            X_slice = X_df_slice.values.reshape(-1, num_lanes, len_x)
+            Y_slice = Y_df_slice.values.reshape(-1, num_lanes, len_y)
+
+            if repeat_A_over_time:
+                A_slice = A[time_slicer]
+            else:
+                A_slice = A
+
+            yield A_slice, X_slice, Y_slice, t
+
+            slice_begin += chunk_size
+            slice_end += chunk_size
+    except TypeError:
+        return
 
 
 def _colwise_iterator(listoflist_series, return_time=True):
