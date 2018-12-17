@@ -3,7 +3,8 @@ from collections import namedtuple
 
 import tensorflow as tf
 
-from trafficgraphnn.load_data import get_file_and_sim_indeces_in_dirs, read_from_file, pad_value_for_feature
+from trafficgraphnn.load_data import (get_file_and_sim_indeces_in_dirs,
+                                      pad_value_for_feature, read_from_file)
 
 TFBatch = namedtuple('TFBatch', ['dataset', 'initializer'])
 
