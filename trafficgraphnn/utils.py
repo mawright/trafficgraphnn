@@ -3,7 +3,7 @@ import logging
 import os
 import re
 import sys
-from itertools import zip_longest, chain, repeat
+from itertools import zip_longest, chain, repeat, tee
 import warnings
 import tables
 
@@ -369,3 +369,10 @@ def flatten(listOfLists):
     "Flatten one level of nesting"
     # From itertools recipe page
     return chain.from_iterable(listOfLists)
+
+def pairwise_exhaustive(iterable):
+    "s -> (s0,s1), (s1,s2), (s2, s3), ..."
+    # From itertools recipe page (modified)
+    a, b = tee(iterable)
+    next(b, None)
+    return zip_longest(a, b)
