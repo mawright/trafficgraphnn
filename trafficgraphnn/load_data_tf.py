@@ -1,5 +1,9 @@
 import math
 from collections import namedtuple
+import time
+import logging
+
+_logger = logging.getLogger(__name__)
 
 import tensorflow as tf
 
@@ -128,6 +132,7 @@ class TFBatcher(object):
                  y_feature_subset=['e2_0/nVehSeen',
                                    'e2_0/maxJamLengthInMeters']):
 
+        t0 = time.time()
         self._train_datasets = make_datasets(train_directories,
                                              batch_size,
                                              window_size,
@@ -145,6 +150,8 @@ class TFBatcher(object):
                                                y_feature_subset)
         else:
             self._val_datasets = None
+        t = time.time() - t0
+        _logger.debug('Made TFBatcher object in %s s', t)
 
     def make_init_ops_and_batch(self, datasets):
         init_ops = [self.iterator.make_initializer(ds)

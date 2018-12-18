@@ -4,9 +4,13 @@ from itertools import takewhile, zip_longest
 import numpy as np
 import pandas as pd
 import six
+import time
+import logging
 
 from trafficgraphnn.utils import (flatten, get_preprocessed_filenames,
                                   get_sim_numbers_in_preprocess_store, iterfy, string_list_decode)
+
+_logger = logging.getLogger(__name__)
 
 pad_value_for_feature = defaultdict(lambda: 0,
                                     occupancy=0.,
@@ -327,6 +331,7 @@ def read_from_file(
         [A_name_list, x_feature_subset, y_feature_subset])
     assert all([A_name in All_A_name_list for A_name in A_name_list])
 
+    t0 = time.time()
     with pd.HDFStore(filename, 'r') as store:
         A_list = []
         for A_name in A_name_list:
@@ -353,6 +358,9 @@ def read_from_file(
         Y_df = pd.concat(Y_dfs, keys=lane_list, names=['lane', 'time'])
         Y_df = Y_df.swaplevel().sort_index()
         Y_df = Y_df.fillna(pad_value_for_feature).astype(np.float32)
+
+    t = time.time() - t0
+    _logger.debug('Loading data from disk took %s s', t)
 
     num_lanes = len(lane_list)
     len_x = len(x_feature_subset)
