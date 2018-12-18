@@ -136,6 +136,7 @@ def batches_from_directories(directories,
 
 
 def get_file_and_sim_indeces_in_dirs(directories):
+    tstart = time.time()
     directories = iterfy(directories)
     filenames = flatten([get_preprocessed_filenames(directory)
                          for directory in directories])
@@ -144,6 +145,9 @@ def get_file_and_sim_indeces_in_dirs(directories):
     for filename in filenames:
         for sim_number in get_sim_numbers_in_file(filename):
             file_and_sims.append((filename, sim_number))
+
+    t = time.time() - tstart
+    _logger.debug('getting file and sim indeces took %s s', t)
     return file_and_sims
 
 
