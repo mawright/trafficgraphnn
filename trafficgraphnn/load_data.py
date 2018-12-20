@@ -1,14 +1,18 @@
+import logging
+import os
+import tempfile
+import time
 from collections import defaultdict
-from itertools import takewhile, zip_longest
+from contextlib import ExitStack
+from itertools import zip_longest
 
 import numpy as np
 import pandas as pd
 import six
-import time
-import logging
 
 from trafficgraphnn.utils import (flatten, get_preprocessed_filenames,
-                                  get_sim_numbers_in_preprocess_store, iterfy, string_list_decode)
+                                  get_sim_numbers_in_preprocess_store, iterfy,
+                                  string_list_decode)
 
 _logger = logging.getLogger(__name__)
 
@@ -291,20 +295,54 @@ def windowed_batch_of_generators(
     assert len(filenames) == len(sim_indeces)
     generators = [generator_from_file(f, si,
                                       chunk_size=window_size,
+                                      repeat_A_over_time=True,
                                       A_name_list=A_name_list,
                                       x_feature_subset=x_feature_subset,
                                       y_feature_subset=y_feature_subset)
                   for f, si in zip(filenames, sim_indeces)]
 
-    # reader = batch_generators(generators)
     reader = zip_longest(*generators)
     return reader
 
 
-def batch_generators(generators):
-    batch = zip(*generators)
-    reader = takewhile(lambda x: any(x), batch)
-    return reader
+def windowed_unpadded_batch_of_generators(filenames,
+    sim_indeces,
+    window_size,
+    batch_size_to_pad_to=None,
+    A_name_list=['A_downstream',
+                 'A_upstream',
+                 'A_neighbors'],
+    x_feature_subset=['e1_0/occupancy',
+                      'e1_0/speed',
+                      'e1_1/occupancy',
+                      'e1_1/speed',
+                      'liu_estimated',
+                      'green'],
+    y_feature_subset=['e2_0/nVehSeen',
+                      'e2_0/maxJamLengthInMeters']):
+    assert len(filenames) == len(sim_indeces)
+    if batch_size_to_pad_to is not None:
+        num_dummy_generators = batch_size_to_pad_to - len(filenames)
+
+    fill_A = np.zeros((0, 0, 0, 0)) # time x depth x lanes x lanes
+    fill_X = np.zeros((0, 0, len(x_feature_subset))) # time x lane x channel
+    fill_Y = np.zeros((0, 0, len(y_feature_subset))) # time x lane x channel
+
+    default_val = (fill_A, fill_X, fill_Y)
+
+    generators = [generator_from_file(f, si,
+                                      chunk_size=window_size,
+                                      repeat_A_over_time=True,
+                                      A_name_list=A_name_list,
+                                      x_feature_subset=x_feature_subset,
+                                      y_feature_subset=y_feature_subset)
+                  for f, si in zip(filenames, sim_indeces)]
+
+    generators.extend([iter(()) for _ in range(num_dummy_generators)])
+
+    batch = zip_longest(*generators, fillvalue=default_val)
+    for out in batch:
+        yield from out
 
 
 def read_from_file(
@@ -386,7 +424,7 @@ def read_from_file(
     return A, X, Y
 
 
-def generator_from_file(
+def generator_prefetch_all_from_file(
     filename,
     simulation_number,
     chunk_size=None,
@@ -440,6 +478,113 @@ def generator_from_file(
             slice_end += chunk_size
     except TypeError:
         return
+
+
+def generator_from_file(
+    filename,
+    simulation_number,
+    chunk_size=None,
+    repeat_A_over_time=True,
+    A_name_list=['A_downstream',
+                 'A_upstream',
+                 'A_neighbors'],
+    x_feature_subset=['e1_0/occupancy',
+                      'e1_0/speed',
+                      'e1_1/occupancy',
+                      'e1_1/speed',
+                      'liu_estimated',
+                      'green'],
+    y_feature_subset=['e2_0/nVehSeen',
+                      'e2_0/maxJamLengthInMeters']):
+
+    # Input handling if we came from TF
+    if isinstance(filename, six.binary_type):
+        filename = filename.decode()
+    if isinstance(simulation_number, six.string_types + (six.binary_type,)):
+        simulation_number = int(simulation_number)
+
+    A_name_list, x_feature_subset, y_feature_subset = map(
+        string_list_decode,
+        [A_name_list, x_feature_subset, y_feature_subset])
+    assert all([A_name in All_A_name_list for A_name in A_name_list])
+
+    filedir = os.path.dirname(filename)
+
+    with ExitStack() as stack:
+        temp_dir = stack.enter_context(tempfile.TemporaryDirectory(dir=filedir))
+        temp_store_name = os.path.join(temp_dir, 'temp.h5')
+        temp_store = stack.enter_context(pd.HDFStore(temp_store_name,
+                                                     complevel=5,
+                                                     complib='blosc:lz4'))
+        with pd.HDFStore(filename, 'r') as store:
+            A_list = []
+            for A_name in A_name_list:
+                try:
+                    A = store[A_name]
+                    A_list.append(A)
+                except KeyError:
+                    A_list.append(np.zeros_like(A_list[0]))
+
+            lane_list = A_list[0].index
+            assert all((all(lane_list == A.index) for A in A_list))
+            A = np.stack([A.values for A in A_list])
+
+            X_df_strings = ['{}/X/_{:04}'.format(lane, simulation_number)
+                            for lane in lane_list]
+            _read_concat_write(store, X_df_strings, x_feature_subset,
+                              temp_store, 'X', lane_list)
+
+            Y_df_strings = ['{}/Y/_{:04}'.format(lane, simulation_number)
+                            for lane in lane_list]
+            _read_concat_write(store, Y_df_strings, y_feature_subset,
+                              temp_store, 'Y', lane_list)
+
+        slice_begin = 0
+        slice_end = chunk_size - 1
+        num_lanes = A.shape[-1]
+        len_x = len(x_feature_subset)
+        len_y = len(y_feature_subset)
+
+        try:
+            while True:
+                time_slicer = slice(slice_begin, slice_end)
+
+                X_df = temp_store['X'].loc[time_slicer]
+                Y_df = temp_store['Y'].loc[time_slicer]
+
+                t = X_df.index.get_level_values(0).unique().values
+                num_timesteps = t.size
+                if num_timesteps == 0:
+                    return
+
+                X_slice = X_df.values.reshape(-1, num_lanes, len_x)
+                Y_slice = Y_df.values.reshape(-1, num_lanes, len_y)
+
+                if repeat_A_over_time:
+                    A_slice = np.broadcast_to(A, [num_timesteps, *A.shape])
+                else:
+                    A_slice = A
+
+                yield A_slice, X_slice, Y_slice
+
+                slice_begin += chunk_size
+                slice_end += chunk_size
+        except TypeError:
+            return
+
+
+def _read_concat_write(source_store, read_strings, col_subset, write_store,
+                       write_key, lane_list):
+    dfs = [source_store[k].loc[:, col_subset] for k in read_strings]
+    df = _merge_fill(dfs, lane_list)
+    write_store.append(write_key, df, complevel=5, complib='blosc:lz4')
+
+
+def _merge_fill(dfs, lane_list):
+    df = pd.concat(dfs, keys=lane_list, names=['lane', 'time'])
+    df = df.swaplevel().sort_index()
+    df = df.fillna(pad_value_for_feature).astype(np.float32)
+    return df
 
 
 def _colwise_iterator(listoflist_series, return_time=True):
