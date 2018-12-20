@@ -1,5 +1,4 @@
 import math
-from collections import namedtuple
 import time
 import logging
 
@@ -10,18 +9,37 @@ import tensorflow as tf
 from trafficgraphnn.load_data import (get_file_and_sim_indeces_in_dirs,
                                       pad_value_for_feature, read_from_file)
 
-TFBatch = namedtuple('TFBatch', ['dataset', 'initializer'])
+
+class TFBatch(object):
+    def __init__(self, dataset, initializer):
+        self.dataset = dataset
+        self.initializer = initializer
+
+    def initialize(self, session, *args, **kwargs):
+        session.run(self.initializer)
+
+    def set_self_as_active(self, **kwargs):
+        pass
 
 
 class TFHandleBatch(object):
-    def __init__(self, dataset, session):
+    def __init__(self, dataset, session, parent):
         self.dataset = dataset
         self.iterator = dataset.make_initializable_iterator()
         self.handle = session.run(self.iterator.string_handle())
+        self.parent = parent
 
     @property
     def initializer(self):
         return self.iterator.initializer
+
+    def initialize(self, session, feed_dict=None):
+        session.run(self.initializer)
+        if feed_dict is not None:
+            self.set_self_as_active(feed_dict)
+
+    def set_self_as_active(self, feed_dict):
+        feed_dict[self.parent.handle] = self.handle
 
 
 def make_datasets(directories,
@@ -82,7 +100,8 @@ def make_datasets(directories,
 
     datasets = [ds.padded_batch(
         batch_size,
-        ((-1, -1, -1, -1), {x: (-1, -1) for x in x_feature_subset}, {y: (-1, -1) for y in y_feature_subset}),
+        ((-1, -1, -1, -1), {x: (-1, -1) for x in x_feature_subset},
+                           {y: (-1, -1) for y in y_feature_subset}),
         (False, xpad, ypad)
     ) for ds in datasets]
 
@@ -91,7 +110,7 @@ def make_datasets(directories,
         Y_stacked = tf.stack([Y[y] for y in y_feature_subset], -1)
         return A, X_stacked, Y_stacked
 
-    datasets = [ds.map(stack_post_pad, 4) for ds in datasets]
+    datasets = [ds.map(stack_post_pad) for ds in datasets]
 
     def window(A, X, Y, window_size):
         timesteps = A.shape[1]
@@ -194,7 +213,7 @@ class TFBatcher(object):
         self.Y = tf.identity(self.tensor[2], name='Y')
 
     def make_per_dataset_iterators_and_handles(self, datasets, session):
-        batches = [TFHandleBatch(ds, session) for ds in datasets]
+        batches = [TFHandleBatch(ds, session, self) for ds in datasets]
         return batches
 
     @property
