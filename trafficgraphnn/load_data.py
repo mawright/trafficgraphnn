@@ -480,6 +480,23 @@ def generator_prefetch_all_from_file(
         return
 
 
+class _Buffer(object):
+    def __init__(self, source_df, start_t, window_size, num_windows):
+        self.dfs = []
+        max_time = start_t + window_size * num_windows - 1
+        unwindowed_df = source_df.loc[start_t:max_time].copy()
+        window_end_t = start_t + window_size - 1
+        for i in range(num_windows):
+            slicer = slice(start_t, window_end_t)
+            df = unwindowed_df.loc[slicer]
+            self.dfs.append(df)
+            start_t += window_size
+            window_end_t += window_size
+
+    def __iter__(self):
+        yield from self.dfs
+
+
 def generator_from_file(
     filename,
     simulation_number,
@@ -495,7 +512,8 @@ def generator_from_file(
                       'liu_estimated',
                       'green'],
     y_feature_subset=['e2_0/nVehSeen',
-                      'e2_0/maxJamLengthInMeters']):
+                      'e2_0/maxJamLengthInMeters'],
+    buffer_size=10):
 
     # Input handling if we came from TF
     if isinstance(filename, six.binary_type):
@@ -547,28 +565,40 @@ def generator_from_file(
 
         try:
             while True:
-                time_slicer = slice(slice_begin, slice_end)
+                X_buffer = _Buffer(temp_store['X'], slice_begin, chunk_size,
+                                   buffer_size)
+                Y_buffer = _Buffer(temp_store['Y'], slice_begin, chunk_size,
+                                   buffer_size)
+                assert len(X_buffer.dfs) == len(Y_buffer.dfs)
 
-                X_df = temp_store['X'].loc[time_slicer]
-                Y_df = temp_store['Y'].loc[time_slicer]
+                for X_df, Y_df in zip(X_buffer, Y_buffer):
 
-                t = X_df.index.get_level_values(0).unique().values
-                num_timesteps = t.size
-                if num_timesteps == 0:
-                    return
+                    X_t = X_df.index.get_level_values(0).unique().values
+                    Y_t = Y_df.index.get_level_values(0).unique().values
+                    assert np.array_equal(X_t, Y_t)
 
-                X_slice = X_df.values.reshape(-1, num_lanes, len_x)
-                Y_slice = Y_df.values.reshape(-1, num_lanes, len_y)
+                    num_timesteps = X_t.size
+                    if num_timesteps == 0:
+                        return
 
-                if repeat_A_over_time:
-                    A_slice = np.broadcast_to(A, [num_timesteps, *A.shape])
-                else:
-                    A_slice = A
+                    assert slice_begin == X_t[0]
+                    try:
+                        assert slice_end == X_t[-1]
+                    except AssertionError:
+                        assert slice_begin + num_timesteps - 1 == X_t[-1]
 
-                yield A_slice, X_slice, Y_slice
+                    X_slice = X_df.values.reshape(-1, num_lanes, len_x)
+                    Y_slice = Y_df.values.reshape(-1, num_lanes, len_y)
 
-                slice_begin += chunk_size
-                slice_end += chunk_size
+                    if repeat_A_over_time:
+                        A_slice = np.broadcast_to(A, [num_timesteps, *A.shape])
+                    else:
+                        A_slice = A
+
+                    yield A_slice, X_slice, Y_slice
+
+                    slice_begin += chunk_size
+                    slice_end += chunk_size
         except TypeError:
             return
 
