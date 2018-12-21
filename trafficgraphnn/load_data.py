@@ -488,7 +488,7 @@ class _Buffer(object):
         max_time = start_t + window_size * num_windows - 1
         unwindowed_df = source_df.loc[start_t:max_time].copy()
         window_end_t = start_t + window_size - 1
-        for i in range(num_windows):
+        for _ in range(num_windows):
             slicer = slice(start_t, window_end_t)
             df = unwindowed_df.loc[slicer]
             self.dfs.append(df)
