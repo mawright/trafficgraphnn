@@ -319,7 +319,8 @@ def windowed_unpadded_batch_of_generators(filenames,
                       'liu_estimated',
                       'green'],
     y_feature_subset=['e2_0/nVehSeen',
-                      'e2_0/maxJamLengthInMeters']):
+                      'e2_0/maxJamLengthInMeters'],
+    generator_buffer_size=10):
     assert len(filenames) == len(sim_indeces)
     if batch_size_to_pad_to is not None:
         num_dummy_generators = batch_size_to_pad_to - len(filenames)
@@ -335,7 +336,8 @@ def windowed_unpadded_batch_of_generators(filenames,
                                       repeat_A_over_time=True,
                                       A_name_list=A_name_list,
                                       x_feature_subset=x_feature_subset,
-                                      y_feature_subset=y_feature_subset)
+                                      y_feature_subset=y_feature_subset,
+                                      buffer_size=generator_buffer_size)
                   for f, si in zip(filenames, sim_indeces)]
 
     generators.extend([iter(()) for _ in range(num_dummy_generators)])

@@ -1,13 +1,16 @@
+import logging
 import math
 import time
-import logging
-
-_logger = logging.getLogger(__name__)
 
 import tensorflow as tf
 
 from trafficgraphnn.load_data import (get_file_and_sim_indeces_in_dirs,
-                                      pad_value_for_feature, read_from_file)
+                                      pad_value_for_feature,
+                                      windowed_unpadded_batch_of_generators)
+
+_logger = logging.getLogger(__name__)
+
+
 
 
 class TFBatch(object):
@@ -65,25 +68,38 @@ def make_datasets(directories,
     if shuffle:
         dataset = dataset.shuffle(int(1e5))
 
-    num_batches = math.ceil(len(file_and_sims) / batch_size)
-    datasets = [dataset.skip(i*batch_size).take(batch_size)
-                for i in range(num_batches)]
-
     def split_squeeze(x):
         x, y = tf.split(x, 2, axis=-1)
         x = tf.squeeze(x, axis=-1)
         y = tf.squeeze(y, axis=-1)
         return x, y
 
-    datasets = [ds.map(split_squeeze, 2) for ds in datasets]
+    dataset = dataset.apply(tf.data.experimental.map_and_batch(split_squeeze,
+                                                               batch_size,
+                                                               2))
 
-    load_func = lambda filename, sim_number: tf.py_func(
-        read_from_file, [filename, sim_number, True, ['A_downstream']],
-        Tout=[tf.bool, tf.float32, tf.float32],
-        stateful=False
+    num_batches = math.ceil(len(file_and_sims) / batch_size)
+    datasets = [dataset.skip(i).take(1) for i in range(num_batches)]
+
+
+    def windowed_padded_batch_func(filenames, sim_number):
+        return windowed_unpadded_batch_of_generators(filenames, sim_number,
+                                                     window_size,
+                                                     batch_size,
+                                                     A_name_list,
+                                                     x_feature_subset,
+                                                     y_feature_subset)
+
+    gen_op = lambda filename, sim_number: tf.data.Dataset.from_generator(
+        windowed_padded_batch_func,
+        output_types=(tf.bool, tf.float32, tf.float32),
+        output_shapes=((None, None, None, None),
+                       (None, None, 6),
+                       (None, None, 2)),
+        args=(filename, sim_number)
     )
 
-    datasets = [ds.map(load_func, 2) for ds in datasets]
+    datasets = [ds.flat_map(gen_op) for ds in datasets]
 
     def split_for_pad(A, X, Y):
         X = tf.split(X, len(x_feature_subset), axis=-1)
@@ -110,22 +126,8 @@ def make_datasets(directories,
         Y_stacked = tf.stack([Y[y] for y in y_feature_subset], -1)
         return A, X_stacked, Y_stacked
 
-    datasets = [ds.map(stack_post_pad) for ds in datasets]
+    datasets = [ds.map(stack_post_pad, 2) for ds in datasets]
 
-    def window(A, X, Y, window_size):
-        timesteps = A.shape[1]
-        for t0 in range(0, timesteps, window_size):
-            t1 = t0 + window_size
-            yield A[:,t0:t1], X[:,t0:t1], Y[:,t0:t1]
-
-    window_op = lambda A, X, Y: tf.data.Dataset.from_generator(
-        lambda A, X, Y: window(A, X, Y, window_size),
-        datasets[0].output_types,
-        datasets[0].output_shapes,
-        args=(A, X, Y)
-    )
-
-    datasets = [ds.flat_map(window_op) for ds in datasets]
     datasets = [ds.prefetch(1) for ds in datasets]
 
     return datasets
