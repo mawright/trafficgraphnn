@@ -11,8 +11,6 @@ from trafficgraphnn.load_data import (get_file_and_sim_indeces_in_dirs,
 _logger = logging.getLogger(__name__)
 
 
-
-
 class TFBatch(object):
     def __init__(self, dataset, initializer):
         self.dataset = dataset
@@ -59,7 +57,8 @@ def make_datasets(directories,
                                     'liu_estimated',
                                     'green'],
                   y_feature_subset=['e2_0/nVehSeen',
-                                    'e2_0/maxJamLengthInMeters']):
+                                    'e2_0/maxJamLengthInMeters'],
+                  buffer_size=10):
 
     file_and_sims = get_file_and_sim_indeces_in_dirs(directories)
     file_and_sims = [(f, str(si)) for f, si in file_and_sims]
@@ -88,7 +87,8 @@ def make_datasets(directories,
                                                      batch_size,
                                                      A_name_list,
                                                      x_feature_subset,
-                                                     y_feature_subset)
+                                                     y_feature_subset,
+                                                     buffer_size)
 
     gen_op = lambda filename, sim_number: tf.data.Dataset.from_generator(
         windowed_padded_batch_func,
@@ -151,7 +151,8 @@ class TFBatcher(object):
                                    'liu_estimated',
                                    'green'],
                  y_feature_subset=['e2_0/nVehSeen',
-                                   'e2_0/maxJamLengthInMeters']):
+                                   'e2_0/maxJamLengthInMeters'],
+                 buffer_size=10):
 
         t0 = time.time()
         self._train_datasets = make_datasets(train_directories,
@@ -160,7 +161,8 @@ class TFBatcher(object):
                                              shuffle,
                                              A_name_list,
                                              x_feature_subset,
-                                             y_feature_subset)
+                                             y_feature_subset,
+                                             buffer_size)
         if val_directories is not None:
             self._val_datasets = make_datasets(val_directories,
                                                batch_size,
@@ -168,7 +170,8 @@ class TFBatcher(object):
                                                False,
                                                A_name_list,
                                                x_feature_subset,
-                                               y_feature_subset)
+                                               y_feature_subset,
+                                               buffer_size)
         else:
             self._val_datasets = None
         t = time.time() - t0
