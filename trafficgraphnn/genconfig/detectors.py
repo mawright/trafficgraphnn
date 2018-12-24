@@ -113,7 +113,7 @@ def generate_detector_set(netfile, detector_type, distance_to_tls,
 
             if lane_id in lanes_with_detectors:
                 if verbose:
-                    logger.warning(
+                    logger.debug(
                         "Detectors for lane %s already generated", str(lane_id))
                 continue
 
