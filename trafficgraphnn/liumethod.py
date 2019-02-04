@@ -310,7 +310,11 @@ class LiuIntersection(object):
             time, real_queue, estimated_queue, estimated_queue_pure_liu, phase_start, phase_end, tls_start, tls_end = lane.get_estimation_data(while_running)
 
             lane_ID = lane.lane_id
-            iterables = [[lane_ID], ['time', 'ground-truth', 'estimated hybrid', 'estimated pure liu', 'phase start', 'phase end', 'tls start', 'tls end']]
+            iterables = [[lane_ID], ['time', 'ground-truth',
+                                     'estimated hybrid',
+                                     'estimated hybrid (veh)',
+                                     'estimated pure liu', 'phase start',
+                                     'phase end', 'tls start', 'tls end']]
             index = pd.MultiIndex.from_product(iterables, names=['lane', 'values'])
             if while_running == False:
                 df_lane = pd.DataFrame(index = np.arange(1, len(time)+1), columns = index)
@@ -320,6 +324,7 @@ class LiuIntersection(object):
             df_lane[lane_ID, 'time'] = time
             df_lane[lane_ID, 'ground-truth'] = real_queue
             df_lane[lane_ID, 'estimated hybrid'] = estimated_queue
+            df_lane[lane_ID, 'estimated hybrid (veh)'] = estimated_queue * self.liu_lanes[lane_ID].k_j
             df_lane[lane_ID, 'estimated pure liu'] = estimated_queue_pure_liu
             df_lane[lane_ID, 'phase start'] = phase_start
             df_lane[lane_ID, 'phase end'] = phase_end
