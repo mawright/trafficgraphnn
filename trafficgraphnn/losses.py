@@ -42,7 +42,7 @@ def mean_absolute_error_veh(y_true, y_pred):
     return mean_absolute_error(y_true[...,0], y_pred[...,0])
 
 
-def negative_masked_mae_queue_length_m(y_true, y_pred):
+def negative_masked_mae_queue_length(y_true, y_pred):
     return negative_masked_mae(y_true[...,1], y_pred[...,1])
 
 
