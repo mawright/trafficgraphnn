@@ -8,3 +8,4 @@ gym
 pandas
 networkx
 keras
+tables

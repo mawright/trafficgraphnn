@@ -1,10 +1,13 @@
 from setuptools import setup
 
+with open('requirements.txt') as f:
+    requirements = f.read().splitlines()
+
 setup(
     name='trafficgraphnn',
     version='0.1',
     packages=['trafficgraphnn'],
-    install_requires=['keras'],
+    install_requires=requirements,
     url='',
     license='',
     author='Matthew A. Wright',
