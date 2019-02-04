@@ -4,9 +4,12 @@ import time
 
 import tensorflow as tf
 
-from trafficgraphnn.load_data import (get_file_and_sim_indeces_in_dirs,
+from trafficgraphnn.load_data import (on_green_feats,
+                                      get_file_and_sim_indeces_in_dirs,
                                       pad_value_for_feature,
-                                      windowed_unpadded_batch_of_generators)
+                                      windowed_unpadded_batch_of_generators,
+                                      x_feature_subset_default,
+                                      y_feature_subset_default)
 
 _logger = logging.getLogger(__name__)
 
@@ -50,15 +53,10 @@ def make_datasets(directories,
                   A_name_list=['A_downstream',
                                'A_upstream',
                                'A_neighbors'],
-                  x_feature_subset=['e1_0/occupancy',
-                                    'e1_0/speed',
-                                    'e1_1/occupancy',
-                                    'e1_1/speed',
-                                    'liu_estimated',
-                                    'green'],
-                  y_feature_subset=['e2_0/nVehSeen',
-                                    'e2_0/maxJamLengthInMeters'],
-                  buffer_size=10):
+                  x_feature_subset=x_feature_subset_default,
+                  y_feature_subset=y_feature_subset_default,
+                  buffer_size=10,
+                  average_interval=None):
 
     file_and_sims = get_file_and_sim_indeces_in_dirs(directories)
     file_and_sims = [(f, str(si)) for f, si in file_and_sims]
@@ -94,8 +92,8 @@ def make_datasets(directories,
         windowed_padded_batch_func,
         output_types=(tf.bool, tf.float32, tf.float32),
         output_shapes=((None, None, None, None),
-                       (None, None, 6),
-                       (None, None, 2)),
+                       (None, None, len(x_feature_subset)),
+                       (None, None, len(y_feature_subset))),
         args=(filename, sim_number)
     )
 
@@ -113,6 +111,67 @@ def make_datasets(directories,
 
     xpad =  {x: pad_value_for_feature[x] for x in x_feature_subset}
     ypad =  {y: pad_value_for_feature[y] for y in y_feature_subset}
+
+    def average_over_interval(A, X, Y, average_interval):
+        shape = tf.shape(X[x_feature_subset[0]])
+        num_timesteps = shape[0]
+        divided = num_timesteps / average_interval
+        num_intervals = tf.ceil(divided)
+        deficit = tf.cast(num_intervals * average_interval, tf.int32) - num_timesteps
+        padding = [[0, deficit], [0, 0]]
+
+        PAD_VALUE = -2
+
+        padded_X = {feat: tf.pad(t, padding,
+                                 constant_values=PAD_VALUE)
+                    for feat, t in X.items()}
+        padded_Y = {feat: tf.pad(t, padding,
+                                 constant_values=PAD_VALUE)
+                    for feat, t in Y.items()}
+
+        new_shape = [num_intervals, average_interval, shape[-1]]
+        reshaped_X = {feat: tf.reshape(t, new_shape)
+                      for feat, t in padded_X.items()}
+        reshaped_Y = {feat: tf.reshape(t, new_shape)
+                      for feat, t in padded_Y.items()}
+
+        zero_tensor = tf.zeros(new_shape)
+        one_tensor = tf.ones(new_shape)
+
+        def zero_one_weight(t, feat):
+#             if feat in on_green_feats:
+#                 test = tf.logical_or(tf.equal(t, PAD_VALUE),
+#                                      tf.equal(t, pad_value_for_feature[feat]))
+#                 return tf.where(test, zero_tensor, one_tensor)
+            return tf.where(tf.equal(t, PAD_VALUE), zero_tensor, one_tensor)
+
+        reduced_one_tensor = one_tensor[:,0,:]
+
+        def weighted_avg_or_max(t, feat):
+            if feat in on_green_feats:
+                return tf.reduce_max(t, axis=1)
+            else:
+                weights = zero_one_weight(t, feat)
+                num = tf.reduce_sum(t * weights, axis=1)
+                den = tf.reduce_sum(weights, axis=1)
+                out = num / den
+                pad_value = pad_value_for_feature[feat]
+                return tf.where(tf.is_nan(out), reduced_one_tensor * pad_value, out)
+
+        new_X = {feat: weighted_avg_or_max(t, feat)
+                 for feat, t in reshaped_X.items()}
+        new_Y = {feat: weighted_avg_or_max(t, feat)
+                 for feat, t in reshaped_Y.items()}
+
+        get_As = tf.range(0, num_timesteps, average_interval)
+        new_A = tf.gather(A, get_As)
+
+        return new_A, new_X, new_Y
+
+    if average_interval is not None and average_interval > 1:
+        datasets = [ds.map(lambda A, X, Y:
+                           average_over_interval(A, X, Y, average_interval))
+                    for ds in datasets]
 
     datasets = [ds.padded_batch(
         batch_size,
@@ -144,14 +203,8 @@ class TFBatcher(object):
                  A_name_list=['A_downstream',
                               'A_upstream',
                               'A_neighbors'],
-                 x_feature_subset=['e1_0/occupancy',
-                                   'e1_0/speed',
-                                   'e1_1/occupancy',
-                                   'e1_1/speed',
-                                   'liu_estimated',
-                                   'green'],
-                 y_feature_subset=['e2_0/nVehSeen',
-                                   'e2_0/maxJamLengthInMeters'],
+                 x_feature_subset=x_feature_subset_default,
+                 y_feature_subset=y_feature_subset_default,
                  buffer_size=10):
 
         t0 = time.time()

@@ -25,6 +25,7 @@ from trafficgraphnn.utils import (
     E1IterParseWrapper, E2IterParseWrapper, DetInfo, get_preprocessed_filenames,
     get_sim_numbers_in_preprocess_store)
 from trafficgraphnn.liumethod import LiuEtAlRunner
+from trafficgraphnn.load_data import pad_value_for_feature
 
 _logger = logging.getLogger(__name__)
 
@@ -62,22 +63,23 @@ class PreprocessData(object):
         if lane_order is not None:
             self.lanes = [lane for lane in lane_order if lane in self.lanes]
 
-    def run_defaults(self, lanes=None, complevel=5, complib='zlib',
+    def run_defaults(self, lanes=None, complevel=5, complib='blosc:lz4',
                      input_data_hdf_file=None):
         self.run_liu_method(input_data_hdf_file)
         self.read_data(complevel=complevel, complib=complib)
         self.extract_liu_results(complevel=complevel, complib=complib)
-        self.write_per_lane_fixed_table(complevel=complevel, complib=complib)
+        self.write_per_lane_table(complevel=complevel, complib=complib)
 
-    def run_liu_method(self, input_data_hdf=None):
+    def run_liu_method(self, input_data_hdf=None, max_phase=np.inf):
         liu_runner = LiuEtAlRunner(
             self.sumo_network, lane_subset=self.lanes,
             simu_num=self.preproc_file_number, input_data_hdf_file=input_data_hdf)
         num_liu_phases = liu_runner.get_max_num_phase()
-        liu_runner.run_up_to_phase(num_liu_phases)
+        end_phase = min(num_liu_phases, max_phase)
+        liu_runner.run_up_to_phase(end_phase)
         liu_runner.reader.close_hdfstores()
 
-    def extract_liu_results(self, lanes=None, complevel=5, complib='zlib'):
+    def extract_liu_results(self, lanes=None, complevel=5, complib='blosc:lz4'):
         if lanes is None:
             lanes = self.lanes
         liu_output_file = os.path.join(os.path.dirname(self.sumo_network.netfile),
@@ -96,8 +98,10 @@ class PreprocessData(object):
             for lane in lanes:
                 lane_df = liu_df.iloc[:, (liu_df.columns.get_level_values(0) == lane)
                                           & liu_df.columns.get_level_values(1).isin(
-                                              ['time', 'estimated hybrid'])]
-                lane_df.columns = ['time', 'liu_estimated']
+                                              ['time', 'estimated hybrid',
+                                               'estimated hybrid (veh)'])]
+                lane_df.columns = ['time', 'liu_estimated_m',
+                                   'liu_estimated_veh']
                 lane_df = lane_df.drop_duplicates()
                 with warnings.catch_warnings():
                     warnings.simplefilter('ignore', tables.NaturalNameWarning)
@@ -106,7 +110,7 @@ class PreprocessData(object):
 
     def read_data(self, start_time=0, end_time=np.inf,
                   e1_features=None, e2_features=None,
-                  complib='zlib', complevel=5):
+                  complib='blosc:lz4', complevel=5):
 
         light_timings = self.read_light_timings(start_time=start_time, end_time=end_time)
 
@@ -150,7 +154,7 @@ class PreprocessData(object):
                                turn=False,
                                thru=False,
                                complevel=5,
-                               complib='zlib'):
+                               complib='blosc:lz4'):
 
         with pd.HDFStore(self.preprocess_file, complevel=complevel, complib=complib) as store:
             lanes = self.lanes
@@ -176,18 +180,21 @@ class PreprocessData(object):
                 store.put('A_through_movements',
                           nx.to_pandas_adjacency(A, nodelist=lanes).astype('bool'))
 
-    def write_per_lane_fixed_table(self,
-                                   X_cont_features=['nvehContrib',
-                                                    'occupancy',
-                                                    'speed',
-                                                    'green'],
-                                   Y_cont_features=['nVehSeen',
-                                                    'maxJamLengthInMeters'],
-                                   X_on_green_features=['liu_results'],
-                                   Y_on_green_features=['maxJamLengthInMeters'],
-                                   complib='zlib', complevel=5,
-                                   X_on_green_empty_value=-1,
-                                   delete_intermediate_tables=True):
+    def write_per_lane_table(self,
+                             X_cont_features=['nvehContrib',
+                                              'occupancy',
+                                              'speed',
+                                              'green'],
+                             Y_cont_features=['nVehSeen',
+                                              'maxJamLengthInMeters',
+                                              'maxJamLengthInVehicles'],
+                             X_on_green_features=['liu_estimated_m',
+                                                  'liu_estimated_veh'],
+                             Y_on_green_features=['maxJamLengthInMeters',
+                                                  'maxJamLengthInVehicles'],
+                             complib='blosc:lz4', complevel=5,
+                             X_on_green_empty_value=-1,
+                             delete_intermediate_tables=True):
 
         with pd.HDFStore(self.preprocess_file, complevel=complevel, complib=complib) as store:
             _logger.info('Writing X and Y matrices to file %s...', store.filename)
@@ -220,10 +227,12 @@ class PreprocessData(object):
                 X_df_e2 = pd.concat(X_dfs_e2, axis=1)
                 X_df = pd.concat([X_df_e1, X_df_e2], axis=1)
 
-                if 'liu_results' in X_on_green_features:
+                if any(x in X_on_green_features
+                       for x in ['liu_results', 'liu_estimated_m',
+                                 'liu_estimated_veh']):
                     df_liu = store['{}/liu_results/{}'.format(lane, sim_string)]
                     X_df = pd.concat([X_df, df_liu.set_index('time')], axis=1)
-                    X_df['liu_estimated'].fillna(X_on_green_empty_value, inplace=True)
+                    X_df.fillna(pad_value_for_feature, inplace=True)
 
                 df_green = store['{}/green/{}'.format(lane, sim_string)]
                 df_green = df_green.reindex_like(X_df)
@@ -234,7 +243,8 @@ class PreprocessData(object):
 
                 X_df.columns = _prune_det_id_in_colnames(
                     _concat_colnames(X_df.columns), lane)
-                store.put('{}/X/{}'.format(lane, sim_string), X_df, format='f')
+                store.append('{}/X/{}'.format(lane, sim_string), X_df,
+                             complevel=5, complib='blosc:lz4')
 
                 Y_df_e1 = pd.concat(Y_dfs_e1, axis=1)
                 Y_df_e2 = pd.concat(Y_dfs_e2, axis=1)
@@ -249,7 +259,9 @@ class PreprocessData(object):
 
                 Y_df.columns = _prune_det_id_in_colnames(
                     _concat_colnames(Y_df.columns), lane)
-                store.put('{}/Y/{}'.format(lane, sim_string), Y_df)
+                Y_df.fillna(pad_value_for_feature, inplace=True)
+                store.append('{}/Y/{}'.format(lane, sim_string), Y_df,
+                             complevel=5, complib='blosc:lz4')
                 if delete_intermediate_tables:
                     for det in e1s:
                         store.remove('{}/e1/{}/{}'.format(lane, det.id, sim_string))

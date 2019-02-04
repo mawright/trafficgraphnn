@@ -19,10 +19,12 @@ _logger = logging.getLogger(__name__)
 pad_value_for_feature = defaultdict(lambda: 0,
                                     occupancy=0.,
                                     speed=-1.,
-                                    liu_estimated=-1.,
+                                    liu_estimated_m=-1.,
+                                    liu_estimated_veh=-1.,
                                     green=0.,
                                     nVehSeen=0.,
                                     maxJamLengthInMeters=-1.,
+                                    maxJamLengthInVehicles=-1.,
                                    )
 
 pad_value_for_feature.update(
@@ -31,10 +33,28 @@ pad_value_for_feature.update(
     ('e1_1/occupancy', 0.),
     ('e1_1/speed', -1.),
     ('e2_0/nVehSeen', 0.),
-    ('e2_0/maxJamLengthInMeters', -1.)])
+    ('e2_0/maxJamLengthInMeters', -1.),
+    ('e2_0/maxJamLengthInVehicles', -1.),
+])
+
+x_feature_subset_default = ['e1_0/occupancy',
+                            'e1_0/speed',
+                            'e1_1/occupancy',
+                            'e1_1/speed',
+                            'liu_estimated_m',
+                            'liu_estimated_veh',
+                            'green']
+
+y_feature_subset_default = ['e2_0/nVehSeen',
+                            'e2_0/maxJamLengthInMeters',
+                            'e2_0/maxJamLengthInVehicles']
 
 All_A_name_list = ['A_downstream', 'A_upstream', 'A_neighbors',
                    'A_turn_movements', 'A_through_movements']
+
+on_green_feats = ['liu_estimated_m', 'liu_estimated_veh',
+                  'maxJamLengthInMeters', 'maxJamLengthInVehicles',
+                  'e2_0/maxJamLengthInMeters', 'e2_0/maxJamLengthInVehicles']
 
 
 class Batch(object):
@@ -48,14 +68,8 @@ class Batch(object):
                  A_name_list=['A_downstream',
                               'A_upstream',
                               'A_neighbors'],
-                 x_feature_subset=['e1_0/occupancy',
-                                   'e1_0/speed',
-                                   'e1_1/occupancy',
-                                   'e1_1/speed',
-                                   'liu_estimated',
-                                   'green'],
-                 y_feature_subset=['e2_0/nVehSeen',
-                                   'e2_0/maxJamLengthInMeters']):
+                 x_feature_subset=x_feature_subset_default,
+                 y_feature_subset=y_feature_subset_default):
         self.A_name_list = A_name_list
         self.x_feature_subset = x_feature_subset
         self.y_feature_subset = y_feature_subset
@@ -89,14 +103,8 @@ class Batch(object):
                   A_name_list=['A_downstream',
                                'A_upstream',
                                'A_neighbors'],
-                  x_feature_subset=['e1_0/occupancy',
-                                    'e1_0/speed',
-                                    'e1_1/occupancy',
-                                    'e1_1/speed',
-                                    'liu_estimated',
-                                    'green'],
-                  y_feature_subset=['e2_0/nVehSeen',
-                                    'e2_0/maxJamLengthInMeters']):
+                  x_feature_subset=x_feature_subset_default,
+                  y_feature_subset=y_feature_subset_default):
         if sim_subset is None:
             sim_subset = get_sim_numbers_in_file(filename)
         return cls([filename] * len(sim_subset), sim_subset, window_size,
@@ -111,14 +119,8 @@ def batches_from_directories(directories,
                              A_name_list=['A_downstream',
                                           'A_upstream',
                                           'A_neighbors'],
-                             x_feature_subset=['e1_0/occupancy',
-                                               'e1_0/speed',
-                                               'e1_1/occupancy',
-                                               'e1_1/speed',
-                                               'liu_estimated',
-                                               'green'],
-                             y_feature_subset=['e2_0/nVehSeen',
-                                               'e2_0/maxJamLengthInMeters']):
+                             x_feature_subset=x_feature_subset_default,
+                             y_feature_subset=y_feature_subset_default):
 
     file_and_sims = get_file_and_sim_indeces_in_dirs(directories)
 
@@ -283,14 +285,8 @@ def windowed_batch_of_generators(
     A_name_list=['A_downstream',
                  'A_upstream',
                  'A_neighbors'],
-    x_feature_subset=['e1_0/occupancy',
-                      'e1_0/speed',
-                      'e1_1/occupancy',
-                      'e1_1/speed',
-                      'liu_estimated',
-                      'green'],
-    y_feature_subset=['e2_0/nVehSeen',
-                      'e2_0/maxJamLengthInMeters']):
+    x_feature_subset=x_feature_subset_default,
+    y_feature_subset=y_feature_subset_default):
 
     assert len(filenames) == len(sim_indeces)
     generators = [generator_from_file(f, si,
@@ -312,14 +308,8 @@ def windowed_unpadded_batch_of_generators(filenames,
     A_name_list=['A_downstream',
                  'A_upstream',
                  'A_neighbors'],
-    x_feature_subset=['e1_0/occupancy',
-                      'e1_0/speed',
-                      'e1_1/occupancy',
-                      'e1_1/speed',
-                      'liu_estimated',
-                      'green'],
-    y_feature_subset=['e2_0/nVehSeen',
-                      'e2_0/maxJamLengthInMeters'],
+    x_feature_subset=x_feature_subset_default,
+    y_feature_subset=y_feature_subset_default,
     generator_buffer_size=10):
     assert len(filenames) == len(sim_indeces)
     if batch_size_to_pad_to is not None:
@@ -354,14 +344,8 @@ def read_from_file(
     A_name_list=['A_downstream',
                  'A_upstream',
                  'A_neighbors'],
-    x_feature_subset=['e1_0/occupancy',
-                      'e1_0/speed',
-                      'e1_1/occupancy',
-                      'e1_1/speed',
-                      'liu_estimated',
-                      'green'],
-    y_feature_subset=['e2_0/nVehSeen',
-                      'e2_0/maxJamLengthInMeters'],
+    x_feature_subset=x_feature_subset_default,
+    y_feature_subset=y_feature_subset_default,
     return_X_Y_as_dfs=False):
 
     # Input handling if we came from TF
@@ -434,14 +418,8 @@ def generator_prefetch_all_from_file(
     A_name_list=['A_downstream',
                  'A_upstream',
                  'A_neighbors'],
-    x_feature_subset=['e1_0/occupancy',
-                      'e1_0/speed',
-                      'e1_1/occupancy',
-                      'e1_1/speed',
-                      'liu_estimated',
-                      'green'],
-    y_feature_subset=['e2_0/nVehSeen',
-                      'e2_0/maxJamLengthInMeters']):
+    x_feature_subset=x_feature_subset_default,
+    y_feature_subset=y_feature_subset_default):
 
     A, X_df, Y_df = read_from_file(filename,
                                    simulation_number,
@@ -507,14 +485,8 @@ def generator_from_file(
     A_name_list=['A_downstream',
                  'A_upstream',
                  'A_neighbors'],
-    x_feature_subset=['e1_0/occupancy',
-                      'e1_0/speed',
-                      'e1_1/occupancy',
-                      'e1_1/speed',
-                      'liu_estimated',
-                      'green'],
-    y_feature_subset=['e2_0/nVehSeen',
-                      'e2_0/maxJamLengthInMeters'],
+    x_feature_subset=x_feature_subset_default,
+    y_feature_subset=y_feature_subset_default,
     buffer_size=10):
 
     # Input handling if we came from TF
