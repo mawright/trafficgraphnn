@@ -1,5 +1,7 @@
 from __future__ import absolute_import, print_function, division
 import logging
+import logging.handlers
+logging.handlers = logging.handlers
 from logging.config import fileConfig
 import os
 
@@ -10,7 +12,6 @@ configfile = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     'logging.conf')
 fileConfig(configfile)
-logger = logging.getLogger(__name__)
 
 from trafficgraphnn.sumo_network import SumoNetwork
 from trafficgraphnn.genconfig import ConfigGenerator
