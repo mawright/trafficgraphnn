@@ -124,15 +124,11 @@ run sumo-gui with simulation
 !.vscode/extensions.json
 *.code-workspace
 
-.idea/
-__pycache__/
 logs/
 *.egg-info
-*.pyc
 
 *.IdeaPad
 keras-gat/
-logs/
 *.png
 savio\ ws/
 models/
@@ -142,6 +138,7 @@ pylintrc
 *.npy
 *.sh
 *.txt
+!/requirements.txt
 *.py.orig
 .gitignore.orig
 *.tex
