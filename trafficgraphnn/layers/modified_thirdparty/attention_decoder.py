@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Thu Sep 13 11:02:57 2018
-Source:
-https://github.com/datalogue/keras-attention
-(https://machinelearningmastery.com/encoder-decoder-attention-sequence-to-sequence-prediction-keras/)
+This is a modified version of code available here: https://github.com/datalogue/keras-attention
 
-Description:
-https://medium.com/datalogue/attention-in-keras-1892773a4f22
+The original code is covered by the GNU Affero General Public License 3.0,
+which allows modification and distribution.
+View the license of the original code here: https://github.com/datalogue/keras-attention/blob/master/LICENSE
 """
 
 import tensorflow as tf
@@ -256,9 +254,11 @@ class AttentionDecoder(Recurrent):
     def step(self, x, states):
 
         ytm, stm, t = states
+        t = K.cast(t, 'int32')
 
+        timesteps = self.timesteps or K.shape(self._input_t)[0]
         # repeat the hidden state to the length of the sequence
-        _stm = K.repeat(stm, self.timesteps)
+        _stm = K.repeat(stm, timesteps)
 
         # now multiplty the weight matrix with the repeated hidden state
         _Wxstm = K.dot(_stm, self.W_a)

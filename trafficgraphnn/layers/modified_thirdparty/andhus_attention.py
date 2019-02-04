@@ -1,110 +1,18 @@
-'''Machine Translation (word-level) with recurrent attention in Keras.
-
-This script demonstrates how to implement basic word-level machine
-translation using the recurrent attention mechanism described in [1].
-
-# Summary of the algorithm
-The task is to generate a sequence of words in the target language
-given the sequence of words in the input language. The overall approach
-can be summarized as:
-    teacher forcing (i.e. next word is predicted given previous words
-    in target language) conditioned on the input language sentence
-    using attention.
-
-Main steps:
-- Input and target sentences are tokenized (word level).
-- Sentences are mapped to word embedding sequences.
-- An Encoder encodes the input sequence using a Bidirectional GRU
-    into a _sequence_ of encodings - with same length as the input
-    sequence.
-- A Decoder is constructed using a (unidirectional) GRU with attention:
-    At each time step:
-    - It is fed the previous target word embedding and previous GRU state.
-    - Based on the previous state and the input encoding sequence, it
-        computes a weight for each time step (i.e. word index) of the
-        input encoding sequence, using a single hidden layer MLP. The
-        attention encoding is taken as the weighted sum over the input
-        encoding sequence using these weights. (NOTE: this way the
-        Decoder has access to all time steps of the input for every
-        generated output word.)
-    - The attention encoding is concatenated to the previous target word
-        embedding and fed as input to the regular GRUCell transform.
-    - The output (updated state) of the GRUCell is fed to a single
-        hidden (maxout) layer MLP which outputs the probabilities of the
-        next target word.
-- In inference mode (greedy approach),
-    - Encode the input sequence
-    - Start with a target sequence of size 1
-        (just the start-of-sequence character)
-    - Feed the encoded input and 1-char target sequence
-        to the decoder and predict probabilities for the next word
-    - Select the next word using argmax of probabilities
-    - Append the predicted word to the target sequence
-    - Repeat until we generate the end-of-sequence character or we
-        hit the word limit.
-
-# Data
-We use the machine translation dataset described in [2].
-To download the data run:
-    mkdir -p data/wmt16_mmt
-    wget http://www.quest.dcs.shef.ac.uk/wmt16_files_mmt/training.tar.gz
-    wget http://www.quest.dcs.shef.ac.uk/wmt16_files_mmt/validation.tar.gz
-    wget http://www.quest.dcs.shef.ac.uk/wmt16_files_mmt/mmt16_task1_test.tar.gz
-    tar -xf training.tar.gz -C data/wmt16_mmt && rm training.tar.gz
-    tar -xf validation.tar.gz -C data/wmt16_mmt && rm validation.tar.gz
-    tar -xf mmt16_task1_test.tar.gz -C data/wmt16_mmt && rm mmt16_task1_test.tar.gz
-
-# References
-[1] Neural Machine Translation by Jointly Learning to Align and Translate
-    https://arxiv.org/abs/1409.0473
-[2] Multi30K: Multilingual English-German Image Descriptions
-    https://arxiv.org/abs/1605.00459
-    (http://www.statmt.org/wmt16/multimodal-task.html)
-
-# Differences between this implementation and [1]
-- A different/older dataset (wmt14) is used in [1].
-- The Tokenization here is similar but not identical to [1].
-- Initialisation of weights are not identical here and [1].
-- Normalisation of gradients is done when L2-norm > 1 in [1].
-- In the detailed description of the architecture in [1] it is stated:
-    "From here on, we omit all bias terms in order to increase
-    readability". It is thus not fully clear which linear transformations
-    also has bias terms, here all have.
-- TODO(3) A "cascading architecture" is use in [1] by feeding not only
-    the GRU output to the readout layer but also the attention encoding.
-    This can be done by:
-    A) Set `output_mode="concatenate"` in `DenseAnnotationAttention`,
-        currently blocked by this bug:
-        https://github.com/keras-team/keras/issues/11472
-    B) Add support for multiple outputs from the RNN cell or
-        "return_state_sequences" option to RNN - this way concatenation
-        can be done externally and it also offers much more flexibility
-        for inspecting "what is attended" by the attention mechanism.
-- TODO(4) This implementation is inefficient in how attention is applied,
-    part of the computation can be done _once_ for the attended but is
-    now done at every timestep. It is kept this way here for readability.
-    Will make a separate PR to show alternative solution.
-(- There is no mention of Dropout or other regularisation methods in [1],
-    this could improve performance.)
+'''This file is a modified version of code provided in this pull request
+to Keras: https://github.com/keras-team/keras/pull/11421. As of this writing,
+the pull request is unmerged. When merged, Keras is itself licensed under
+the MIT license, with original copyright for the unmodified version falling
+to its original author.
 '''
 
 from __future__ import print_function
 
-import os
-import heapq
-import numpy as np
 
 from keras import backend as K
 from keras import initializers, regularizers, constraints
 from keras.engine.base_layer import _collect_previous_mask
-from keras.layers import Layer, InputSpec
-from keras.layers import Input, Embedding, Bidirectional, RNN, GRU, GRUCell
-from keras.layers import TimeDistributed, Dense, concatenate, Lambda
-from keras.models import Model
-from keras.optimizers import Adadelta
-from keras.preprocessing.text import Tokenizer
-from keras.preprocessing.sequence import pad_sequences
-from keras.utils.generic_utils import has_arg
+from keras.layers import Layer, InputSpec, concatenate
+from keras.utils.generic_utils import has_arg, to_list
 
 
 class AttentionCellWrapper(Layer):
@@ -132,12 +40,10 @@ class AttentionCellWrapper(Layer):
                 the wrapped cell.
             `"concatenate"` the concatenation of the original input and the
                 attention encoding will be used as input to the wrapped cell.
-            TODO set "concatenate" to default?
         output_mode: String, one of `"cell_output"` (default) or `"concatenate"`.
             `"cell_output"`: the output from the wrapped cell will be used.
             `"concatenate"`: the attention encoding will be concatenated to the
                 output of the wrapped cell.
-            TODO set "concatenate" to default?
 
     # Abstract Methods and Properties
         Extension of this class must implement:
@@ -336,11 +242,11 @@ class AttentionCellWrapper(Layer):
     def call(self, inputs, states, constants, training=None):
         """Complete attentive cell transformation.
         """
-        attended = constants
-        attended_mask = _collect_previous_mask(attended)
-        # attended and mask are always lists for uniformity:
-        if not isinstance(attended_mask, list):
-            attended_mask = [attended_mask]
+        attended = to_list(constants, allow_tuple=True)
+        # NOTE: `K.rnn` will pass constants as a tuple and `_collect_previous_mask`
+        # returns `None` if passed a tuple of tensors, hence `to_list` above!
+        # We also make `attended` and `attended_mask` always lists for uniformity:
+        attended_mask = to_list(_collect_previous_mask(attended))
         cell_states = states[:self._num_wrapped_states]
         attention_states = states[self._num_wrapped_states:]
 
@@ -531,17 +437,24 @@ class DenseAnnotationAttention(AttentionCellWrapper):
     the `SimpleRNNCell`, `LSTMCell` or `GRUCell`. It modifies the input of the
     wrapped cell by attending to a constant sequence (i.e. independent of the time
     step of the recurrent application of the attention mechanism). The attention
-    encoding is computed  by using a single hidden layer MLP which computes a
-    weighting over the attended input. The MLP is applied to each time step of the
-    attended, together with the previous state. The attention encoding is the taken
-    as the weighted sum over the attended input using these weights.
+    encoding is obtained by computing a scalar weight for each time step of the
+    attended by applying two stacked Dense layers to the concatenation of the
+    attended feature vector at the respective time step with the previous state of
+    the RNN Cell. The attention encoding is the weighted sum of the attended feature
+    vectors using these weights.
+
+    Half of the first Dense transformation is independent of the RNN Cell state and
+    can be computed once for the attended sequence. Therefore this transformation
+    should be computed externally of the attentive RNN Cell (for efficiency) and this
+    layer expects both the attended sequence and the output of a Dense transformation
+    of the attended sequence (see Example below). The number of hidden units of the
+    attention mechanism is subsequently defined by the number of units of this
+    (external) dense transformation.
 
     # Arguments
         cell: A RNN cell instance. The wrapped RNN cell wrapped by this attention
             mechanism. See docs of `cell` argument in the `RNN` Layer for further
             details.
-        units: the number of hidden units in the single hidden MLP used for
-            computing the attention weights.
         kernel_initializer: Initializer for all weights matrices
             (see [initializers](../initializers.md)).
         bias_initializer: Initializer for all bias vectors
@@ -555,7 +468,7 @@ class DenseAnnotationAttention(AttentionCellWrapper):
         bias_constraint: Constraint function applied to all bias vectors
             (see [constraints](../constraints.md)).
 
-     # Examples
+     # Example
 
     ```python
         # machine translation (similar to the architecture used in [1])
@@ -565,30 +478,22 @@ class DenseAnnotationAttention(AttentionCellWrapper):
         y_emb = Embedding(TARGET_NUM_WORDS, 256, mask_zero=True)(y)
         encoder = Bidirectional(GRU(512, return_sequences=True))
         x_enc = encoder(x_emb)
-        decoder = RNN(cell=DenseAnnotationAttention(cell=GRUCell(512), units=128),
+
+        # first part of the dense annotation, independent of the decoder time step
+        u = TimeDistributed(Dense(128, use_bias=False))(x_enc)
+        decoder = RNN(cell=DenseAnnotationAttention(cell=GRUCell(512)),
                       return_sequences=True)
-        h = decoder(y_emb, constants=x_enc)
+        h = decoder(y_emb, constants=[x_enc, u])
         y_pred = TimeDistributed(Dense(TARGET_NUM_WORDS, activation='softmax'))(h)
         model = Model([y, x], y_pred)
         model.compile(loss='sparse_categorical_crossentropy', optimizer=OPTIMIZER)
     ```
-
-    # Details of attention mechanism
-    Let {attended_1, ..., attended_I} denote the attended input sequence, where
-    attended_i is the i:t attended input vector, h_cell_tm1 the previous state of
-    the wrapped cell at the recurrent time step t. Then the attention encoding at
-    time step t is computed as follows:
-
-        e_i = MLP([attended_i, h_cell_tm1])  # [., .] denoting concatenation
-        a_i = softmax_i({e_1, ..., e_I})
-        attention_h_t = sum_i(a_i * h_i)
 
     # References
     [1] Neural Machine Translation by Jointly Learning to Align and Translate
         https://arxiv.org/abs/1409.0473
     """
     def __init__(self, cell,
-                 units,
                  kernel_initializer='glorot_uniform',
                  bias_initializer='zeros',
                  kernel_regularizer=None,
@@ -597,7 +502,6 @@ class DenseAnnotationAttention(AttentionCellWrapper):
                  bias_constraint=None,
                  **kwargs):
         super(DenseAnnotationAttention, self).__init__(cell, **kwargs)
-        self.units = units
         self.kernel_initializer = initializers.get(kernel_initializer)
         self.bias_initializer = initializers.get(bias_initializer)
         self.kernel_regularizer = regularizers.get(kernel_regularizer)
@@ -612,15 +516,13 @@ class DenseAnnotationAttention(AttentionCellWrapper):
                        attention_states,
                        attended_mask,
                        training=None):
-        # only one attended sequence (verified in build)
-        assert len(attended) == 1
-        attended = attended[0]
+        # there must be two attended sequences (verified in build)
+        [attended, u] = attended
         attended_mask = attended_mask[0]
         h_cell_tm1 = cell_states[0]
 
         # compute attention weights
         w = K.repeat(K.dot(h_cell_tm1, self.W_a) + self.b_UW, K.shape(attended)[1])
-        u = K.dot(attended, self.U_a)  # TODO should be done externally of cell
         e = K.exp(K.dot(K.tanh(w + u), self.v_a) + self.b_v)
 
         if attended_mask is not None:
@@ -633,36 +535,35 @@ class DenseAnnotationAttention(AttentionCellWrapper):
         return c, [c]
 
     def attention_build(self, input_shape, cell_state_size, attended_shape):
-        if not len(attended_shape) == 1:
-            raise ValueError('only a single attended supported')
-        attended_shape = attended_shape[0]
-        if not len(attended_shape) == 3:
-            raise ValueError('only support attending tensors with dim=3')
+        if not len(attended_shape) == 2:
+            raise ValueError('There must be two attended tensors')
+        for a in attended_shape:
+            if not len(a) == 3:
+                raise ValueError('only support attending tensors with dim=3')
+        [attended_shape, u_shape] = attended_shape
 
         # NOTE _attention_size must always be set in `attention_build`
         self._attention_size = attended_shape[-1]
+        units = u_shape[-1]
 
         kernel_kwargs = dict(initializer=self.kernel_initializer,
                              regularizer=self.kernel_regularizer,
                              constraint=self.kernel_constraint)
-        self.W_a = self.add_weight(shape=(cell_state_size[0], self.units),
+        self.W_a = self.add_weight(shape=(cell_state_size[0], units),
                                    name='W_a', **kernel_kwargs)
-        self.U_a = self.add_weight(shape=(attended_shape[-1], self.units),
-                                   name='U_a', **kernel_kwargs)
-        self.v_a = self.add_weight(shape=(self.units, 1),
+        self.v_a = self.add_weight(shape=(units, 1),
                                    name='v_a', **kernel_kwargs)
 
         bias_kwargs = dict(initializer=self.bias_initializer,
                            regularizer=self.bias_regularizer,
                            constraint=self.bias_constraint)
-        self.b_UW = self.add_weight(shape=(self.units,),
+        self.b_UW = self.add_weight(shape=(units,),
                                     name="b_UW", **bias_kwargs)
         self.b_v = self.add_weight(shape=(1,),
                                    name="b_v", **bias_kwargs)
 
     def get_config(self):
         config = {
-            'units': self.units,
             'kernel_initializer': initializers.serialize(self.kernel_initializer),
             'bias_initializer': initializers.serialize(self.bias_initializer),
             'kernel_regularizer': regularizers.serialize(self.kernel_regularizer),
@@ -672,287 +573,3 @@ class DenseAnnotationAttention(AttentionCellWrapper):
         }
         base_config = super(DenseAnnotationAttention, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
-
-
-if __name__ == '__main__':
-    DATA_DIR = 'data/wmt16_mmt'
-    FROM_LANGUAGE = 'en'
-    TO_LANGUAGE = 'de'
-
-    # Meta parameters
-    MAX_UNIQUE_WORDS = 30000
-    MAX_WORDS_PER_SENTENCE = 40  # inf in [1]
-    EMBEDDING_SIZE = 620  # `m` in [1]
-    RECURRENT_UNITS = 1000  # `n` in [1]
-    DENSE_ATTENTION_UNITS = 1000  # fixed equal to `n` in [1]
-    READOUT_HIDDEN_UNITS = 500  # `l` in [1]
-    OPTIMIZER = Adadelta(rho=0.95, epsilon=1e-6)
-    BATCH_SIZE = 80
-    EPOCHS = 20
-
-    # Load and tokenize the data
-    start_token = "'start'"
-    end_token = "'end'"
-    # NOTE: using single quotes (which are not dropped by Tokenizer by default)
-    # for the tokens to be distinguished from other use of "start" and "end"
-
-    def get_sentences(partion, language):
-        fpath = os.path.join(DATA_DIR, partion + '.' + language)
-        with open(fpath, 'r') as f:
-            sentences = f.readlines()
-        return ["{} {} {}".format(start_token, sentence, end_token)
-                for sentence in sentences]
-
-    input_texts_train = get_sentences("train", FROM_LANGUAGE)
-    input_texts_val = get_sentences("val", FROM_LANGUAGE)
-    target_texts_train = get_sentences("train", TO_LANGUAGE)
-    target_texts_val = get_sentences("val", TO_LANGUAGE)
-
-    input_tokenizer = Tokenizer(num_words=MAX_UNIQUE_WORDS)
-    target_tokenizer = Tokenizer(num_words=MAX_UNIQUE_WORDS)
-    input_tokenizer.fit_on_texts(input_texts_train + input_texts_val)
-    target_tokenizer.fit_on_texts(target_texts_train + target_texts_val)
-    input_max_word_idx = max(input_tokenizer.word_index.values())
-    target_max_word_idx = max(target_tokenizer.word_index.values())
-
-    input_seqs_train = input_tokenizer.texts_to_sequences(input_texts_train)
-    input_seqs_val = input_tokenizer.texts_to_sequences(input_texts_val)
-    target_seqs_train = target_tokenizer.texts_to_sequences(target_texts_train)
-    target_seqs_val = target_tokenizer.texts_to_sequences(target_texts_val)
-
-    input_seqs_train, input_seqs_val, target_seqs_train, target_seqs_val = (
-        pad_sequences(seq, maxlen=MAX_WORDS_PER_SENTENCE, padding='post')
-        for seq in [input_seqs_train,
-                    input_seqs_val,
-                    target_seqs_train,
-                    target_seqs_val])
-
-    # Build the model
-    x = Input((None,), name="input_sequences")
-    y = Input((None,), name="target_sequences")
-    x_emb = Embedding(input_max_word_idx + 1, EMBEDDING_SIZE, mask_zero=True)(x)
-    y_emb = Embedding(target_max_word_idx + 1, EMBEDDING_SIZE, mask_zero=True)(y)
-
-    encoder_rnn = Bidirectional(GRU(RECURRENT_UNITS,
-                                    return_sequences=True,
-                                    return_state=True))
-    x_enc, h_enc_fwd_final, h_enc_bkw_final = encoder_rnn(x_emb)
-
-    # the final state of the backward-GRU (closest to the start of the input
-    # sentence) is used to initialize the state of the decoder
-    initial_state_gru = Dense(RECURRENT_UNITS, activation='tanh')(h_enc_bkw_final)
-    initial_attention_h = Lambda(lambda x: K.zeros_like(x)[:, 0, :])(x_enc)
-    initial_state = [initial_state_gru, initial_attention_h]
-
-    cell = DenseAnnotationAttention(cell=GRUCell(RECURRENT_UNITS),
-                                    units=DENSE_ATTENTION_UNITS,
-                                    input_mode="concatenate",
-                                    output_mode="cell_output")
-    # TODO output_mode="concatenate", see TODO(3)/A
-    decoder_rnn = RNN(cell=cell, return_sequences=True, return_state=True)
-    h1_and_state = decoder_rnn(y_emb, initial_state=initial_state, constants=x_enc)
-    h1 = h1_and_state[0]
-
-    def dense_maxout(x_):
-        """Implements a dense maxout layer where max is taken
-        over _two_ units"""
-        x_ = Dense(READOUT_HIDDEN_UNITS * 2)(x_)
-        x_1 = x_[:, :READOUT_HIDDEN_UNITS]
-        x_2 = x_[:, READOUT_HIDDEN_UNITS:]
-        return K.max(K.stack([x_1, x_2], axis=-1), axis=-1, keepdims=False)
-
-    maxout_layer = TimeDistributed(Lambda(dense_maxout))
-    h2 = maxout_layer(concatenate([h1, y_emb]))
-
-    output_layer = TimeDistributed(Dense(target_max_word_idx + 1,
-                                         activation='softmax'))
-    y_pred = output_layer(h2)
-
-    model = Model([y, x], y_pred)
-    model.compile(loss='sparse_categorical_crossentropy', optimizer=OPTIMIZER)
-
-    # Run training
-    model.fit([target_seqs_train[:, :-1], input_seqs_train],
-              target_seqs_train[:, 1:, None],
-              batch_size=BATCH_SIZE,
-              epochs=EPOCHS,
-              validation_data=(
-                  [target_seqs_val[:, :-1], input_seqs_val],
-                  target_seqs_val[:, 1:, None]))
-
-    # Save model
-    model.save('rec_att_mt.h5')
-
-    # Inference
-    # Let's use the model to translate new sentences! To do this efficiently, two
-    # things must be done in preparation:
-    #  1) Build separate model for the encoding that is only done _once_ per input
-    #     sequence.
-    #  2) Build a model for the decoder (and output layers) that takes input states
-    #     and returns updated states for the recurrent part of the model, so that
-    #     it can be run one step at a time.
-    encoder_model = Model(x, [x_enc] + initial_state)
-
-    x_enc_new = Input(batch_shape=K.int_shape(x_enc))
-    initial_state_new = [Input((size,)) for size in cell.state_size]
-    h1_and_state_new = decoder_rnn(y_emb,
-                                   initial_state=initial_state_new,
-                                   constants=x_enc_new)
-    h1_new = h1_and_state_new[0]
-    updated_state = h1_and_state_new[1:]
-    h2_new = maxout_layer(concatenate([h1_new, y_emb]))
-    y_pred_new = output_layer(h2_new)
-    decoder_model = Model([y, x_enc_new] + initial_state_new,
-                          [y_pred_new] + updated_state)
-
-    def translate_greedy(input_text, t_max=None):
-        """Takes the most probable next token at each time step until the end-token
-        is predicted or t_max reached.
-        """
-        t = 0
-        y_t = np.array(target_tokenizer.texts_to_sequences([start_token]))
-        y_0_to_t = [y_t]
-        x_ = np.array(input_tokenizer.texts_to_sequences([input_text]))
-        encoder_output = encoder_model.predict(x_)
-        x_enc_ = encoder_output[0]
-        state_t = encoder_output[1:]
-        if t_max is None:
-            t_max = x_.shape[-1] * 2
-        end_idx = target_tokenizer.word_index[end_token]
-        score = 0  # track the cumulative log likelihood
-        while y_t[0, 0] != end_idx and t < t_max:
-            t += 1
-            decoder_output = decoder_model.predict([y_t, x_enc_] + state_t)
-            y_pred_ = decoder_output[0]
-            state_t = decoder_output[1:]
-            y_t = np.argmax(y_pred_, axis=-1)
-            score += np.log(y_pred_[0, 0, y_t[0, 0]])
-            y_0_to_t.append(y_t)
-        y_ = np.hstack(y_0_to_t)
-        output_text = target_tokenizer.sequences_to_texts(y_)[0]
-        # length normalised score, skipping start token
-        score = score / (len(y_0_to_t) - 1)
-
-        return output_text, score
-
-    def translate_beam_search(input_text,
-                              search_width=20,
-                              branch_factor=None,
-                              t_max=None):
-        """Perform beam search to approximately find the translated sentence that
-        maximises the conditional probability given the input sequence.
-
-        Returns the completed sentences (reached end-token) in order of decreasing
-        score (the first is most probable) followed by incomplete sentences in order
-        of decreasing score - as well as the score for the respective sentence.
-
-        References:
-            [1] "Sequence to sequence learning with neural networks"
-            (https://arxiv.org/pdf/1409.3215.pdf)
-        """
-
-        if branch_factor is None:
-            branch_factor = search_width
-        elif branch_factor > search_width:
-            raise ValueError("branch_factor must be smaller than search_width")
-        elif branch_factor < 2:
-            raise ValueError("branch_factor must be >= 2")
-
-        def k_largest_val_idx(a, k):
-            """Returns top k largest values of a and their indices, ordered by
-            decreasing value"""
-            top_k = np.argpartition(a, -k)[-k:]
-            return sorted(zip(a[top_k], top_k))[::-1]
-
-        # initialisation of search
-        t = 0
-        y_0 = np.array(target_tokenizer.texts_to_sequences([start_token]))[0]
-        end_idx = target_tokenizer.word_index[end_token]
-
-        # run input encoding once
-        x_ = np.array(input_tokenizer.texts_to_sequences([input_text]))
-        encoder_output = encoder_model.predict(x_)
-        x_enc_ = encoder_output[0]
-        state_t = encoder_output[1:]
-        # repeat to a batch of <search_width> samples
-        x_enc_ = np.repeat(x_enc_, search_width, axis=0)
-
-        if t_max is None:
-            t_max = x_.shape[-1] * 2
-
-        # A "search beam" is represented as the tuple:
-        #   (score, outputs, state)
-        # where:
-        #   score: the average log likelihood of the output tokens
-        #   outputs: the history of output tokens up to time t, [y_0, ..., y_t]
-        #   state: the most recent state of the decoder_rnn for this beam
-
-        # A list of the <search_width> number of beams with highest score is
-        # maintained through out the search. Initially there is only one beam.
-        incomplete_beams = [(0., [y_0], [s[0] for s in state_t])]
-        # All beams that reached the end-token are kept separately.
-        complete_beams = []
-
-        while len(complete_beams) < search_width and t < t_max:
-            t += 1
-            # create a batch of inputs representing the incomplete_beams
-            y_tm1 = np.vstack([beam[1][-1] for beam in incomplete_beams])
-            state_tm1 = [
-                np.vstack([beam[2][i] for beam in incomplete_beams])
-                for i in range(len(state_t))
-            ]
-
-            # predict next tokes for every incomplete beam
-            batch_size = len(incomplete_beams)
-            decoder_output = decoder_model.predict(
-                [y_tm1, x_enc_[:batch_size]] + state_tm1)
-            y_pred_ = decoder_output[0]
-            state_t = decoder_output[1:]
-            # from each previous beam create new candidate beams and save the once
-            # with highest score for next iteration.
-            beams_updated = []
-            for i, beam in enumerate(incomplete_beams):
-                l = len(beam[1]) - 1  # don't count 'start' token
-                for proba, idx in k_largest_val_idx(y_pred_[i, 0], branch_factor):
-                    new_score = (beam[0] * l + np.log(proba)) / (l + 1)
-                    not_full = len(beams_updated) < search_width
-                    ended = idx == end_idx
-                    if not_full or ended or new_score > beams_updated[0][0]:
-                        # create new successor beam with next token=idx
-                        beam_new = (new_score,
-                                    beam[1] + [np.array([idx])],
-                                    [s[i] for s in state_t])
-                        if ended:
-                            complete_beams.append(beam_new)
-                        elif not_full:
-                            heapq.heappush(beams_updated, beam_new)
-                        else:
-                            heapq.heapreplace(beams_updated, beam_new)
-                    else:
-                        # if score is not among to candidates we abort search
-                        # for this ancestor beam (next token processed in order of
-                        # decreasing likelihood)
-                        break
-            # faster to process beams in order of decreasing score next iteration,
-            # due to break above
-            incomplete_beams = sorted(beams_updated, reverse=True)
-
-        # want to return in order of decreasing score
-        complete_beams = sorted(complete_beams, reverse=True)
-
-        output_texts = []
-        scores = []
-        for beam in complete_beams + incomplete_beams:
-            output_texts.append(target_tokenizer.sequences_to_texts(
-                np.concatenate(beam[1])[None, :])[0])
-            scores.append(beam[0])
-
-        return output_texts, scores
-
-    # Translate one of sentences from validation data
-    input_text = input_texts_val[0]
-    print("Translating:\n", input_text)
-    output_greedy, score_greedy = translate_greedy(input_text)
-    print("Greedy output:\n", output_greedy)
-    outputs_beam, scores_beam = translate_beam_search(input_text)
-    print("Beam search output:\n", outputs_beam[0])

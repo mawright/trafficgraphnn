@@ -3,13 +3,10 @@ from __future__ import absolute_import
 from keras import backend as K
 from keras import activations, constraints, initializers, regularizers
 from keras.layers import Layer, Dropout, LeakyReLU
-from keras.engine import InputSpec
+from keras.utils.generic_utils import to_list
 
-class BatchGraphAttention(Layer):
-    """Keras Graph Attention Layer that lets multiple batches be passed in in a single call.
+class BatchMultigraphAttention(Layer):
 
-    Uses additive attention.
-    """
     def __init__(self,
                  F_,
                  attn_heads=1,
@@ -67,13 +64,16 @@ class BatchGraphAttention(Layer):
             # Output will have shape (..., F')
             self.output_dim = self.F_
 
-        super(BatchGraphAttention, self).__init__(**kwargs)
+        super(BatchMultigraphAttention, self).__init__(**kwargs)
 
     def build(self, input_shape):
-        assert len(input_shape) >= 2
+        assert len(input_shape) == 2 # data tensor and list of A tensors
         assert len(input_shape[0]) >= 3 # dimensions: batch, node, features
-        assert len(input_shape[1]) >= 2 # dimensions: node, node
-        F = input_shape[0][-1] # input feature dim
+        F = input_shape[0][-1]
+
+        A_list = to_list(input_shape[1])
+
+        self.num_edge_types = len(A_list)
 
         # Initialize kernels for each attention head
         # Layer kernel
@@ -102,23 +102,24 @@ class BatchGraphAttention(Layer):
                             regularizer=self.attn_kernel_regularizer,
                             constraint=self.attn_kernel_constraint)
             for h in range(self.attn_heads)]
-        self.attn_kernels_neighs = [
-            self.add_weight(shape=(self.F_, 1),
-                            initializer=self.attn_kernel_initializer,
-                            name='att_kernel_neighs_{}'.format(h),
-                            regularizer=self.attn_kernel_regularizer,
-                            constraint=self.attn_kernel_constraint)
-            for h in range(self.attn_heads)]
 
-        self.input_spec = [InputSpec(shape=s) for s in input_shape]
+        self.attn_kernels_neighs = [
+            [
+                self.add_weight(shape=(self.F_, 1),
+                initializer=self.attn_kernel_initializer,
+                name='att_kernel_neighs_{}_chan_{}'.format(h, chan),
+                regularizer=self.attn_kernel_regularizer,
+                constraint=self.attn_kernel_constraint)
+                for chan in range(self.num_edge_types)
+            ] for h in range(self.attn_heads)
+        ]
+
         self.built = True
 
     def call(self, inputs):
+        raise NotImplementedError
         X = inputs[0]  # Node features (batch x N x F)
-        A = inputs[1]  # Adjacency matrix (batch x N x N)
-
-        assert K.ndim(X) == 3
-        assert K.ndim(A) == 3
+        A = inputs[1]  # Adjacency matrices (E-long list of (N x N))
 
         outputs = []
         for h in range(self.attn_heads):
@@ -129,81 +130,57 @@ class BatchGraphAttention(Layer):
                 bias = self.biases[h]
 
             # Compute inputs to attention network
-            features = K.dot(X, kernel)  # (batch x N x F')
+            features = K.dot(X, kernel)  # (batch N x F')
 
             # Compute feature combinations
             # Note: [[a_1], [a_2]]^T [[Wh_i], [Wh_2]] = [a_1]^T [Wh_i] + [a_2]^T [Wh_j]
-            # broadcast the attention kernel across all batches and nodes
-            attn_for_self = K.dot(features, attn_kernel_self)
-            attn_for_neighs = K.dot(features, attn_kernel_neighs)
+            attn_for_self = K.dot(features, attn_kernel_self)    # (N x 1), [a_1]^T [Wh_i]
+            attn_for_neighs = K.dot(features, attn_kernel_neighs)  # (N x 1), [a_2]^T [Wh_j]
+
             # Attention head a(Wh_i, Wh_j) = a^T [[Wh_i], [Wh_j]]
 
-            trans_attn_for_neighs = K.permute_dimensions(attn_for_neighs, (0, 2, 1))
-
-            # add dimensions to compute additive attention with broadcasting
-            scores = attn_for_self + trans_attn_for_neighs  # (batch x N x N) via broadcasting
+            #transpose just dimension 1 and 2, not batches
+            trans_attn_for_neighs = K.permute_dimensions(attn_for_neighs, perm=[0, 2, 1])
+            scores = attn_for_self + trans_attn_for_neighs  # (N x N) via broadcasting
 
             # Add nonlinearty
             scores = LeakyReLU(alpha=0.2)(scores)
 
             # Mask values before activation (Vaswani et al., 2017)
-            mask = (1.0 - A) * -10e9
-            scores = scores + mask
+            mask = K.exp(A * -10e9) * -10e9
+            masked = scores + mask
 
             # Feed masked values to softmax
-            attn_weights = K.softmax(scores)  # (batch x N x N), attention coefficients
-
-            dropout_attn_coeffs = Dropout(self.attn_dropout)(attn_weights)  # (batch x N x N)
-            dropout_features = Dropout(self.feature_dropout)(features)
+            softmax = K.softmax(masked)  # (N x N), attention coefficients
+            dropout = Dropout(self.attn_dropout)(softmax)  # (N x N)
 
             # Linear combination with neighbors' features
-            # (batch x N x N) * (batch x N x F') = (batch x N x F')
-            node_features = K.batch_dot(dropout_attn_coeffs, dropout_features)
+            node_features = K.batch_dot(dropout, features)  # (N x F')
 
             if self.use_bias:
                 node_features = K.bias_add(node_features, bias)
 
+            if self.attn_heads_reduction == 'concat' and self.activation is not None:
+                # In case of 'concat', we compute the activation here (Eq 5)
+                node_features = self.activation(node_features)
+
+            # Add output of attention head to final output
             outputs.append(node_features)
 
         # Reduce the attention heads output according to the reduction method
         if self.attn_heads_reduction == 'concat':
-            output = K.concatenate(outputs, -1)  # (batch x N x KF')
+            output = K.concatenate(outputs)  # (N x KF')
         else:
-            output = K.mean(K.stack(outputs, axis=0), axis=0)  # (batch x N x F')
-
-        output = self.activation(output)
+            output = K.mean(K.stack(outputs), axis=0)  # N x F')
+            if self.activation is not None:
+                # In case of 'average', we compute the activation here (Eq 6)
+                output = self.activation(output)
 
         return output
 
     def compute_output_shape(self, input_shape):
         X_shape = input_shape[0]
-        assert X_shape[-1] is not None
-        output_shape = list(X_shape)
+        assert input_shape[-1] is not None
+        output_shape = list(input_shape)
         output_shape[-1] = self.output_dim
         return tuple(output_shape)
-
-    def get_config(self):
-        """
-            For rebuilding models on load time.
-        """
-        config = {
-            'F_': self.F_,
-            'attn_heads': self.attn_heads,
-            'attn_heads_reduction': self.attn_heads_reduction,
-            'attn_dropout': self.attn_dropout,
-            'feature_dropout': self.feature_dropout,
-            'use_bias': self.use_bias,
-            'activation': self.activation,
-            'kernel_initializer': self.kernel_initializer,
-            'bias_initializer': self.bias_initializer,
-            'attn_kernel_initializer': self.attn_kernel_initializer,
-            'kernel_regularizer': self.kernel_regularizer,
-            'bias_regularizer': self.bias_regularizer,
-            'attn_kernel_regularizer': self.attn_kernel_regularizer,
-            'activity_regularizer': self.activity_regularizer,
-            'kernel_constraint': self.kernel_constraint,
-            'bias_constraint': self.bias_constraint,
-            'attn_kernel_constraint': self.attn_kernel_constraint
-        }
-        base_config = super(BatchGraphAttention, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
