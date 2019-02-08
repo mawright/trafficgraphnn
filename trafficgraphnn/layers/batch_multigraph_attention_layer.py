@@ -67,13 +67,12 @@ class BatchMultigraphAttention(Layer):
         super(BatchMultigraphAttention, self).__init__(**kwargs)
 
     def build(self, input_shape):
-        assert len(input_shape) == 2 # data tensor and list of A tensors
+        assert len(input_shape) == 2 # data tensor and A tensor
         assert len(input_shape[0]) >= 3 # dimensions: batch, node, features
+        assert len(input_shape[1]) >= 4 # dimensions: batch, edge type, node, node
         F = input_shape[0][-1]
 
-        A_list = to_list(input_shape[1])
-
-        self.num_edge_types = len(A_list)
+        self.num_edge_types = input_shape[1][1]
 
         # Initialize kernels for each attention head
         # Layer kernel
@@ -118,9 +117,7 @@ class BatchMultigraphAttention(Layer):
 
     def call(self, inputs):
         X = inputs[0]  # Node features (batch x N x F)
-        A = inputs[1]  # Adjacency matrices (E-long list of (batch x N x N))
-
-        A_stacked = K.stack(A, -1) # (batch x N x N x E)
+        A = inputs[1]  # Adjacency matrices (batch x E x N x N)
 
         outputs = []
         for h in range(self.attn_heads):
@@ -152,7 +149,7 @@ class BatchMultigraphAttention(Layer):
             scores = LeakyReLU(alpha=0.2)(scores)
 
             # Mask values before activation (Vaswani et al., 2017)
-            mask = (1.0 - A_stacked) * -10e9 # (batch x E x N x N)
+            mask = (1.0 - A) * -10e9 # (batch x E x N x N)
             masked = scores + mask
 
             # Feed masked values to softmax
@@ -183,8 +180,9 @@ class BatchMultigraphAttention(Layer):
         return output
 
     def compute_output_shape(self, input_shape):
+        assert len(input_shape) == 2
         X_shape = input_shape[0]
-        num_edge_types = len(input_shape[-1])
+        num_edge_types = input_shape[1][1]
         assert input_shape[-1] is not None
         output_shape = list(X_shape)
         output_shape[-1] = self.output_dim * num_edge_types
