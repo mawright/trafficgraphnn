@@ -139,11 +139,10 @@ def make_datasets(directories,
         one_tensor = tf.ones(new_shape)
 
         def zero_one_weight(t, feat):
-#             if feat in on_green_feats:
-#                 test = tf.logical_or(tf.equal(t, PAD_VALUE),
-#                                      tf.equal(t, pad_value_for_feature[feat]))
-#                 return tf.where(test, zero_tensor, one_tensor)
-            return tf.where(tf.equal(t, PAD_VALUE), zero_tensor, one_tensor)
+            test = tf.logical_or(tf.equal(t, PAD_VALUE),
+                                 tf.equal(t, pad_value_for_feature[feat]))
+            return tf.where(test, zero_tensor, one_tensor)
+            # return tf.where(tf.equal(t, PAD_VALUE), zero_tensor, one_tensor)
 
         reduced_one_tensor = one_tensor[:,0,:]
 
@@ -197,6 +196,7 @@ class TFBatcher(object):
                  train_directories,
                  batch_size,
                  window_size,
+                 average_interval=None,
                  val_directories=None,
                  do_drop_remainder_batch=True,
                  shuffle=True,
@@ -215,7 +215,8 @@ class TFBatcher(object):
                                              A_name_list,
                                              x_feature_subset,
                                              y_feature_subset,
-                                             buffer_size)
+                                             buffer_size,
+                                             average_interval)
         if val_directories is not None:
             self._val_datasets = make_datasets(val_directories,
                                                batch_size,
@@ -224,11 +225,15 @@ class TFBatcher(object):
                                                A_name_list,
                                                x_feature_subset,
                                                y_feature_subset,
-                                               buffer_size)
+                                               buffer_size,
+                                               average_interval)
         else:
             self._val_datasets = None
         t = time.time() - t0
         _logger.debug('Made TFBatcher object in %s s', t)
+
+        self.batch_size = batch_size
+        self.window_size = window_size
 
     def make_init_ops_and_batch(self, datasets):
         init_ops = [self.iterator.make_initializer(ds)
