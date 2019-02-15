@@ -370,9 +370,22 @@ def flatten(listOfLists):
     # From itertools recipe page
     return chain.from_iterable(listOfLists)
 
+
 def pairwise_exhaustive(iterable):
     "s -> (s0,s1), (s1,s2), (s2, s3), ..."
     # From itertools recipe page (modified)
     a, b = tee(iterable)
     next(b, None)
     return zip_longest(a, b)
+
+
+def broadcast_lists(iterables):
+    len0 = len(iterables[0])
+    if not all(len(x) in [1, len0] for x in iterables):
+        raise ValueError('Inputs should all be the same length or length 1')
+
+    for i, iterable in enumerate(iterables):
+        if len(iterable) == 1:
+            iterables[i] = list(iterables[i]) * len0
+
+    return iterables

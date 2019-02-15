@@ -7,22 +7,21 @@ import numpy as np
 import tensorflow as tf
 
 from keras import backend as K
-from keras.callbacks import (BaseLogger, CallbackList, History,
-                             ModelCheckpoint, ProgbarLogger, TensorBoard,
-                             TerminateOnNaN, ReduceLROnPlateau)
 from keras.layers import (RNN, Dense, Dropout, GRUCell, Input, InputSpec,
-                          TimeDistributed, Lambda)
+                          Lambda, TimeDistributed)
 from keras.models import Model
-from trafficgraphnn.layers import (BatchGraphAttention, ReshapeFoldInLanes,
-                                   ReshapeUnfoldLanes,
+from trafficgraphnn.custom_fit_loop import (fit_loop_init, make_callbacks,
+                                            named_logs, set_callback_params)
+from trafficgraphnn.layers import (BatchGraphAttention, DenseCausalAttention,
+                                   ReshapeFoldInLanes, ReshapeUnfoldLanes,
                                    TimeDistributedMultiInput)
-from trafficgraphnn.layers import DenseCausalAttention
 from trafficgraphnn.load_data_tf import TFBatcher
 from trafficgraphnn.losses import (mean_absolute_error_veh,
-                                   mean_square_error_veh,
+                                   mean_square_error_veh, negative_masked_mae,
                                    negative_masked_mae_queue_length,
-                                   negative_masked_mse, negative_masked_mae)
-
+                                   negative_masked_mse)
+from trafficgraphnn.nn_modules import (gat_single_A_encoder, rnn_attn_decode,
+                                       rnn_encode)
 
 _logger = logging.getLogger(__name__)
 
@@ -86,14 +85,8 @@ def main(
     A_in = Input(batch_shape=(batch_size, None, num_lanes, num_lanes),
                 name='A', tensor=Atens)
 
-    X = X_in
-    for _ in range(attn_depth):
-        X = TimeDistributed(Dropout(dropout_rate))(X)
-        X = TimeDistributedMultiInput(
-            BatchGraphAttention(attn_dim,
-                                attn_heads=attn_heads,
-                                activation='relu',
-                                attn_dropout=attn_dropout))([X, A_in])
+    X = gat_single_A_encoder(X_in, A_in, attn_depth, attn_dim, attn_heads,
+                             dropout_rate, attn_dropout, 'relu')
 
     predense = TimeDistributed(Dropout(dropout_rate))(X)
 
@@ -101,25 +94,13 @@ def main(
 
     reshaped_1 = ReshapeFoldInLanes()(dense1)
 
-    cells = [GRUCell(rnn_dim), GRUCell(rnn_dim)]
+    encoded = rnn_encode(reshaped_1, [rnn_dim, rnn_dim], 'GRU', True)
 
-    encoder = RNN(cells, return_sequences=True, stateful=True)
-    encoded = encoder(reshaped_1)
-
-    # decoder_cell = DenseAnnotationAttention(cell=GRUCell(rnn_dim), units=rnn_dim)
-    decoder_cell = DenseCausalAttention(cell=GRUCell(rnn_dim))
-    decoder = RNN(cell=decoder_cell, return_sequences=True, stateful=True)
-    decoder.input_spec = [InputSpec(shape=K.int_shape(encoded))]
-    u = TimeDistributed(Dense(rnn_dim, use_bias=False))(encoded)
-    decoded = decoder(encoded, constants=[encoded, u])
-    # decoded = decoder(encoded, constants=encoded)
+    decoded = rnn_attn_decode('GRU', rnn_dim, encoded, True)
 
     reshaped_decoded = ReshapeUnfoldLanes(num_lanes)(decoded)
     output = TimeDistributed(
         Dense(len(y_feature_subset), activation='linear'))(reshaped_decoded)
-
-    # output1 = Lambda(lambda x: x[...,0], name='num_vehicles_on_lane')(output)
-    # output2 = Lambda(lambda x: x[...,1], name='queue_length')(output)
 
     # model = Model([X_in, A_in], [output1, output2])
     model = Model([X_in, A_in], output)
@@ -142,48 +123,21 @@ def main(
 
     verbose = 1
     do_validation = True
-    metrics = ['loss', 'mean_absolute_error_veh',
-            'negative_masked_mae_queue_length']
-    stateful_metrics = [
-            'val_loss', 'val_mean_absolute_error_veh',
-            'val_negative_masked_mae_queue_length']
 
-    callback_list = CallbackList()
-    history = History()
-    callback_list.append(BaseLogger())
-    callback_list.append(history)
-    callback_list.append(TensorBoard())
-    callback_list.append(ProgbarLogger('steps', stateful_metrics=stateful_metrics))
-    filename = ('weights_epoch{epoch:02d}-'
-            'val_mae{val_mean_absolute_error_veh:.4f}-'
-            'val_queue_mae{val_negative_masked_mae_queue_length:.4f}'
-            '.hdf5')
-    callback_list.append(ModelCheckpoint(os.path.join(write_dir, filename)))
-    callback_list.append(TerminateOnNaN())
-    callback_list.append(ReduceLROnPlateau(verbose=1))
+    callback_list = make_callbacks(model, write_dir, do_validation)
 
-    callback_list.set_model(model)
-    callback_list.set_params({
-        'batch_size': batch_size,
-        'epochs': epochs,
-        'verbose': verbose,
-        'do_validation': do_validation,
-        'metrics': metrics + stateful_metrics,
-        'steps': batch_gen.num_batches * (5000 // time_window)
-    })
+    steps = batch_gen.num_batches * (5000 // time_window)
+    set_callback_params(callback_list, epochs, batch_size, verbose,
+                        do_validation, model, steps)
 
-    callback_list.on_train_begin()
-
-    model.reset_states()
-    model._make_train_function()
-    model._make_test_function()
+    fit_loop_init(model, callback_list)
 
     with K.get_session().as_default() as sess:
         sess.graph.finalize()
 
         for epoch in range(epochs):
             callback_list.on_epoch_begin(epoch)
-            _logger.info('beginning epoch %g', epoch)
+            # _logger.info('beginning epoch %g', epoch)
             t_epoch_start = time.time()
             # sess.run(batch_gen.train_batches[0].initializer)
             i_step = 0
@@ -211,12 +165,7 @@ def main(
                         logs = model.train_on_batch(x=None, y=None)
                         train_step_time = time.time() - tstep
                         step_times.append(train_step_time)
-                        # _logger.info('train step took %s s', time.time() - t2)
 
-                        # loss_list.append(logs[0])
-                        # veh_mae_list.append(logs[1])
-                        # if not np.isnan(logs[2]):
-                        #     queue_length_mae_list.append(logs[2])
                         logs = named_logs(model, logs)
                         # print(logs)
                         logs['size'] = batch_size * time_window
@@ -302,13 +251,6 @@ def main(
             _logger.debug(epoch_logs)
             # _logger.debug(history.history)
         callback_list.on_train_end(logs)
-
-
-def named_logs(model, logs):
-    result = {}
-    for l in zip(model.metrics_names, logs):
-        result[l[0]] = l[1]
-    return result
 
 
 if __name__ == '__main__':

@@ -1,0 +1,94 @@
+import keras.backend as K
+from keras.layers import (RNN, Dense, Dropout, GRUCell, InputSpec, LSTMCell,
+                          TimeDistributed)
+from trafficgraphnn.layers import (BatchGraphAttention,
+                                   BatchMultigraphAttention,
+                                   DenseCausalAttention,
+                                   TimeDistributedMultiInput)
+from trafficgraphnn.utils import broadcast_lists, iterfy
+
+
+def gat_single_A_encoder(X_tensor, A_tensor, attn_depth, attn_dims, num_heads,
+                         dropout_rate, attn_dropout_rate,
+                         gat_activation='relu'):
+    attn_dims, num_heads, dropout_rate, attn_dropout_rate = map(
+        iterfy, [attn_dims, num_heads, dropout_rate, attn_dropout_rate])
+
+    assert len(attn_dims) == len(num_heads)
+    attn_dims, num_heads, dropout_rate, attn_dropout_rate = broadcast_lists(
+        [attn_dims, num_heads, dropout_rate, attn_dropout_rate])
+
+    X = X_tensor
+    for dim, head, drop, attndrop in zip(attn_dims, num_heads, dropout_rate,
+                                         attn_dropout_rate):
+        X = TimeDistributed(Dropout(drop))(X)
+        X = TimeDistributedMultiInput(
+            BatchGraphAttention(dim,
+                                attn_heads=head,
+                                attn_dropout=attndrop,
+                                activation=gat_activation))([X, A_tensor])
+    return X
+
+
+def gat_encoder(X_tensor, A_tensor, attn_dims, num_heads,
+                dropout_rate, attn_dropout_rate, attn_reduction='concat',
+                gat_activation='relu'):
+    attn_dims, num_heads, dropout_rate, attn_dropout_rate, attn_reduction = map(
+        iterfy, [attn_dims, num_heads, dropout_rate, attn_dropout_rate,
+                 attn_reduction])
+
+    assert len(attn_dims) == len(num_heads)
+    attn_dims, num_heads, dropout_rate, attn_dropout_rate, attn_reduction \
+        = broadcast_lists([attn_dims, num_heads, dropout_rate,
+                           attn_dropout_rate, attn_reduction])
+
+    X = X_tensor
+    for dim, head, drop, attndrop, reduct in zip(attn_dims, num_heads,
+                                                 dropout_rate,
+                                                 attn_dropout_rate):
+        X = TimeDistributed(Dropout(drop))(X)
+        X = TimeDistributedMultiInput(
+            BatchMultigraphAttention(dim,
+                                     attn_heads=head,
+                                     attn_heads_reduction=reduct,
+                                     attn_dropout=attndrop,
+                                     activation=gat_activation))([X, A_tensor])
+    return X
+
+
+def rnn_encode(input_tensor, rnn_dims, cell_type, stateful=True):
+    rnn_dims = iterfy(rnn_dims)
+
+    cell_fn = _get_cell_fn(cell_type)
+
+    cells = []
+    for dim in rnn_dims:
+        cells.append(cell_fn(dim))
+
+    encoder = RNN(cells, return_sequences=True, stateful=stateful,
+                  name='rnn_encoder')
+    return encoder(input_tensor)
+
+
+def rnn_attn_decode(cell_type, rnn_dim, encoded_seq, stateful=True):
+    cell_fn = _get_cell_fn(cell_type)
+
+    decoder_cell = DenseCausalAttention(cell=cell_fn(rnn_dim))
+    decoder = RNN(
+        cell=decoder_cell, return_sequences=True, stateful=stateful,
+        name='attn_decoder')
+    decoder.input_spec = [InputSpec(shape=K.int_shape(encoded_seq))]
+
+    tdd = TimeDistributed(Dense(rnn_dim, use_bias=False))
+    u = tdd(encoded_seq)
+    return decoder(encoded_seq, constants=[encoded_seq, u])
+
+
+def _get_cell_fn(cell_type):
+    if cell_type.upper() == 'GRU':
+        return GRUCell
+    elif cell_type.upper() == 'LSTM':
+        return LSTMCell
+    else:
+        raise ValueError("Param 'cell_type' must be 'LSTM' or 'GRU', "
+                         "got {}".format(cell_type))

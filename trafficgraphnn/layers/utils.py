@@ -1,6 +1,8 @@
 """Layer utilities"""
 import keras.backend as K
 
+NEGINF = K.cast_to_floatx(-10e9)
+
 def batch_matmul(X, Y):
     """Keras-only implementation of tensorflow's batch matmul behavior in tf.matmul()"""
     with K.name_scope('batch_matmul'):
