@@ -188,7 +188,8 @@ def _append_to_store(store, buffer, all_ids):
         with warnings.catch_warnings():
             warnings.simplefilter('ignore', tables.NaturalNameWarning)
             store.append(f'raw_xml/{i}', sub_df)
-        assert len(store[f'raw_xml/{i}'].loc[0].shape) == 1
+        assert len(store[f'raw_xml/{i}'].loc[0].shape) == 1, \
+            'id %s has len(store[id].loc[0].shape) = %g' % (i, len(store[f'raw_xml/{i}'].loc[0].shape))
 
 
 def xml_to_df_hdf(parser,
@@ -202,7 +203,7 @@ def xml_to_df_hdf(parser,
     i = 0
     all_ids = set()
     with pd.HDFStore(
-        store_filename, complevel=complevel, complib=complib) as store:
+        store_filename, 'w', complevel=complevel, complib=complib) as store:
         for _ in parser.iterate_until(start_time):
             pass
         for row in parser.iterate_until(end_time):
@@ -215,6 +216,26 @@ def xml_to_df_hdf(parser,
                 buffer = collections.defaultdict(list)
                 i = 0
         _append_to_store(store, buffer, all_ids)
+
+
+def sumo_output_xmls_to_hdf(output_dir,
+                            hdf_filename='raw_xml.hdf',
+                            complevel=5,
+                            complib='blosc:lz4'):
+    file_list = [os.path.join(output_dir, f) for f in os.listdir(output_dir)]
+    file_list = [f for f in file_list
+                 if os.path.isfile(f) and os.path.splitext(f)[-1] == '.xml']
+    output_file = os.path.join(output_dir, hdf_filename)
+    for filename in file_list:
+        basename = os.path.basename(filename)
+        if '_e1_' in basename:
+            parser = E1IterParseWrapper(filename, True)
+        elif '_e2_' in basename:
+            parser = E2IterParseWrapper(filename, True)
+        else:
+            continue
+        xml_to_df_hdf(parser, output_file, complevel=complevel,
+                      complib=complib)
 
 
 def get_preprocessed_filenames(directory):
