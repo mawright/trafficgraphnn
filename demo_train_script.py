@@ -10,8 +10,10 @@ from keras import backend as K
 from keras.layers import (RNN, Dense, Dropout, GRUCell, Input, InputSpec,
                           Lambda, TimeDistributed)
 from keras.models import Model
-from trafficgraphnn.custom_fit_loop import (fit_loop_init, make_callbacks,
-                                            named_logs, set_callback_params)
+from trafficgraphnn.custom_fit_loop import (fit_loop_init,
+                                            fit_loop_tf,
+                                            make_callbacks, named_logs,
+                                            set_callback_params)
 from trafficgraphnn.layers import (BatchGraphAttention, DenseCausalAttention,
                                    ReshapeFoldInLanes, ReshapeUnfoldLanes,
                                    TimeDistributedMultiInput)
@@ -20,7 +22,8 @@ from trafficgraphnn.losses import (mean_absolute_error_veh,
                                    mean_square_error_veh, negative_masked_mae,
                                    negative_masked_mae_queue_length,
                                    negative_masked_mse)
-from trafficgraphnn.nn_modules import (gat_single_A_encoder, rnn_attn_decode,
+from trafficgraphnn.nn_modules import (gat_single_A_encoder,
+                                       output_tensor_slices, rnn_attn_decode,
                                        rnn_encode)
 
 _logger = logging.getLogger(__name__)
@@ -102,20 +105,17 @@ def main(
     output = TimeDistributed(
         Dense(len(y_feature_subset), activation='linear'))(reshaped_decoded)
 
-    # model = Model([X_in, A_in], [output1, output2])
-    model = Model([X_in, A_in], output)
+    outputs = output_tensor_slices(output, y_feature_subset)
 
-    Ytens = batch_gen.Y
-    # Ytens1 = Ytens[...,0]
-    # Ytens2 = Ytens[...,1]
+    model = Model([X_in, A_in], outputs)
+
+    Ytens = batch_gen.Y_slices
 
     feed_dict = dict()
 
     model.compile(optimizer='Adam',
                 loss=negative_masked_mse,
-                # loss=mean_square_error_veh,
-                metrics=[mean_absolute_error_veh, negative_masked_mae_queue_length],
-                # target_tensors=[Ytens1, Ytens2],
+                metrics=[negative_masked_mae],
                 target_tensors=Ytens,
                 feed_dict=feed_dict
                 )
@@ -135,123 +135,7 @@ def main(
     with K.get_session().as_default() as sess:
         sess.graph.finalize()
 
-        for epoch in range(epochs):
-            callback_list.on_epoch_begin(epoch)
-            # _logger.info('beginning epoch %g', epoch)
-            t_epoch_start = time.time()
-            # sess.run(batch_gen.train_batches[0].initializer)
-            i_step = 0
-            t0 = time.time()
-            batch_iter = batch_gen.train_batches
-            for i_batch, batch in enumerate(batch_iter):
-                loss_list = []
-                veh_mae_list = []
-                queue_length_mae_list = []
-                step_times = []
-                # for out in batch.iterate():
-
-                model.reset_states()
-
-                batch.initialize(sess, feed_dict)
-
-                # _logger.debug('Beginning training on batch %g', i_batch)
-                try:
-                    # feed_dict[batch_gen.handle] = batch.handle
-                    while True:
-                        tstep = time.time()
-
-                        callback_list.on_batch_begin(i_step)
-
-                        logs = model.train_on_batch(x=None, y=None)
-                        train_step_time = time.time() - tstep
-                        step_times.append(train_step_time)
-
-                        logs = named_logs(model, logs)
-                        # print(logs)
-                        logs['size'] = batch_size * time_window
-                        logs['batch'] = i_step
-                        logs['time'] = train_step_time
-                        loss_list.append(logs['loss'])
-                        veh_mae_list.append(
-                            logs['mean_absolute_error_veh'])
-                        queue_length_mae_list.append(
-                            logs['negative_masked_mae_queue_length'])
-
-                        callback_list.on_batch_end(i_step, logs)
-                        i_step += 1
-                except tf.errors.OutOfRangeError:
-                    # print('')
-                    _logger.debug('batch %g losses: MSE = %s, veh MAE = %s, '
-                                'q len MAE = %s (%s s)',
-                                i_batch, np.mean(loss_list), np.mean(veh_mae_list),
-                                np.mean(queue_length_mae_list), time.time() - t0)
-                    t0 = time.time()
-                finally:
-                    if model.stop_training:
-                        break
-
-            t_epoch_end = time.time()
-
-            # _logger.info('Doing validation')
-
-            val_loss_list = []
-            val_veh_mae_list = []
-            val_queue_length_mae_list = []
-            val_batch_size_list = []
-            batch_iter = batch_gen.val_batches
-            for i_batch, batch in enumerate(batch_iter):
-                t0 = time.time()
-                batch_loss_list = []
-                batch_veh_mae_list = []
-                batch_queue_length_mae_list = []
-                batch_size_list = []
-
-                batch.initialize(sess, feed_dict)
-
-                try:
-                    # feed_dict[batch_gen.handle] = batch.handle
-                    while True:
-                        val_loss, val_veh_mae, val_queue_mae = model.test_on_batch(x=None, y=None)
-                        batch_loss_list.append(val_loss)
-                        batch_veh_mae_list.append(val_veh_mae)
-                        batch_queue_length_mae_list.append(val_queue_mae)
-                        batch_size_list.append(batch_size * time_window)
-                except tf.errors.OutOfRangeError:
-
-                    sum_batch_sizes = np.sum(np.array(batch_size_list))
-                    batch_val_loss = np.nansum(np.array(batch_loss_list) * np.array(batch_size_list) / sum_batch_sizes)
-                    batch_veh_mae = np.nansum(np.array(batch_veh_mae_list) * np.array(batch_size_list) / sum_batch_sizes)
-                    batch_queue_length_mae = np.nansum(
-                        np.array(batch_queue_length_mae_list) * np.array(batch_size_list) / sum_batch_sizes)
-
-                    val_loss_list.append(batch_val_loss)
-                    val_veh_mae_list.append(batch_veh_mae)
-                    val_queue_length_mae_list.append(batch_queue_length_mae)
-                    val_batch_size_list.append(sum_batch_sizes)
-
-                    # print('')
-                    _logger.debug('batch %g val losses: MSE = %s, '
-                                'veh MAE = %s, q len MAE = %s (%s s)',
-                                i_batch, batch_val_loss, batch_veh_mae,
-                                batch_queue_length_mae, time.time() - t0)
-                    model.reset_states()
-                    i_batch += 1
-
-            sum_samples_epoch = np.sum(np.array(val_batch_size_list))
-
-            epoch_logs = {
-                'val_loss': np.sum(np.array(val_loss_list) * np.array(val_batch_size_list)) / np.sum(sum_samples_epoch),
-                'val_mean_absolute_error_veh': np.sum(
-                    np.array(val_veh_mae_list) * np.array(val_batch_size_list)) / sum_samples_epoch,
-                'val_negative_masked_mae_queue_length': np.sum(
-                    np.array(val_queue_length_mae_list) * np.array(val_batch_size_list)) / sum_samples_epoch
-                        }
-            callback_list.on_epoch_end(epoch, epoch_logs)
-            _logger.info('Time to run epoch = %s s', time.time() - t_epoch_start)
-            _logger.debug(epoch_logs)
-            # _logger.debug(history.history)
-        callback_list.on_train_end(logs)
-
+        fit_loop_tf(model, callback_list, batch_gen, epochs)
 
 if __name__ == '__main__':
     main()

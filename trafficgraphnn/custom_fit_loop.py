@@ -16,9 +16,11 @@ _logger = logging.getLogger(__name__)
 def make_callbacks(model, model_save_dir, do_validation=False):
     callback_list = CallbackList()
     callback_list.append(BaseLogger())
-    callback_list.append(History())
     callback_list.append(TerminateOnNaN())
     callback_list.append(TensorBoard())
+    history = History()
+    callback_list.append(history)
+    model.history = history
     if do_validation:
         display_metrics = ['val_' + n for n in model.metrics_names]
         callback_list.append(ProgbarLogger('steps', stateful_metrics=display_metrics))
@@ -71,28 +73,39 @@ def fit_loop_init(model, callbacks):
 
 def named_logs(model, logs):
     result = {}
-    for l in zip(model.metrics_names, logs):
-        result[l[0]] = l[1]
+    for metric, l in zip(model.metrics_names, logs):
+        result[metric] = l
     return result
 
 
+def val_named_logs(model, logs):
+    result = {}
+    for metric, l in zip(model.metrics_names, logs):
+        result['val_' + metric] = l
+    return result
+
+
+def fit_loop_tf(model, callbacks, batch_generator, num_epochs, feed_dict=None):
+    callbacks.on_train_begin()
+
+    for epoch in range(num_epochs):
+        fit_loop_train_one_epoch_tf(model, callbacks, batch_generator, epoch,
+                                    feed_dict=feed_dict)
+
 def fit_loop_train_one_epoch_tf(model, callbacks, batch_generator, epoch,
                                 feed_dict=None):
-    raise NotImplementedError
     callbacks.on_epoch_begin(epoch)
     _logger.info('Beginning epoch %g', epoch)
 
     # set up bookkeeping
     batch_size = batch_generator.batch_size * batch_generator.window_size
-    t_epoch_start = time.time()
     i_step = 0
     for batch in batch_generator.train_batches:
-        # losses
         model.reset_states()
         batch.initialize(K.get_session(), feed_dict)
 
-        try:
-            while True:
+        while True:
+            try:
                 tstep = time.time()
 
                 callbacks.on_batch_begin(i_step)
@@ -107,9 +120,34 @@ def fit_loop_train_one_epoch_tf(model, callbacks, batch_generator, epoch,
 
                 callbacks.on_batch_end(i_step, logs)
                 i_step += 1
-        except tf.errors.OutOfRangeError:
-            # this batch of timeseries is over
-            pass
-        finally:
-            if model.stop_training:
+            except tf.errors.OutOfRangeError:
+                # this batch of timeseries is over
                 break
+            finally:
+                if model.stop_training:
+                    return
+
+    i_step = 0
+    for batch in batch_generator.val_batches:
+        model.reset_states()
+        batch.initialize(K.get_session(), feed_dict)
+
+        while True:
+            try:
+                tstep = time.time()
+
+                callbacks.on_test_batch_begin(i_step)
+                logs = model.test_on_batch(x=None, y=None)
+                train_step_time = time.time() - tstep
+
+                logs = val_named_logs(model, logs)
+                logs['size'] = batch_size
+                logs['batch'] = i_step
+                logs['time'] = train_step_time
+
+                callbacks.on_test_batch_end(i_step, logs)
+                i_step += 1
+            except tf.errors.OutOfRangeError:
+                break
+
+    callbacks.on_epoch_end(epoch)
