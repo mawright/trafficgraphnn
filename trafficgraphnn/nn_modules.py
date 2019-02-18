@@ -88,7 +88,7 @@ def rnn_attn_decode(cell_type, rnn_dim, encoded_seq, stateful=True):
 def output_tensor_slices(output_tensor, feature_names):
     outputs = []
     for i, feature in enumerate(feature_names):
-        out = Lambda(lambda x: x[...,i], name=feature)
+        out = Lambda(lambda x: x[...,i], name=feature)(output_tensor)
         outputs.append(out)
     return outputs
 
