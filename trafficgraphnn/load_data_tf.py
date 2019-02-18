@@ -275,6 +275,8 @@ class TFBatcher(object):
         self.X = tf.identity(self.tensor[1], name='X')
         self.Y = tf.identity(self.tensor[2], name='Y')
 
+        self.Y_slices = tf.unstack(self.Y, axis=-1)
+
     def make_per_dataset_iterators_and_handles(self, datasets, session):
         batches = [TFHandleBatch(ds, session, self) for ds in datasets]
         return batches
