@@ -1,6 +1,7 @@
 import keras.backend as K
+from itertools import repeat
 from keras.layers import (RNN, Dense, Dropout, GRUCell, InputSpec, LSTMCell,
-                          TimeDistributed)
+                          TimeDistributed, Lambda)
 from trafficgraphnn.layers import (BatchGraphAttention,
                                    BatchMultigraphAttention,
                                    DenseCausalAttention,
@@ -82,6 +83,14 @@ def rnn_attn_decode(cell_type, rnn_dim, encoded_seq, stateful=True):
     tdd = TimeDistributed(Dense(rnn_dim, use_bias=False))
     u = tdd(encoded_seq)
     return decoder(encoded_seq, constants=[encoded_seq, u])
+
+
+def output_tensor_slices(output_tensor, feature_names):
+    outputs = []
+    for i, feature in enumerate(feature_names):
+        out = Lambda(lambda x: x[...,i], name=feature)
+        outputs.append(out)
+    return outputs
 
 
 def _get_cell_fn(cell_type):
