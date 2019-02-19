@@ -56,5 +56,5 @@ def _masked_mae(y_true, y_pred, to_mask):
 def _apply_mask(error, mask_weights):
     masked_error = error * mask_weights
     sum_error = K.sum(masked_error)
-    sum_weight = K.sum(mask_weights)
-    return K.switch(K.equal(sum_weight, 0.), 0., sum_error / sum_weight)
+    sum_weight = K.sum(mask_weights) + K.epsilon()
+    return sum_error / sum_weight
