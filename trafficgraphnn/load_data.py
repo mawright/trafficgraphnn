@@ -5,6 +5,7 @@ import time
 from collections import defaultdict
 from contextlib import ExitStack
 from itertools import zip_longest
+from functools import partial
 
 import numpy as np
 import pandas as pd
@@ -301,7 +302,8 @@ def windowed_batch_of_generators(
     return reader
 
 
-def windowed_unpadded_batch_of_generators(filenames,
+def windowed_unpadded_batch_of_generators(
+    filenames,
     sim_indeces,
     window_size,
     batch_size_to_pad_to=None,
@@ -310,7 +312,8 @@ def windowed_unpadded_batch_of_generators(filenames,
                  'A_neighbors'],
     x_feature_subset=x_feature_subset_default,
     y_feature_subset=y_feature_subset_default,
-    generator_buffer_size=10):
+    generator_buffer_size=10,
+    prefetch_all=True):
     assert len(filenames) == len(sim_indeces)
     if batch_size_to_pad_to is not None:
         num_dummy_generators = batch_size_to_pad_to - len(filenames)
@@ -321,13 +324,19 @@ def windowed_unpadded_batch_of_generators(filenames,
 
     default_val = (fill_A, fill_X, fill_Y)
 
-    generators = [generator_from_file(f, si,
-                                      chunk_size=window_size,
-                                      repeat_A_over_time=True,
-                                      A_name_list=A_name_list,
-                                      x_feature_subset=x_feature_subset,
-                                      y_feature_subset=y_feature_subset,
-                                      buffer_size=generator_buffer_size)
+    if prefetch_all:
+        gen_func = generator_prefetch_all_from_file
+    else:
+        gen_func = partial(generator_from_file,
+                           buffer_size=generator_buffer_size)
+
+    generators = [gen_func(f, si,
+                           chunk_size=window_size,
+                           repeat_A_over_time=True,
+                           A_name_list=A_name_list,
+                           x_feature_subset=x_feature_subset,
+                           y_feature_subset=y_feature_subset,
+                           )
                   for f, si in zip(filenames, sim_indeces)]
 
     generators.extend([iter(()) for _ in range(num_dummy_generators)])
@@ -426,10 +435,11 @@ def generator_prefetch_all_from_file(
                                    repeat_A_over_time,
                                    A_name_list,
                                    x_feature_subset,
-                                   y_feature_subset)
+                                   y_feature_subset,
+                                   True)
     try:
         slice_begin = 0
-        slice_end = chunk_size
+        slice_end = chunk_size - 1
         num_lanes = A.shape[-1]
         len_x = len(x_feature_subset)
         len_y = len(y_feature_subset)
@@ -448,11 +458,11 @@ def generator_prefetch_all_from_file(
             Y_slice = Y_df_slice.values.reshape(-1, num_lanes, len_y)
 
             if repeat_A_over_time:
-                A_slice = A[time_slicer]
+                A_slice = A[slice_begin:slice_begin+chunk_size]
             else:
                 A_slice = A
 
-            yield A_slice, X_slice, Y_slice, t
+            yield A_slice, X_slice, Y_slice
 
             slice_begin += chunk_size
             slice_end += chunk_size
