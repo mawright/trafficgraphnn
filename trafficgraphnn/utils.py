@@ -225,7 +225,7 @@ def sumo_output_xmls_to_hdf(output_dir,
     file_list = [os.path.join(output_dir, f) for f in os.listdir(output_dir)]
     file_list = [f for f in file_list
                  if os.path.isfile(f) and os.path.splitext(f)[-1] == '.xml']
-    output_file = os.path.join(output_dir, hdf_filename)
+    output_filename = os.path.join(output_dir, hdf_filename)
     for filename in file_list:
         basename = os.path.basename(filename)
         if '_e1_' in basename:
@@ -234,8 +234,9 @@ def sumo_output_xmls_to_hdf(output_dir,
             parser = E2IterParseWrapper(filename, True)
         else:
             continue
-        xml_to_df_hdf(parser, output_file, complevel=complevel,
+        xml_to_df_hdf(parser, output_filename, complevel=complevel,
                       complib=complib)
+    return output_filename
 
 
 def get_preprocessed_filenames(directory):
