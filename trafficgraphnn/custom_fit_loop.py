@@ -1,8 +1,9 @@
 import logging
 import os
 import time
-from collections import OrderedDict
+import datetime
 
+import numpy as np
 import tensorflow as tf
 
 import keras.backend as K
@@ -17,7 +18,9 @@ def make_callbacks(model, model_save_dir, do_validation=False):
     callback_list = CallbackList()
     callback_list.append(BaseLogger())
     callback_list.append(TerminateOnNaN())
-    callback_list.append(TensorBoard())
+    callback_list.append(
+        TensorBoard(log_dir='./logs/{:%Y-%m-%d_%H:%M:%S}'.format(
+            datetime.datetime.now())))
     history = History()
     callback_list.append(history)
     model.history = history
@@ -95,7 +98,6 @@ def fit_loop_tf(model, callbacks, batch_generator, num_epochs, feed_dict=None):
 def fit_loop_train_one_epoch_tf(model, callbacks, batch_generator, epoch,
                                 feed_dict=None):
     callbacks.on_epoch_begin(epoch)
-    _logger.info('Beginning epoch %g', epoch)
 
     # set up bookkeeping
     batch_size = batch_generator.batch_size * batch_generator.window_size
@@ -125,8 +127,9 @@ def fit_loop_train_one_epoch_tf(model, callbacks, batch_generator, epoch,
                 break
             finally:
                 if model.stop_training:
-                    return
+                    raise RuntimeError
 
+    val_logs = {'val_' + m: [] for m in model.metrics_names}
     i_step = 0
     for batch in batch_generator.val_batches:
         model.reset_states()
@@ -144,10 +147,15 @@ def fit_loop_train_one_epoch_tf(model, callbacks, batch_generator, epoch,
                 logs['size'] = batch_size
                 logs['batch'] = i_step
                 logs['time'] = train_step_time
+                for k, v in val_logs.items():
+                    v.append(logs[k])
 
                 callbacks.on_test_batch_end(i_step, logs)
                 i_step += 1
             except tf.errors.OutOfRangeError:
                 break
 
-    callbacks.on_epoch_end(epoch)
+    for k in val_logs.keys():
+        val_logs[k] = np.mean(val_logs[k])
+
+    callbacks.on_epoch_end(epoch, val_logs)
