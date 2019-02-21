@@ -20,7 +20,8 @@ def make_callbacks(model, model_save_dir, do_validation=False):
     callback_list.append(TerminateOnNaN())
     callback_list.append(
         TensorBoard(log_dir='./logs/{:%Y-%m-%d_%H:%M:%S}'.format(
-            datetime.datetime.now())))
+            datetime.datetime.now()),
+                    update_freq=1000))
     history = History()
     callback_list.append(history)
     model.history = history
