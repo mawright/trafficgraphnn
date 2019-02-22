@@ -21,14 +21,14 @@ class LiuEtAlRunner(object):
                  time_window=None,
                  store_while_running = True,
                  use_started_halts = False,
-                 simu_num = 0,
+                 sim_num = 0,
                  test_data = False):
         self.reader = SumoNetworkOutputReader(sumo_network)
         self.sumo_network = sumo_network
         self.df_estimation_results = pd.DataFrame()
         self.store_while_running = store_while_running
         self.use_started_halts = use_started_halts
-        self.simu_num = simu_num
+        self.sim_num = sim_num
         self.test_data = test_data
         self.input_data_hdf_file = input_data_hdf_file
         # verify all lanes requested are actually in the network
@@ -193,11 +193,11 @@ class LiuEtAlRunner(object):
 
         if self.test_data:
             self.df_estimation_results.to_hdf(os.path.join(os.path.dirname(
-                    self.sumo_network.netfile), 'liu_estimation_results_test_data_' + str(self.simu_num) + '.h5'),
+                    self.sumo_network.netfile), 'liu_estimation_results_test_data_' + str(self.sim_num) + '.h5'),
                     key = 'df_estimation_results')
         else:
             self.df_estimation_results.to_hdf(os.path.join(os.path.dirname(
-                    self.sumo_network.netfile), 'liu_estimation_results' + str(self.simu_num) + '.h5'),
+                    self.sumo_network.netfile), 'liu_estimation_results' + str(self.sim_num) + '.h5'),
                     key = 'df_estimation_results')
         print('Saved all results in hdf file')
 
@@ -212,10 +212,10 @@ class LiuEtAlRunner(object):
 
         if self.test_data:
             file_name = os.path.join(os.path.dirname(
-                self.sumo_network.netfile), 'liu_estimation_results_test_data_' + str(self.simu_num) + '.h5')
+                self.sumo_network.netfile), 'liu_estimation_results_test_data_' + str(self.sim_num) + '.h5')
         else:
             file_name = os.path.join(os.path.dirname(
-                self.sumo_network.netfile), 'liu_estimation_results' + str(self.simu_num) + '.h5')
+                self.sumo_network.netfile), 'liu_estimation_results' + str(self.sim_num) + '.h5')
         if not os.path.exists(file_name) or num_phase == 0:
             self.df_estimation_results.to_hdf(file_name,
                     key = 'df_estimation_results', format='table')
@@ -238,7 +238,7 @@ class LiuEtAlRunner(object):
 
     def get_liu_results_path(self):
         return os.path.join(os.path.dirname(
-            self.sumo_network.netfile), 'liu_estimation_results' + str(self.simu_num) + '.h5')
+            self.sumo_network.netfile), 'liu_estimation_results' + str(self.sim_num) + '.h5')
 
 
 class LiuIntersection(object):
@@ -374,9 +374,6 @@ class LiuLane(object):
             )-float(self.graph.nodes('detectors')[self.lane_id][self.adv_detector_id]['pos'])
         self.k_j = JAM_DENSITY #jam density
         self.v_2 = -6.5 #just for initialization
-
-        self.parent = parent
-        #self.time_window = time_window
 
     def _init_result_arrays(self):
         self.arr_breakpoint_A = []
@@ -566,12 +563,12 @@ class LiuLane(object):
 
     def breakpoint_identification(self, num_phase, start, end, curr_e1_stopbar, curr_e1_adv_detector):
 
-        #Calculate binary occupancy
+        # Calculate binary occupancy
         # binary occupancy = 1 iff a car is on the detector for a full sim step (meaning it is stopped)
         binary_occ_t = (curr_e1_adv_detector['occupancy'] >= 100).astype(np.bool)
 
-        #Calculating the time gap between vehicles
-        #I am assuming that there is maximum only one vehicle per second on the detector
+        # Calculate the time gap between vehicles
+        # Assume that there is maximum only one vehicle per second on the detector
         point_of_time = []
         time_gap_vehicles = []
         time_cnt = 0
@@ -603,6 +600,20 @@ class LiuLane(object):
 
         ### Characterize the Breakpoints A,B ###
         ### A & B ### use the binary occupancy:
+
+        # reverse the series, then see if detector is fully occupied for the
+        # next 4 seconds
+        breakpoint_A = (binary_occ_t[::-1].rolling(4)
+                                          .agg(lambda x: x.all())[::-1]
+                                          .fillna(0)
+                                          .astype(np.bool))
+
+        # see if the detector is fully occupied for this timestep and the
+        # previous 3 seconds
+        breakpoint_B = (binary_occ_t.rolling(4)
+                                    .agg(lambda x: x.all())
+                                    .astype(np.bool))
+
         bool_A_found = False
         bool_B_found = False
         breakpoint_A = False

@@ -23,7 +23,7 @@ import pandas as pd
 from trafficgraphnn.sumo_output_reader import SumoLaneOutputReader, SumoNetworkOutputReader
 from trafficgraphnn.utils import (
     E1IterParseWrapper, E2IterParseWrapper, DetInfo, get_preprocessed_filenames,
-    get_sim_numbers_in_preprocess_store)
+    get_sim_numbers_in_preprocess_store, sumo_output_xmls_to_hdf)
 from trafficgraphnn.liumethod import LiuEtAlRunner
 from trafficgraphnn.load_data import pad_value_for_feature
 
@@ -63,17 +63,25 @@ class PreprocessData(object):
         if lane_order is not None:
             self.lanes = [lane for lane in lane_order if lane in self.lanes]
 
-    def run_defaults(self, lanes=None, complevel=5, complib='blosc:lz4',
-                     input_data_hdf_file=None):
-        self.run_liu_method(input_data_hdf_file)
+    def run_defaults(self, lanes=None, complevel=5, complib='blosc:lz4'):
+        raw_xml_filename =self.detector_xmls_to_df_hdf(complevel=complevel,
+                                                       complib=complib)
+        self.run_liu_method(raw_xml_filename)
         self.read_data(complevel=complevel, complib=complib)
         self.extract_liu_results(complevel=complevel, complib=complib)
         self.write_per_lane_table(complevel=complevel, complib=complib)
 
+    def detector_xmls_to_df_hdf(self, complevel=5, complib='blosc:lz4'):
+        filename = sumo_output_xmls_to_hdf(self.detector_data_path,
+                                           complevel=complevel,
+                                           complib=complib)
+        return filename
+
     def run_liu_method(self, input_data_hdf=None, max_phase=np.inf):
         liu_runner = LiuEtAlRunner(
             self.sumo_network, lane_subset=self.lanes,
-            simu_num=self.preproc_file_number, input_data_hdf_file=input_data_hdf)
+            sim_num=self.preproc_file_number,
+            input_data_hdf_file=input_data_hdf)
         num_liu_phases = liu_runner.get_max_num_phase()
         end_phase = min(num_liu_phases, max_phase)
         liu_runner.run_up_to_phase(end_phase)
