@@ -2,8 +2,8 @@ from __future__ import absolute_import
 
 from keras import backend as K
 from keras import activations, constraints, initializers, regularizers
-from keras.layers import Layer, Dropout, LeakyReLU
-from keras.utils.generic_utils import to_list
+from keras.layers import Layer, LeakyReLU
+from trafficgraphnn.layers.utils import batch_matmul, NEGINF
 
 class BatchMultigraphAttention(Layer):
 
@@ -12,7 +12,7 @@ class BatchMultigraphAttention(Layer):
                  attn_heads=1,
                  attn_heads_reduction='concat',  # {'concat', 'average'}
                  attn_dropout=0.5,
-                 feature_dropout=0.,
+                 feature_dropout=0., # unused
                  use_bias=True,
                  activation='relu',
                  kernel_initializer='glorot_uniform',
@@ -149,19 +149,30 @@ class BatchMultigraphAttention(Layer):
             scores = LeakyReLU(alpha=0.2)(scores)
 
             # Mask values before activation (Vaswani et al., 2017)
-            mask = (1.0 - A) * -10e9 # (batch x E x N x N)
+            mask = (1.0 - A) * NEGINF # (batch x E x N x N)
             masked = scores + mask
 
             # Feed masked values to softmax
             softmax = K.softmax(masked)  # (batch x E x N x N), attention coefficients
-            dropout = Dropout(self.attn_dropout)(softmax)  # (batch x E x N x N)
 
-            slices = [dropout[:,i] for i in range(self.num_edge_types)]
+            shape = K.shape(softmax)
+            noise_shape = [shape[0], 1, shape[2], shape[3]]
+
+            dropout_lambda = lambda: K.dropout(softmax, self.attn_dropout, noise_shape)  # (batch x E x N x N)
+
+            dropout = K.in_train_phase(dropout_lambda, softmax)
+
+            features = K.expand_dims(features, 1)
+            features = K.repeat_elements(features, self.num_edge_types, 1)
 
             # Linear combination with neighbors' features
-            node_features = [K.batch_dot(x, features) for x in slices] # E x (batch x N x F')
+            node_features = batch_matmul(dropout, features) # (batch x E x N x F')
 
-            node_features = K.concatenate(node_features, -1) # (batch x N x EF')
+            node_features = K.permute_dimensions(node_features, [0, 2, 1, 3])
+            shape = K.shape(node_features)
+            node_features = K.reshape(node_features,
+                                      K.concatenate([shape[:2],
+                                                     K.prod(shape[2:], keepdims=True)])) # (batch x N x EF')
 
             if self.use_bias:
                 node_features = K.bias_add(node_features, bias)
