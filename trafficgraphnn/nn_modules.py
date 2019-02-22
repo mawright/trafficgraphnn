@@ -1,5 +1,4 @@
 import keras.backend as K
-from itertools import repeat
 from keras.layers import (RNN, Dense, Dropout, GRUCell, InputSpec, LSTMCell,
                           TimeDistributed, Lambda)
 from trafficgraphnn.layers import (BatchGraphAttention,
