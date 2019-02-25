@@ -1,17 +1,12 @@
 import collections
 import logging
 import os
-import re
 import sys
 from itertools import zip_longest, chain, repeat, tee
-import warnings
-import tables
 
-import numpy as np
 import pandas as pd
 import six
 from lxml import etree
-from tables.exceptions import NoSuchNodeError
 
 _logger = logging.getLogger(__name__)
 
@@ -172,110 +167,6 @@ _col_dtype_key = {
     'fromLane': str,
     'toLane': str
 }
-
-
-def _append_to_store(store, buffer, all_ids):
-    converter = {col: _col_dtype_key[col]
-                      for col in buffer.keys()
-                      if col in _col_dtype_key}
-    df = pd.DataFrame.from_dict(buffer)
-    df = df.astype(converter)
-    df = df.set_index('begin')
-    for i in all_ids:
-        # sub_df = df.loc[df['id'] == i]
-        # sub_df = sub_df.set_index('begin')
-        sub_df = df.query(f"id == '{i}'")
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore', tables.NaturalNameWarning)
-            store.append(f'raw_xml/{i}', sub_df)
-        assert len(store[f'raw_xml/{i}'].loc[0].shape) == 1, \
-            'id %s has len(store[id].loc[0].shape) = %g' % (i, len(store[f'raw_xml/{i}'].loc[0].shape))
-
-
-def xml_to_df_hdf(parser,
-                  store_filename,
-                  complevel=7,
-                  complib='zlib',
-                  start_time=0,
-                  end_time=np.inf,
-                  buffer_size=1e5):
-    buffer = collections.defaultdict(list)
-    i = 0
-    all_ids = set()
-    with pd.HDFStore(
-        store_filename, 'w', complevel=complevel, complib=complib) as store:
-        for _ in parser.iterate_until(start_time):
-            pass
-        for row in parser.iterate_until(end_time):
-            for k, v in row.items():
-                buffer[k].append(v)
-            all_ids.add(row.get('id'))
-            i += 1
-            if i >= buffer_size:
-                _append_to_store(store, buffer, all_ids)
-                buffer = collections.defaultdict(list)
-                i = 0
-        _append_to_store(store, buffer, all_ids)
-
-
-def sumo_output_xmls_to_hdf(output_dir,
-                            hdf_filename='raw_xml.hdf',
-                            complevel=5,
-                            complib='blosc:lz4'):
-    file_list = [os.path.join(output_dir, f) for f in os.listdir(output_dir)]
-    file_list = [f for f in file_list
-                 if os.path.isfile(f) and os.path.splitext(f)[-1] == '.xml']
-    output_filename = os.path.join(output_dir, hdf_filename)
-    for filename in file_list:
-        basename = os.path.basename(filename)
-        if '_e1_' in basename:
-            parser = E1IterParseWrapper(filename, True)
-        elif '_e2_' in basename:
-            parser = E2IterParseWrapper(filename, True)
-        else:
-            continue
-        xml_to_df_hdf(parser, output_filename, complevel=complevel,
-                      complib=complib)
-    return output_filename
-
-
-def get_preprocessed_filenames(directory):
-    try:
-        return [os.path.join(directory, f)
-                for f in os.listdir(directory)
-                if os.path.isfile(os.path.join(directory, f))
-                and re.match(r'sim_\d+.h5', os.path.basename(f))]
-    except FileNotFoundError:
-        return []
-
-
-def get_sim_numbers_in_preprocess_store(store, lane_list=None):
-    if lane_list is None:
-        lane_list = store['A_downstream'].columns
-
-    def sim_numbers_for_lane(lane):
-            X_subelements = dir(store.root.__getattr__(lane).X)
-            samples = filter(lambda e: re.match(r'_\d{4,5}', e), X_subelements)
-            return list(map(lambda e: int(re.search(r'\d{4,5}', e).group()), samples))
-
-    def sim_numbers_for_lane_2(lane):
-        query_string = '{}/X/_{:04}'
-        i = 1
-        try:
-            while True:
-                X = store.get(query_string.format(lane, i))
-                i += 1
-        except KeyError:
-            pass
-        return list(range(1, i))
-
-    try:
-        sim_numbers = sim_numbers_for_lane_2(list(lane_list)[0])
-    except NoSuchNodeError:
-        return []
-
-    # assert all((sim_numbers_for_lane_2(lane) == sim_numbers for lane in lane_list))
-    return sim_numbers
 
 
 def xml_to_list_of_dicts(

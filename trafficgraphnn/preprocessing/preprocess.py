@@ -6,26 +6,29 @@ Created on Fri Jul 13 16:21:00 2018
 @author: simon
 """
 import logging
-import os
-from xml.etree import cElementTree as et
-import networkx as nx
 import math
+import os
 import re
-from collections import OrderedDict
-import six
-from contextlib import ExitStack
 import warnings
-import tables
+from collections import OrderedDict
+from contextlib import ExitStack
+from xml.etree import cElementTree as et
 
+import networkx as nx
 import numpy as np
 import pandas as pd
+import six
+import tables
 
-from trafficgraphnn.sumo_output_reader import SumoLaneOutputReader, SumoNetworkOutputReader
-from trafficgraphnn.utils import (
-    E1IterParseWrapper, E2IterParseWrapper, DetInfo, get_preprocessed_filenames,
-    get_sim_numbers_in_preprocess_store, sumo_output_xmls_to_hdf)
 from trafficgraphnn.liumethod import LiuEtAlRunner
 from trafficgraphnn.load_data import pad_value_for_feature
+from trafficgraphnn.preprocessing.io import (get_preprocessed_filenames,
+                                             get_sim_numbers_in_preprocess_store,
+                                             sumo_output_xmls_to_hdf)
+from trafficgraphnn.sumo_output_reader import (SumoLaneOutputReader,
+                                               SumoNetworkOutputReader)
+from trafficgraphnn.utils import (DetInfo, E1IterParseWrapper,
+                                  E2IterParseWrapper)
 
 _logger = logging.getLogger(__name__)
 
@@ -64,10 +67,10 @@ class PreprocessData(object):
             self.lanes = [lane for lane in lane_order if lane in self.lanes]
 
     def run_defaults(self, lanes=None, complevel=5, complib='blosc:lz4'):
-        raw_xml_filename =self.detector_xmls_to_df_hdf(complevel=complevel,
-                                                       complib=complib)
-        self.run_liu_method(raw_xml_filename)
+        raw_xml_filename = self.detector_xmls_to_df_hdf(complevel=complevel,
+                                                        complib=complib)
         self.read_data(complevel=complevel, complib=complib)
+        self.run_liu_method(raw_xml_filename)
         self.extract_liu_results(complevel=complevel, complib=complib)
         self.write_per_lane_table(complevel=complevel, complib=complib)
 

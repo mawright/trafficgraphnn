@@ -3,17 +3,17 @@ import os
 
 from trafficgraphnn.sumo_network import SumoNetwork
 from trafficgraphnn.genconfig import ConfigGenerator
-from trafficgraphnn.preprocess_data import PreprocessData
+from trafficgraphnn.preprocessing import PreprocessData
 
 def main(n):
 
-    net_name = f'testnet3x3_{n}'
+    net_name = f'testnet3x3_v2_{n}'
 
     net_dir = os.path.join('data/networks', net_name)
     net_filename = os.path.join(net_dir, f'{net_name}.net.xml')
 
     end_time = 3600
-    period = 0.4
+    period = 0.5
 
     if os.path.exists(net_filename):
         sn = SumoNetwork(net_filename,
@@ -34,7 +34,7 @@ def main(n):
         config.define_tls_output_file()
         sn = SumoNetwork.from_gen_config(config)
 
-    num_files = 8
+    num_files = 6
     num_sims_per_file = 8
 
     for f in range(num_files):

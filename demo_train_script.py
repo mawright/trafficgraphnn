@@ -10,29 +10,25 @@ from keras import backend as K
 from keras.layers import (RNN, Dense, Dropout, GRUCell, Input, InputSpec,
                           Lambda, TimeDistributed)
 from keras.models import Model
-from trafficgraphnn.custom_fit_loop import (fit_loop_init,
-                                            fit_loop_tf,
-                                            make_callbacks, named_logs,
+from trafficgraphnn.custom_fit_loop import (fit_loop_init, fit_loop_tf,
+                                            make_callbacks,
                                             set_callback_params)
-from trafficgraphnn.layers import (BatchGraphAttention, DenseCausalAttention,
-                                   ReshapeFoldInLanes, ReshapeUnfoldLanes,
-                                   TimeDistributedMultiInput)
+from trafficgraphnn.layers import ReshapeFoldInLanes, ReshapeUnfoldLanes
 from trafficgraphnn.load_data_tf import TFBatcher
-from trafficgraphnn.losses import (mean_absolute_error_veh,
-                                   mean_square_error_veh, negative_masked_mae,
-                                   negative_masked_mae_queue_length,
+from trafficgraphnn.losses import (negative_masked_mae, negative_masked_mape,
                                    negative_masked_mse)
-from trafficgraphnn.nn_modules import (gat_single_A_encoder,
+from trafficgraphnn.nn_modules import (gat_encoder, gat_single_A_encoder,
                                        output_tensor_slices, rnn_attn_decode,
                                        rnn_encode)
 
 _logger = logging.getLogger(__name__)
 
 def main(
-    net_prefix='testnet3x3',
+    net_prefix='testnet3x3_v2',
     A_name_list=['A_downstream'],
     batch_size=4,
     time_window=150,
+    # average_interval=30,
     epochs=50,
     attn_dim=64,
     attn_heads=4,
@@ -48,9 +44,9 @@ def main(
     np.random.seed(seed)
 
     dir_string = 'data/networks/{}_{}/preprocessed_data'
-    directories = [dir_string.format(net_prefix, i) for i in range(5)]
-    train_dirs = directories[:-2] + directories[-1:]
-    val_dir = directories[-2]
+    directories = [dir_string.format(net_prefix, i) for i in range(4)]
+    train_dirs = directories[1:]
+    val_dir = directories[1]
     num_lanes = 120
 
     x_feature_subset = ['e1_0/occupancy',
@@ -65,7 +61,10 @@ def main(
 
     write_dir = 'data/test'
 
-    batch_gen = TFBatcher(train_dirs, batch_size, time_window,
+    batch_gen = TFBatcher(train_dirs, batch_size,
+                          time_window,
+                        #   time_window*average_interval,
+                        #   average_interval=average_interval,
                           A_name_list=A_name_list,
                           x_feature_subset=x_feature_subset,
                           y_feature_subset=y_feature_subset,
@@ -111,15 +110,11 @@ def main(
 
     Ytens = batch_gen.Y_slices
 
-    feed_dict = dict()
-
     model.compile(optimizer='Adam',
-                loss=negative_masked_mse,
-                metrics=[negative_masked_mae],
-                target_tensors=Ytens,
-                feed_dict=feed_dict
-                )
-    model.stop_training = False
+                  loss=negative_masked_mse,
+                  metrics=[negative_masked_mae, negative_masked_mape],
+                  target_tensors=Ytens,
+                  )
 
     verbose = 1
     do_validation = True
@@ -132,10 +127,13 @@ def main(
 
     fit_loop_init(model, callback_list)
 
-    with K.get_session().as_default() as sess:
-        sess.graph.finalize()
+    with K.get_session().as_default():
+        # sess.graph.finalize()
 
         fit_loop_tf(model, callback_list, batch_gen, epochs)
+
+        if hasattr(model, 'history'):
+            print(model.history)
 
 if __name__ == '__main__':
     main()

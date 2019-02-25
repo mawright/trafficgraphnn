@@ -4,16 +4,16 @@ import tempfile
 import time
 from collections import defaultdict
 from contextlib import ExitStack
-from itertools import zip_longest
 from functools import partial
+from itertools import zip_longest
 
 import numpy as np
 import pandas as pd
 import six
 
-from trafficgraphnn.utils import (flatten, get_preprocessed_filenames,
-                                  get_sim_numbers_in_preprocess_store, iterfy,
-                                  string_list_decode)
+from trafficgraphnn.preprocessing.io import (get_preprocessed_filenames,
+                                             get_sim_numbers_in_preprocess_store)
+from trafficgraphnn.utils import flatten, iterfy, string_list_decode
 
 _logger = logging.getLogger(__name__)
 
