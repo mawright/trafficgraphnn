@@ -1,10 +1,5 @@
-import os
-
-import lxml
 import numpy as np
-import pandas as pd
 
-from trafficgraphnn import SumoNetwork
 from trafficgraphnn.preprocessing.io import (green_times_from_lane_light_df,
                                              light_timing_xml_to_phase_df,
                                              queueing_intervals_from_lane_light_df,
