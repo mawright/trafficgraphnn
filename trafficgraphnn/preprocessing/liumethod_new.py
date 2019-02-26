@@ -36,8 +36,8 @@ def load_output_data(sumo_network):
     return output_hdf, green_df
 
 
-def get_lane_ff_speed(sumo_network, lane_id):
-    return sumo_network.net.getLane(lane_id).getSpeed()
+def get_lane_length(sumo_network, lane_id):
+    return sumo_network.net.getLane(lane_id).getLength()
 
 
 def get_length_between_loop_detectors(sumo_network, lane_id):
