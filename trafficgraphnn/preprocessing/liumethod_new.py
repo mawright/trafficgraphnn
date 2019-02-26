@@ -42,8 +42,8 @@ def get_length_between_loop_detectors(sumo_network, lane_id):
 
     e1_dets.sort(key=lambda x: x.info['pos'])
 
-    stopbar_pos = e1_dets[-1].info['pos']
-    advance_pos = e1_dets[-2].info['pos']
+    stopbar_pos = float(e1_dets[-1].info['pos'])
+    advance_pos = float(e1_dets[-2].info['pos'])
 
     return abs(stopbar_pos - advance_pos)
 
