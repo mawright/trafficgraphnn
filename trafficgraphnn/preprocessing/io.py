@@ -10,7 +10,7 @@ from tables import NoSuchNodeError
 
 from trafficgraphnn.utils import (E1IterParseWrapper, E2IterParseWrapper,
                                   TLSSwitchIterParseWrapper, _col_dtype_key,
-                                  pairwise_exhaustive)
+                                  pairwise_iterate)
 
 
 def _append_to_store(store, buffer, all_ids):
@@ -79,7 +79,20 @@ def sumo_output_xmls_to_hdf(output_dir,
     return output_filename
 
 
-def light_timing_xml_to_df(xml_file):
+def tls_output_xml_to_hdf(xml_file,
+                          hdf_filename='raw_xml.hdf',
+                          complevel=5,
+                          complib='blosc:lz4'):
+
+    df = light_timing_xml_to_phase_df(xml_file)
+    with pd.HDFStore(hdf_filename, complevel=complevel,
+                     complib=complib) as store:
+        store.append('raw_xml/tls_switch', df, append=False)
+
+    return df
+
+
+def light_timing_xml_to_phase_df(xml_file):
     parser = TLSSwitchIterParseWrapper(xml_file, True)
     data = [dict(e.attrib) for e in parser.iterate_until(np.inf)]
     df = pd.DataFrame(data)
@@ -102,20 +115,30 @@ def light_timing_xml_to_df(xml_file):
 
 def green_times_from_lane_light_df(lane_df):
     phase_starts = lane_df[(lane_df.shift() != lane_df)]
-    green_starts = phase_starts[phase_starts == True]
+    green_starts = phase_starts[phase_starts == True].index
     return green_starts
 
 
 def red_times_from_lane_light_df(lane_df):
     phase_starts = lane_df[(lane_df.shift() != lane_df)]
-    red_starts = phase_starts[phase_starts == False]
+    red_starts = phase_starts[phase_starts == False].index
     return red_starts
 
 
 def queueing_intervals_from_lane_light_df(lane_df):
     red_starts = red_times_from_lane_light_df(lane_df)
-    queueing_intervals = pairwise_exhaustive(red_starts.index)
+    queueing_intervals = pairwise_iterate(red_starts)
     return queueing_intervals
+
+
+def green_phase_start_ends_from_lane_light_df(lane_df):
+    green_starts = green_times_from_lane_light_df(lane_df)
+    red_starts = red_times_from_lane_light_df(lane_df)
+
+    # if the light starts on red skip that one
+    if red_starts[0] < green_starts[0]:
+        red_starts = red_starts[1:]
+    return zip(green_starts, red_starts)
 
 
 def get_preprocessed_filenames(directory):
