@@ -86,12 +86,15 @@ def liu_for_lane(store, lane_id, inter_detector_distance, lane_length,
 
     liu_estimate_list = []
     estimate = 0
+    i = 0
     for stop, adv, green, A, B, C in zip(stopbar_queueing_periods,
                                          advance_queueing_periods,
                                          green_times,
                                          breakpoint_A_list,
                                          breakpoint_B_list,
                                          breakpoint_C_list):
+        print(f'step {i}')
+        i += 1
         prev_estimate = estimate
         estimate = queue_estimate(stop, adv, green, A, B, C, prev_estimate,
                                   inter_detector_distance, jam_density,
@@ -179,9 +182,9 @@ def breakpoint_C(detector_df, breakpoint_B, end_search_time, min_time_gap=3):
 
 
 def queue_estimate(stopbar_df, advance_df, green_start,
-                   prev_phase_queue_estimate, breakpoint_A, breakpoint_B,
-                   breakpoint_C, inter_detector_distance, jam_density,
-                   lane_length):
+                   breakpoint_A, breakpoint_B, breakpoint_C,
+                   prev_phase_queue_estimate, inter_detector_distance,
+                   jam_density, lane_length):
     if breakpoint_A is None:
         return input_output_method(stopbar_df, advance_df,
                                    prev_phase_queue_estimate, green_start)
@@ -204,7 +207,6 @@ def input_output_method(stopbar_df, advance_df, prev_phase_queue_estimate,
     net_flow = total_inflow - total_outflow
 
     queue_estimate = prev_phase_queue_estimate + net_flow
-    assert queue_estimate > 0
     return max(queue_estimate, 0)
 
 

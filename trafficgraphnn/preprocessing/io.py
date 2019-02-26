@@ -85,6 +85,8 @@ def tls_output_xml_to_hdf(xml_file,
                           complib='blosc:lz4'):
 
     df = light_timing_xml_to_phase_df(xml_file)
+    file_dir = os.path.dirname(xml_file)
+    hdf_filename = os.path.join(file_dir, hdf_filename)
     with pd.HDFStore(hdf_filename, complevel=complevel,
                      complib=complib) as store:
         store.append('raw_xml/tls_switch', df, append=False)
