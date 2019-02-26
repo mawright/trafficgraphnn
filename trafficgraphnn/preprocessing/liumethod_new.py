@@ -48,8 +48,8 @@ def get_length_between_loop_detectors(sumo_network, lane_id):
     return abs(stopbar_pos - advance_pos)
 
 
-def liu_for_lane(store, lane_id, lane_ff_speed, inter_detector_distance,
-                 lane_length, jam_density=None):
+def liu_for_lane(store, lane_id, inter_detector_distance, lane_length,
+                 jam_density=None):
     if jam_density is None:
         jam_density = JAM_DENSITY
     stopbar_detector_id = 'e1_' + lane_id + '_0'
