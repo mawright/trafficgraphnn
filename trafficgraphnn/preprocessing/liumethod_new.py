@@ -1,4 +1,5 @@
 import numpy as np
+from collections import Iterable
 
 from trafficgraphnn.preprocessing.io import (green_times_from_lane_light_df,
                                              light_timing_xml_to_phase_df,
@@ -49,9 +50,7 @@ def get_length_between_loop_detectors(sumo_network, lane_id):
 
 
 def liu_for_lane(store, lane_id, inter_detector_distance, lane_length,
-                 jam_density=None):
-    if jam_density is None:
-        jam_density = JAM_DENSITY
+                 jam_density=JAM_DENSITY):
     stopbar_detector_id = 'e1_' + lane_id + '_0'
     advance_detector_id = 'e1_' + lane_id + '_1'
 
@@ -84,25 +83,28 @@ def liu_for_lane(store, lane_id, inter_detector_distance, lane_length,
                          for B, next_intvl in zip(breakpoint_B_list,
                                                   queueing_periods[1:])]
 
-    liu_estimate_list = []
-    estimate = 0
+    estimates_list = []
+    residual_queue_estimate = 0
     for stop, adv, green, A, B, C in zip(stopbar_queueing_periods,
                                          advance_queueing_periods,
                                          green_times,
                                          breakpoint_A_list,
                                          breakpoint_B_list,
                                          breakpoint_C_list):
-        prev_estimate = estimate
-        estimate = queue_estimate(stop, adv, green, A, B, C, prev_estimate,
+        estimate = queue_estimate(stop, adv, green, A, B, C,
+                                  residual_queue_estimate,
                                   inter_detector_distance, jam_density,
                                   lane_length)
-        liu_estimate_list.append(estimate)
+        if isinstance(estimate[0], Iterable): # can return one or two tuplesnge
+            estimates_list.extend(estimate)
+        else:
+            estimates_list.append(estimate)
 
-    queueing_interval_ends = [q[1] for q in queueing_periods]
+        residual_queue_estimate = estimates_list[-1][1]
 
-    # return tuples of the time that a liu estimate is made (the end of a
-    # queueing/discharging period) and the estimate itself
-    return zip(queueing_interval_ends, liu_estimate_list)
+    # return tuples of the time that a liu estimate is made and the estimate
+    # itself
+    return estimates_list
 
 
 def breakpoints_A_B(advance_df):
@@ -203,10 +205,13 @@ def queue_estimate(stopbar_df, advance_df, green_start,
     elif breakpoint_C is None:
         # No breakpoint C means that the queue is saturated and therefore
         # unobservable. In this case the Liu method gives no guidance, so we
-        # choose to estimate that the lane is fully backed up.
-        return lane_length * jam_density
+        # choose to estimate that the queue reaches the advance detector
+        phase_end = stopbar_df.index[-1]
+        saturated_queue_estimate_veh = inter_detector_distance * jam_density
+        return phase_end, saturated_queue_estimate_veh
     else:
-        return liu_estimate_from_breakpoints(advance_df, green_start,
+        return liu_estimate_from_breakpoints(advance_df, stopbar_df,
+                                             green_start,
                                              breakpoint_B, breakpoint_C,
                                              inter_detector_distance,
                                              jam_density)
@@ -214,29 +219,56 @@ def queue_estimate(stopbar_df, advance_df, green_start,
 
 def input_output_method(stopbar_df, advance_df, prev_phase_queue_estimate,
                         green_time):
-    total_outflow = stopbar_df.loc[green_time:,'nVehContrib'].sum()
+    total_outflow = stopbar_df.loc[:,'nVehContrib'].sum()
     total_inflow = advance_df.loc[:,'nVehContrib'].sum()
     net_flow = total_inflow - total_outflow
 
     queue_estimate = prev_phase_queue_estimate + net_flow
-    return max(queue_estimate, 0)
+    assert stopbar_df.index[-1] == advance_df.index[-1]
+    t_queue_estimate = stopbar_df.index[-1]
+    return t_queue_estimate, max(queue_estimate, 0)
 
 
-def liu_estimate_from_breakpoints(advance_df, green_start, breakpoint_B,
+def liu_estimate_from_breakpoints(advance_df, stopbar_df, green_start,
+                                  breakpoint_B,
                                   breakpoint_C, inter_detector_distance,
                                   jam_density):
-    """Liu's "Expansion I" method"""
+    """Liu's "Expansion I" method (Equation 11)"""
 
-    # estimate shockwave speed (does not seem to be needed unless we care about
-    # the time of max queue)
-    # v2 = inter_detector_distance / (breakpoint_B - green_start)
-    # v2 = -abs(v2)
+    # estimate shockwave speed
+    v2 = inter_detector_distance / (breakpoint_B - green_start)
+    v2 = abs(v2)
 
-    # number of vehicles that pass the advance detector between start of
-    # queueing interval and breakpoint C
+    # max queue
     n = advance_df.loc[:breakpoint_C, 'nVehContrib'].sum()
-    queue_estimate = n + inter_detector_distance * jam_density
-    return queue_estimate
+    max_queue_veh = n + inter_detector_distance * jam_density # units: veh
+
+    # time of max queue
+    max_queue_m = max_queue_veh / jam_density
+    t_queue_max = np.round(green_start + max_queue_m / v2)
+
+    # queue at end of green phase
+    # estimated by subtracting outflow after time of max queue
+    # and adding inflow after breakpoint C (pre-breakpoint C arrivals included
+    # in max queue)
+    post_max_queue_outflow = stopbar_df.loc[t_queue_max:,'nVehContrib'].sum()
+    post_breakpoint_C_inflow = advance_df.loc[breakpoint_C:, 'nVehContrib'].sum()
+    t_phase_end = advance_df.index[-1]
+
+    phase_end_queue_veh = max(0, max_queue_veh
+                                 - post_max_queue_outflow
+                                 + post_breakpoint_C_inflow)
+
+
+    # speed of the queue discharge wave
+    # v3 = max_queue_m - inter_detector_distance / (breakpoint_C - t_queue_max)
+    # assert v3 > 0
+    # Liu et al. draw a distinction between the queue at the end of the green
+    # light and the minimum queue; we will simply place the minimum queue at
+    # end of the green light
+    # t_min_queue = phase_end_t + min_queue_m / v4
+
+    return (t_queue_max, max_queue_veh), (t_phase_end, phase_end_queue_veh)
 
 
 def _split_df_by_intervals(df, intervals):
