@@ -75,8 +75,8 @@ def liu_for_lane(store, lane_id, inter_detector_distance, lane_length,
     advance_queueing_periods = _split_df_by_intervals(advance_detector_df,
                                                       queueing_periods)
 
-    breakpoint_A_list, breakpoint_B_list = zip(*[breakpoints_A_B(q) for q
-                                                 in advance_queueing_periods])
+    breakpoint_A_list, breakpoint_B_list = breakpoints_A_B_wholedf(
+        advance_detector_df, queueing_periods)
 
     # breakpoint C: only look up until the next queue starts forming (i.e.,
     # the start of the next queueing period)
@@ -86,15 +86,12 @@ def liu_for_lane(store, lane_id, inter_detector_distance, lane_length,
 
     liu_estimate_list = []
     estimate = 0
-    i = 0
     for stop, adv, green, A, B, C in zip(stopbar_queueing_periods,
                                          advance_queueing_periods,
                                          green_times,
                                          breakpoint_A_list,
                                          breakpoint_B_list,
                                          breakpoint_C_list):
-        print(f'step {i}')
-        i += 1
         prev_estimate = estimate
         estimate = queue_estimate(stop, adv, green, A, B, C, prev_estimate,
                                   inter_detector_distance, jam_density,
@@ -113,11 +110,11 @@ def breakpoints_A_B(advance_df):
 
     # breakpoint A: the first time where the detector has a static car on it
     # (we see if it is fully occupied for 4 seconds)
-    bkpt_A = breakpoint_A(binary_occupancy)
+    bkpt_A = breakpoint_A_for_period(binary_occupancy)
 
     # breakpoint B: the first second after breakpoint A that the detector is
     # not occupied
-    bkpt_B = breakpoint_B(binary_occupancy, bkpt_A)
+    bkpt_B = breakpoint_B_for_period(binary_occupancy, bkpt_A)
 
     if bkpt_A is None or bkpt_B is None:
         return None, None
@@ -125,7 +122,20 @@ def breakpoints_A_B(advance_df):
     return bkpt_A, bkpt_B
 
 
-def breakpoint_A(binary_occupancy):
+def breakpoints_A_B_wholedf(advance_df, queueing_intervals):
+    binary_occupancy = (advance_df['occupancy'] >= 100).astype(bool)
+
+    breakpoints_A = [breakpoint_A_for_period(binary_occupancy.loc[q[0]:q[1]])
+                     for q in queueing_intervals]
+
+    breakpoints_B = [breakpoint_B_for_period(binary_occupancy.loc[q[0]:q[1]],
+                                             A)
+                     for q, A in zip(queueing_intervals, breakpoints_A)]
+
+    return breakpoints_A, breakpoints_B
+
+
+def breakpoint_A_for_period(binary_occupancy):
     """Find breakpoint A.
 
     Breakpoint A is the first timestep where the detector has a static car on
@@ -143,12 +153,14 @@ def breakpoint_A(binary_occupancy):
     return bkpt
 
 
-def breakpoint_B(binary_occupancy, bkpt_A):
+def breakpoint_B_for_period(binary_occupancy, bkpt_A):
     """Find breakpoint B.
 
     Breakpoint B is the first timestep after breakpoint B that the detector
     is not continuously occupied. This means it is the timestep that the
     discharge wave has reached the advance detector"""
+    if bkpt_A is None:
+        return None
     continuously_occupied = (binary_occupancy.loc[bkpt_A:]
                                              .expanding()
                                              .agg(lambda x: x.all()))
