@@ -1,5 +1,9 @@
-import numpy as np
+import multiprocessing
 from collections import Iterable
+from itertools import repeat
+
+import numpy as np
+import pandas as pd
 
 from trafficgraphnn.preprocessing.io import (green_times_from_lane_light_df,
                                              light_timing_xml_to_phase_df,
@@ -10,8 +14,25 @@ from trafficgraphnn.utils import DetInfo
 JAM_DENSITY = 0.13333 # hardcoded default jam density value (veh/meter)
 
 
-def liu_method(sumo_network, output_data_hdf_filename, light_timing_df):
-    pass
+def liu_method_for_net(sumo_network, output_data_hdf_filename,
+                       jam_density=JAM_DENSITY, num_workers=None):
+    args = []
+    lane_ids = []
+    idds = []
+    for lane_id, lane_data in sumo_network.graph.nodes.data():
+        if 'detectors' not in lane_data:
+            continue
+        idds.append(get_length_between_loop_detectors(sumo_network, lane_id))
+        lane_ids.append(lane_id)
+
+    args = zip(repeat(output_data_hdf_filename), lane_ids, idds,
+               repeat(jam_density))
+    with multiprocessing.Pool(num_workers) as pool:
+        results = pool.starmap(liu_for_lane, args)
+
+    out = {lane: result for lane, result in zip(lane_ids, results)}
+
+    return out
 
 
 def load_output_data(sumo_network):
@@ -32,10 +53,6 @@ def load_output_data(sumo_network):
     return output_hdf, green_df
 
 
-def get_lane_length(sumo_network, lane_id):
-    return sumo_network.net.getLane(lane_id).getLength()
-
-
 def get_length_between_loop_detectors(sumo_network, lane_id):
     det_info = sumo_network.graph.nodes[lane_id]['detectors']
     e1_dets = [DetInfo(k, v) for k, v in det_info.items()
@@ -49,15 +66,17 @@ def get_length_between_loop_detectors(sumo_network, lane_id):
     return abs(stopbar_pos - advance_pos)
 
 
-def liu_for_lane(store, lane_id, inter_detector_distance, lane_length,
+def liu_for_lane(output_data_hdf_filename, lane_id, inter_detector_distance,
                  jam_density=JAM_DENSITY):
     stopbar_detector_id = 'e1_' + lane_id + '_0'
     advance_detector_id = 'e1_' + lane_id + '_1'
 
-    stopbar_detector_df = store['raw_xml/' + stopbar_detector_id]
-    advance_detector_df = store['raw_xml/' + advance_detector_id]
+    with pd.HDFStore(output_data_hdf_filename, 'r') as store:
 
-    lane_light_series = store['raw_xml/tls_switch'][lane_id]
+        stopbar_detector_df = store['raw_xml/' + stopbar_detector_id].copy()
+        advance_detector_df = store['raw_xml/' + advance_detector_id].copy()
+
+        lane_light_series = store['raw_xml/tls_switch'][lane_id].copy()
     queueing_periods = queueing_intervals_from_lane_light_df(lane_light_series)
     queueing_periods = list(queueing_periods)
     green_times = green_times_from_lane_light_df(lane_light_series)
@@ -92,15 +111,14 @@ def liu_for_lane(store, lane_id, inter_detector_distance, lane_length,
                                          breakpoint_B_list,
                                          breakpoint_C_list):
         estimate = queue_estimate(stop, adv, green, A, B, C,
-                                  residual_queue_estimate,
-                                  inter_detector_distance, jam_density,
-                                  lane_length)
-        if isinstance(estimate[0], Iterable): # can return one or two tuplesnge
+                                 residual_queue_estimate,
+                                 inter_detector_distance, jam_density)
+        if isinstance(estimate[0], Iterable): # can return one or two tuples
             estimates_list.extend(estimate)
         else:
             estimates_list.append(estimate)
 
-        residual_queue_estimate = estimates_list[-1][1]
+        residual_queue_estimate = max(estimates_list[-1][1], 0)
 
     # return tuples of the time that a liu estimate is made and the estimate
     # itself
@@ -198,7 +216,7 @@ def breakpoint_C(detector_df, breakpoint_B, end_search_time, min_time_gap=3):
 def queue_estimate(stopbar_df, advance_df, green_start,
                    breakpoint_A, breakpoint_B, breakpoint_C,
                    prev_phase_queue_estimate, inter_detector_distance,
-                   jam_density, lane_length):
+                   jam_density):
     if breakpoint_A is None:
         return input_output_method(stopbar_df, advance_df,
                                    prev_phase_queue_estimate, green_start)
