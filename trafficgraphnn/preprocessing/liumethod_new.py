@@ -372,16 +372,23 @@ def liu_estimate_from_breakpoints(advance_df, stopbar_df, green_start,
     max_queue_m = max_queue_veh / jam_density
     t_queue_max = np.round(green_start + max_queue_m / v2)
 
-    # queue at end of green phase
+    outputs = (t_queue_max, max_queue_veh)
+
+    # queue at end of green phase (if max queue not at end of green phase)
     # estimated by subtracting outflow after time of max queue
     # and adding inflow after breakpoint C (pre-breakpoint C arrivals included
     # in max queue)
-    post_max_queue_outflow = stopbar_df.loc[t_queue_max:,'nVehContrib'].sum()
-    post_breakpoint_C_inflow = advance_df.loc[breakpoint_C:, 'nVehContrib'].sum()
     t_phase_end = advance_df.index[-1]
+    if t_phase_end > t_queue_max:
+        post_max_queue_outflow = stopbar_df.loc[t_queue_max:,
+                                                'nVehContrib'].sum()
+        post_breakpoint_C_inflow = advance_df.loc[breakpoint_C:,
+                                                  'nVehContrib'].sum()
 
-    phase_end_queue_veh = (max_queue_veh - post_max_queue_outflow
-                           + post_breakpoint_C_inflow)
+        phase_end_queue_veh = (max_queue_veh - post_max_queue_outflow
+                            + post_breakpoint_C_inflow)
+
+        outputs = outputs, (t_phase_end, phase_end_queue_veh)
 
     # speed of the queue discharge wave
     # v3 = max_queue_m - inter_detector_distance / (breakpoint_C - t_queue_max)
@@ -391,7 +398,7 @@ def liu_estimate_from_breakpoints(advance_df, stopbar_df, green_start,
     # end of the green light
     # t_min_queue = phase_end_t + min_queue_m / v4
 
-    return (t_queue_max, max_queue_veh), (t_phase_end, phase_end_queue_veh)
+    return outputs
 
 
 def _split_df_by_intervals(df, intervals):
