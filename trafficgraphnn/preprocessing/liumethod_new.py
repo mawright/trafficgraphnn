@@ -37,15 +37,14 @@ def liu_method_for_net(sumo_network, output_data_hdf_filename,
     with multiprocessing.Pool(num_workers) as pool:
         results = pool.starmap(liu_for_lane, args)
 
-    # out = {lane: result for lane, result in zip(lane_ids, results)}
-
     out = {result.columns[0]: result for result in results}
+    if use_lane_change_accounting_heuristic:
+        out = postprocess_negative_from_lane_changes(sumo_network, out)
 
-    return results
-    # return out
+    return out
 
 
-def postprocess_negative_from_lane_changes(sn, results):
+def postprocess_negative_from_lane_changes(sn, results, num_workers=None):
     """Heuristic to try and mitigate negative net loop flows from lane changes.
 
     Lane queue estimates computed by the simple input output method will
@@ -55,23 +54,13 @@ def postprocess_negative_from_lane_changes(sn, results):
     """
     grouped_lanes = _split_lanes_by_edges(sn, results)
     dfs = {}
-    for lane_group in grouped_lanes.values():
-        lane_ids = [df.columns[0] for df in lane_group]
-        df = pd.concat(lane_group, axis=1, join='outer', keys=lane_ids)
-        df.columns = pd.MultiIndex.from_product([lane_ids,
-                                                 ['estimate', 'method']])
+    with multiprocessing.Pool(num_workers) as pool:
+        edge_dfs = pool.map(distribute_io_estimate_deficit_for_edge,
+                            grouped_lanes.values())
 
-        is_io_estimate = df.loc[:, (slice(None), 'method')] == __INPUT_OUTPUT
-        io_estimates = (df.loc[:, (slice(None), 'estimate')]
-                        * is_io_estimate.values)
-
-        deficit_assigned = distribute_deficit_loop(io_estimates)
-        df.update(deficit_assigned)
-        df.loc[:, (slice(None), 'estimate')
-               ] = df.loc[:, (slice(None), 'estimate')].clip(lower=0)
-
-        dfs.update((lane, lane_df.dropna())
-                   for lane, lane_df in df.groupby(axis=1, level=0))
+    dfs.update((lane, lane_df.dropna())
+                for edge_df in edge_dfs
+                for lane, lane_df in edge_df.groupby(axis=1, level=0))
 
     return dfs
 
@@ -333,10 +322,12 @@ def queue_estimate(stopbar_df, advance_df, green_start,
         saturated_queue_estimate_veh = inter_detector_distance * jam_density
         return phase_end, saturated_queue_estimate_veh, __SATURATED
     else:
-        (t_max, q_max), (t_end, q_end) = liu_estimate_from_breakpoints(
+        estimate_or_estimates = liu_estimate_from_breakpoints(
             advance_df, stopbar_df, green_start, breakpoint_B, breakpoint_C,
             inter_detector_distance, jam_density)
-        return (t_max, q_max, __LIU), (t_end, q_end, __LIU)
+        if isinstance(estimate_or_estimates[0], Iterable):
+            return tuple(est + (__LIU,) for est in estimate_or_estimates)
+        return estimate_or_estimates + (__LIU,)
 
 def input_output_method(stopbar_df, advance_df, prev_phase_queue_estimate,
                         green_time):
