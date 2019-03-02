@@ -73,6 +73,7 @@ def fit_loop_init(model, callbacks):
     model.reset_states()
     model._make_train_function()
     model._make_test_function()
+    model.stop_training = False
 
 
 def named_logs(model, logs):
