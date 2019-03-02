@@ -1,4 +1,5 @@
 import collections
+import logging
 import os
 import re
 import warnings
@@ -11,6 +12,8 @@ from tables import NoSuchNodeError
 from trafficgraphnn.utils import (E1IterParseWrapper, E2IterParseWrapper,
                                   TLSSwitchIterParseWrapper, _col_dtype_key,
                                   pairwise_iterate)
+
+_logger = logging.getLogger(__name__)
 
 
 def _append_to_store(store, buffer, all_ids):
@@ -61,11 +64,18 @@ def xml_to_df_hdf(parser,
 def sumo_output_xmls_to_hdf(output_dir,
                             hdf_filename='raw_xml.hdf',
                             complevel=5,
-                            complib='blosc:lz4'):
+                            complib='blosc:lz4',
+                            remove_old_if_exists=True):
     file_list = [os.path.join(output_dir, f) for f in os.listdir(output_dir)]
     file_list = [f for f in file_list
                  if os.path.isfile(f) and os.path.splitext(f)[-1] == '.xml']
     output_filename = os.path.join(output_dir, hdf_filename)
+
+    if (remove_old_if_exists and os.path.exists(output_filename)
+            and os.path.isfile(output_filename)):
+        os.remove(output_filename)
+        _logger.debug('Removed file %s for new one', output_filename)
+
     for filename in file_list:
         basename = os.path.basename(filename)
         if '_e1_' in basename:
