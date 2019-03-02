@@ -27,7 +27,8 @@ class RandTripGeneratorWrapper(object):
                  end_time=3600,
                  seed=None,
                  thru_only=True,
-                 trip_attrib=('departLane="best" departSpeed="max" departPos="random" '
+                 trip_attrib=('departLane="best" departSpeed="max" '
+                              'departPos="random_free" '
                               'speedFactor="normc(1,0.1,0.2,2)"'),
     ):
         self.netfile = netfile

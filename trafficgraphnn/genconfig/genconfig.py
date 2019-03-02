@@ -136,7 +136,8 @@ class ConfigGenerator(object):
         self, tag='rand',
         period=None, binomial=None, seed=None,
         start_time=0, end_time=3600, thru_only=True, fringe_factor=100,
-        trip_attrib=('departLane="best" departSpeed="max" departPos="random" '
+        trip_attrib=('departLane="best" departSpeed="max" '
+                     'departPos="random_free" '
                      'speedFactor="normc(1,0.1,0.2,2)"')
     ):
         rando = RandTripGeneratorWrapper(
