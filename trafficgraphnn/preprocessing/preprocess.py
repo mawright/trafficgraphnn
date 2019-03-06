@@ -1158,7 +1158,7 @@ def __get_liu_series(liu_results, lane_id):
     except KeyError:
         pass
     df = df.loc[:,('estimate')]
-    df = df.rename('liu_estimate_veh')
+    df = df.rename('liu_estimated_veh')
     return df
 
 
