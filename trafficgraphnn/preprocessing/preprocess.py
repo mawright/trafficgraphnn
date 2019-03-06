@@ -1039,74 +1039,11 @@ def write_per_lane_tables(output_filename,
                           X_on_green_empty_value=-1):
     """Write an hdf file with per-lane X and Y data arrays"""
 
-    if raw_xml_filename is None:
-        raw_xml_filename = os.path.join(os.path.dirname(sumo_network.netfile),
-                                        'output', 'raw_xml.hdf')
+    X_df, Y_df = build_X_Y_tables_for_lanes(
+        sumo_network, raw_xml_filename=raw_xml_filename, X_features=X_features,
+        Y_features=Y_features, Y_on_green_features=Y_on_green_features,
+        X_on_green_empty_value=X_on_green_empty_value)
 
-    if 'green' in X_features or len(Y_on_green_features) > 1:
-        green_df = per_lane_green_series_for_sumo_network(sumo_network)
-
-    # run liu method if needed
-    if len(set(['liu_estimated_m', 'liu_estimated_veh']).intersection(
-               X_features)) > 0:
-        liu_result_df = liu_method_for_net(sumo_network, raw_xml_filename)
-
-    with pd.HDFStore(
-            output_filename, complevel=complevel, complib=complib
-            ) as output_store, pd.HDFStore(raw_xml_filename, 'r'
-            ) as input_store:
-        for lane_id, detector_dict in sumo_network.graph.nodes('detectors'):
-            if detector_dict is None:
-                continue
-
-            # e1 (loop) detector data
-            e1_detectors = lane_detectors_of_type_sorted_by_position(
-                detector_dict, 'e1')
-            e1_dfs = OrderedDict((det_id,
-                                  input_store['raw_xml/{}'.format(det_id)])
-                                  for det_id in e1_detectors)
-            X_dfs_e1 = __get_dfs_feats(e1_dfs, X_features, lane_id)
-            Y_dfs_e1 = __get_dfs_feats(e1_dfs, Y_features, lane_id)
-
-            # e2 (lane area) detector data
-            e2_detectors = lane_detectors_of_type_sorted_by_position(
-                detector_dict, 'e2')
-            e2_dfs = OrderedDict((det_id,
-                                  input_store['raw_xml/{}'.format(det_id)])
-                                  for det_id in e2_detectors)
-            X_dfs_e2 = __get_dfs_feats(e2_dfs, X_features, lane_id)
-            Y_dfs_e2 = __get_dfs_feats(e2_dfs, Y_features, lane_id)
-
-            X_dfs = [X_dfs_e1, X_dfs_e2]
-            Y_dfs = [Y_dfs_e1, Y_dfs_e2]
-
-            # add some more X features if needed
-            if 'green' in X_features:
-                X_green = green_df.loc[:,lane_id].rename('green')
-                X_dfs.append(X_green)
-
-            if 'liu_estimated_veh' in X_features:
-                liu_series = __get_liu_series(liu_result_df, lane_id)
-                X_dfs.append(liu_series)
-
-            # append columns (features) together
-            X_df = pd.concat(X_dfs, axis=1)
-            Y_df = pd.concat(Y_dfs, axis=1)
-
-            # fill in blanks
-            if 'green' in X_df:
-                X_df.loc[:, 'green'] = (X_df.loc[:, 'green']
-                                            .fillna(method='ffill'))
-            X_df = X_df.fillna(pad_value_for_feature)
-
-            # replace Y values that are only to be estimated on green with
-            # values that are masked out later
-            green_starts = green_times_from_lane_light_df(
-                green_df.loc[:,lane_id])
-
-            for feat in Y_on_green_features:
-                filler = pad_value_for_feature[feat]
-                Y_df.loc[~Y_df.index.isin(green_starts), feat] = filler
 
 
 def build_X_Y_tables_for_lanes(sumo_network,
@@ -1123,13 +1060,90 @@ def build_X_Y_tables_for_lanes(sumo_network,
                                Y_on_green_features=['maxJamLengthInMeters',
                                                    'maxJamLengthInVehicles'],
                                X_on_green_empty_value=-1):
-    """Return per-lane dataframes for X and Y with specified feature sets"""
+    """Return per-lane dataframe for X and Y with specified feature sets"""
     # default to all lanes
     if lane_subset is None:
         lane_subset = [lane for lane, lane_data
                        in sumo_network.graph.nodes.data('detectors')
                        if lane_data is not None]
+    if raw_xml_filename is None:
+        raw_xml_filename = os.path.join(os.path.dirname(sumo_network.netfile),
+                                        'output', 'raw_xml.hdf')
 
+    if 'green' in X_features or len(Y_on_green_features) > 1:
+        green_df = per_lane_green_series_for_sumo_network(sumo_network)
+
+    # run liu method if needed
+    if len(set(['liu_estimated_m', 'liu_estimated_veh']).intersection(
+               X_features)) > 0:
+        liu_result_df = liu_method_for_net(sumo_network, raw_xml_filename)
+
+    X_dfs = []
+    Y_dfs = []
+    with pd.HDFStore(raw_xml_filename, 'r') as input_store:
+        for lane_id in lane_subset:
+            detector_dict = sumo_network.graph.nodes[lane_id]['detectors']
+
+            # e1 (loop) detector data
+            e1_detectors = lane_detectors_of_type_sorted_by_position(
+                detector_dict, 'e1')
+            e1_dfs = OrderedDict((det_id,
+                                  input_store['raw_xml/{}'.format(det_id)])
+                                  for det_id in e1_detectors)
+            X_lane_dfs_e1 = __get_dfs_feats(e1_dfs, X_features, lane_id)
+            Y_lane_dfs_e1 = __get_dfs_feats(e1_dfs, Y_features, lane_id)
+
+            # e2 (lane area) detector data
+            e2_detectors = lane_detectors_of_type_sorted_by_position(
+                detector_dict, 'e2')
+            e2_dfs = OrderedDict((det_id,
+                                  input_store['raw_xml/{}'.format(det_id)])
+                                  for det_id in e2_detectors)
+            X_lane_dfs_e2 = __get_dfs_feats(e2_dfs, X_features, lane_id)
+            Y_lane_dfs_e2 = __get_dfs_feats(e2_dfs, Y_features, lane_id)
+
+            X_lane_dfs = [*X_lane_dfs_e1, *X_lane_dfs_e2]
+            Y_lane_dfs = [*Y_lane_dfs_e1, *Y_lane_dfs_e2]
+
+            # add some more X features if needed
+            if 'green' in X_features:
+                X_green = green_df.loc[:,lane_id].rename('green')
+                X_lane_dfs.append(X_green)
+
+            if 'liu_estimated_veh' in X_features:
+                liu_series = __get_liu_series(liu_result_df, lane_id)
+                X_lane_dfs.append(liu_series)
+
+            # append columns (features) together
+            X_lane_df = pd.concat(X_lane_dfs, axis=1)
+            Y_lane_df = pd.concat(Y_lane_dfs, axis=1)
+
+            # replace Y values that are only to be estimated on green with
+            # values that are masked out later
+            green_starts = green_times_from_lane_light_df(
+                green_df.loc[:, lane_id])
+
+            for feat in Y_on_green_features:
+                filler = pad_value_for_feature[feat]
+                Y_lane_df.loc[~Y_lane_df.index.isin(green_starts), feat] = filler
+
+            X_dfs.append(X_lane_df)
+            Y_dfs.append(Y_lane_df)
+
+        X_df = pd.concat(X_dfs, axis=1, join='outer', keys=lane_subset)
+        Y_df = pd.concat(Y_dfs, axis=1, join='outer', keys=lane_subset)
+
+        # fill in blanks
+        if 'green' in X_features:
+            X_df.loc[:, (slice(None), 'green')] = (X_df.loc[:, (slice(None), 'green')]
+                                                       .fillna(method='ffill'))
+
+        for lane in X_df.columns.get_level_values(0).unique():
+            X_df[lane] = X_df[lane].fillna(pad_value_for_feature)
+        for lane in Y_df.columns.get_level_values(0).unique():
+            Y_df[lane] = Y_df[lane].fillna(pad_value_for_feature)
+
+    return X_df, Y_df
 
 
 def __get_dfs_feats(det_dfs, features, lane_id):
