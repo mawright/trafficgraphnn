@@ -6,9 +6,7 @@ import numpy as np
 import pandas as pd
 
 from trafficgraphnn.preprocessing.io import (green_times_from_lane_light_df,
-                                             queueing_intervals_from_lane_light_df,
-                                             sumo_output_xmls_to_hdf,
-                                             tls_output_xml_to_hdf)
+                                             queueing_intervals_from_lane_light_df)
 from trafficgraphnn.utils import DetInfo
 
 JAM_DENSITY = 0.13333 # hardcoded default jam density value (veh/meter)
@@ -119,24 +117,6 @@ def _split_lanes_by_edges(sn, results):
         lane_groups[edge.getID()] = lane_group
 
     return lane_groups
-
-
-def raw_output_data_to_hdf(sumo_network):
-    output_dir = sumo_network.detector_data_path
-    output_hdf = sumo_output_xmls_to_hdf(output_dir)
-
-    light_switch_out_files = set()
-    for edge in sumo_network.graph.edges.data():
-        try:
-            light_switch_out_files.add(edge[-1]['tls_output_info']['dest'])
-        except KeyError:
-            continue
-
-    assert len(light_switch_out_files) == 1 # more than one xml not supported yet
-
-    tls_output_xml_to_hdf(light_switch_out_files.pop())
-
-    return output_hdf
 
 
 def get_length_between_loop_detectors(sumo_network, lane_id):

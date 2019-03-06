@@ -16,6 +16,33 @@ from trafficgraphnn.utils import (E1IterParseWrapper, E2IterParseWrapper,
 _logger = logging.getLogger(__name__)
 
 
+def write_hdf_for_sumo_network(sumo_network):
+    output_dir = os.path.join(os.path.dirname(sumo_network.netfile),
+                              'output')
+    output_hdf = sumo_output_xmls_to_hdf(output_dir)
+
+    light_switch_out_files = light_switch_out_files_for_sumo_network(
+        sumo_network)
+
+    assert len(light_switch_out_files) == 1 # more than one xml not supported yet
+
+    tls_output_xml_to_hdf(light_switch_out_files.pop())
+
+    return output_hdf
+
+
+def light_switch_out_files_for_sumo_network(sumo_network):
+    light_switch_out_files = set()
+    for edge in sumo_network.graph.edges.data():
+        try:
+            light_switch_out_files.add(
+                os.path.join(os.path.dirname(sumo_network.netfile),
+                edge[-1]['tls_output_info']['dest']))
+        except KeyError:
+            continue
+    return light_switch_out_files
+
+
 def _append_to_store(store, buffer, all_ids):
     converter = {col: _col_dtype_key[col]
                       for col in buffer.keys()

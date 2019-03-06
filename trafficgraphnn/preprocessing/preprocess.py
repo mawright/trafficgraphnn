@@ -24,13 +24,28 @@ from trafficgraphnn.liumethod import LiuEtAlRunner
 from trafficgraphnn.load_data import pad_value_for_feature
 from trafficgraphnn.preprocessing.io import (get_preprocessed_filenames,
                                              get_sim_numbers_in_preprocess_store,
-                                             sumo_output_xmls_to_hdf)
+                                             green_times_from_lane_light_df,
+                                             light_switch_out_files_for_sumo_network,
+                                             light_timing_xml_to_phase_df,
+                                             sumo_output_xmls_to_hdf,
+                                             write_hdf_for_sumo_network)
+from trafficgraphnn.preprocessing.liumethod_new import liu_method_for_net
 from trafficgraphnn.sumo_output_reader import (SumoLaneOutputReader,
                                                SumoNetworkOutputReader)
 from trafficgraphnn.utils import (DetInfo, E1IterParseWrapper,
                                   E2IterParseWrapper)
 
 _logger = logging.getLogger(__name__)
+
+
+def run_preprocessing(sumo_network, output_filename=None):
+    if output_filename is None:
+        output_filename = os.path.join(
+            os.path.dirname(sumo_network.netfile),
+            'preprocessed_data',
+            '{:04}.h5').format(_next_file_number(sumo_network))
+    hdf_filename = write_hdf_for_sumo_network(sumo_network)
+    liu_resuts = liu_method_for_net(sumo_network, hdf_filename)
 
 
 class PreprocessData(object):
@@ -531,14 +546,7 @@ class PreprocessData(object):
         return data_df
 
     def _next_file_number(self):
-        data_dir = os.path.join(os.path.dirname(self.sumo_network.netfile),
-                                'preprocessed_data')
-
-        files = get_preprocessed_filenames(data_dir)
-        fnames = [os.path.basename(f) for f in files]
-        numbers = [int(re.search(r'\d+', f).group()) for f in fnames]
-
-        return max(numbers, default=0) + 1
+        return _next_file_number(self.sumo_network)
 
     def _next_simulation_number(self, store):
 
@@ -1014,8 +1022,186 @@ class PreprocessData(object):
         return A_down, A_up, A_neighbors
 
 
+def write_per_lane_tables(output_filename,
+                          sumo_network,
+                          raw_xml_filename=None,
+                          X_features=['nvehContrib',
+                                      'occupancy',
+                                      'speed',
+                                      'green',
+                                      'liu_estimated_veh'],
+                          Y_features=['nVehSeen',
+                                      'maxJamLengthInMeters',
+                                      'maxJamLengthInVehicles'],
+                          Y_on_green_features=['maxJamLengthInMeters',
+                                               'maxJamLengthInVehicles'],
+                          complib='blosc:lz4', complevel=5,
+                          X_on_green_empty_value=-1):
+    """Write an hdf file with per-lane X and Y data arrays"""
+
+    if raw_xml_filename is None:
+        raw_xml_filename = os.path.join(os.path.dirname(sumo_network.netfile),
+                                        'output', 'raw_xml.hdf')
+
+    if 'green' in X_features or len(Y_on_green_features) > 1:
+        green_df = per_lane_green_series_for_sumo_network(sumo_network)
+
+    # run liu method if needed
+    if len(set(['liu_estimated_m', 'liu_estimated_veh']).intersection(
+               X_features)) > 0:
+        liu_result_df = liu_method_for_net(sumo_network, raw_xml_filename)
+
+    with pd.HDFStore(
+            output_filename, complevel=complevel, complib=complib
+            ) as output_store, pd.HDFStore(raw_xml_filename, 'r'
+            ) as input_store:
+        for lane_id, detector_dict in sumo_network.graph.nodes('detectors'):
+            if detector_dict is None:
+                continue
+
+            # e1 (loop) detector data
+            e1_detectors = lane_detectors_of_type_sorted_by_position(
+                detector_dict, 'e1')
+            e1_dfs = OrderedDict((det_id,
+                                  input_store['raw_xml/{}'.format(det_id)])
+                                  for det_id in e1_detectors)
+            X_dfs_e1 = __get_dfs_feats(e1_dfs, X_features, lane_id)
+            Y_dfs_e1 = __get_dfs_feats(e1_dfs, Y_features, lane_id)
+
+            # e2 (lane area) detector data
+            e2_detectors = lane_detectors_of_type_sorted_by_position(
+                detector_dict, 'e2')
+            e2_dfs = OrderedDict((det_id,
+                                  input_store['raw_xml/{}'.format(det_id)])
+                                  for det_id in e2_detectors)
+            X_dfs_e2 = __get_dfs_feats(e2_dfs, X_features, lane_id)
+            Y_dfs_e2 = __get_dfs_feats(e2_dfs, Y_features, lane_id)
+
+            X_dfs = [X_dfs_e1, X_dfs_e2]
+            Y_dfs = [Y_dfs_e1, Y_dfs_e2]
+
+            # add some more X features if needed
+            if 'green' in X_features:
+                X_green = green_df.loc[:,lane_id].rename('green')
+                X_dfs.append(X_green)
+
+            if 'liu_estimated_veh' in X_features:
+                liu_series = __get_liu_series(liu_result_df, lane_id)
+                X_dfs.append(liu_series)
+
+            # append columns (features) together
+            X_df = pd.concat(X_dfs, axis=1)
+            Y_df = pd.concat(Y_dfs, axis=1)
+
+            # fill in blanks
+            if 'green' in X_df:
+                X_df.loc[:, 'green'] = (X_df.loc[:, 'green']
+                                            .fillna(method='ffill'))
+            X_df = X_df.fillna(pad_value_for_feature)
+
+            # replace Y values that are only to be estimated on green with
+            # values that are masked out later
+            green_starts = green_times_from_lane_light_df(
+                green_df.loc[:,lane_id])
+
+            for feat in Y_on_green_features:
+                filler = pad_value_for_feature[feat]
+                Y_df.loc[~Y_df.index.isin(green_starts), feat] = filler
+
+
+def build_X_Y_tables_for_lanes(sumo_network,
+                               lane_subset=None,
+                               raw_xml_filename=None,
+                               X_features=['nvehContrib',
+                                           'occupancy',
+                                           'speed',
+                                           'green',
+                                           'liu_estimated_veh'],
+                               Y_features=['nVehSeen',
+                                           'maxJamLengthInMeters',
+                                           'maxJamLengthInVehicles'],
+                               Y_on_green_features=['maxJamLengthInMeters',
+                                                   'maxJamLengthInVehicles'],
+                               X_on_green_empty_value=-1):
+    """Return per-lane dataframes for X and Y with specified feature sets"""
+    # default to all lanes
+    if lane_subset is None:
+        lane_subset = [lane for lane, lane_data
+                       in sumo_network.graph.nodes.data('detectors')
+                       if lane_data is not None]
+
+
+
+def __get_dfs_feats(det_dfs, features, lane_id):
+    subdfs = OrderedDict((det_id,
+                          df[[feat for feat in features if feat in df]])
+                         for det_id, df in det_dfs.items())
+    out = __det_df_dict_to_dfs_with_prefixed_columns(subdfs, lane_id)
+    return out
+
+
+def __det_df_dict_to_dfs_with_prefixed_columns(df_dict, lane_id):
+    dfs = []
+    for det_id, df in df_dict.items():
+        prefix = _det_id_minus_lane_id(det_id, lane_id) + '/'
+        new_colnames = prefix + df.columns
+        df = df.rename(columns={col: newcol for col, newcol
+                                in zip(df.columns, new_colnames)})
+        dfs.append(df)
+    return dfs
+
+
+def __get_liu_series(liu_results, lane_id):
+    df = liu_results[lane_id]
+    try:
+        df = df[lane_id] # if columns are multiindex
+    except KeyError:
+        pass
+    df = df.loc[:,('estimate')]
+    df = df.rename('liu_estimate_veh')
+    return df
+
+
+def per_lane_green_series_for_sumo_network(sumo_network):
+    light_switch_out_files = light_switch_out_files_for_sumo_network(
+        sumo_network)
+    assert len(light_switch_out_files) == 1
+    light_timing_df = light_timing_xml_to_phase_df(
+        light_switch_out_files.pop())
+    return light_timing_df
+
+
+def lane_detectors_of_type_sorted_by_position(lane_dict, det_type):
+    if det_type == 'e1':
+        det_str = 'e1Detector'
+    elif det_type == 'e2':
+        det_str = 'e2Detector'
+    else:
+        raise ValueError('Unknown detector type {}'.format(det_type))
+
+    dets_of_type = [v for v in lane_dict.values() if v['type'] == det_str]
+    dets_of_type.sort(key=lambda x: x['pos'])
+    dets_of_type = [det['id'] for det in dets_of_type]
+    return dets_of_type
+
+
+def _next_file_number(sumo_network):
+    data_dir = os.path.join(os.path.dirname(sumo_network.netfile),
+                            'preprocessed_data')
+
+    files = get_preprocessed_filenames(data_dir)
+    fnames = [os.path.basename(f) for f in files]
+    numbers = [int(re.search(r'\d+', f).group()) for f in fnames]
+
+    return max(numbers, default=0) + 1
+
+
 def _prune_det_id_in_colnames(colnames, lane_id):
-    return [re.sub(f'{lane_id}_', '', col) for col in colnames]
+    return [_det_id_minus_lane_id(col, lane_id) for col in colnames]
+
+
+def _det_id_minus_lane_id(det_id, lane_id):
+    return re.sub(f'{lane_id}_', '', det_id)
 
 
 def _concat_colnames(cols):
