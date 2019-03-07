@@ -1041,9 +1041,38 @@ def write_per_lane_tables(output_filename,
 
     X_df, Y_df = build_X_Y_tables_for_lanes(
         sumo_network, raw_xml_filename=raw_xml_filename, X_features=X_features,
-        Y_features=Y_features, Y_on_green_features=Y_on_green_features,
-        X_on_green_empty_value=X_on_green_empty_value)
+    A_dfs = build_A_tables_for_lanes(sumo_network, lanes_with_data)
 
+
+def build_A_tables_for_lanes(sumo_network, lanes=None):
+    """Returns dict of dataframes for different lane adjacency matrices"""
+
+    if lanes is None:
+        lanes = [lane for lane, lane_data
+                       in sumo_network.graph.nodes.data('detectors')
+                       if lane_data is not None]
+
+    A_dfs = {}
+    A_dfs['A_downstream'] = nx.to_pandas_adjacency(
+        sumo_network.graph, nodelist=lanes).astype('bool')
+
+    A_dfs['A_upstream'] = nx.to_pandas_adjacency(
+        sumo_network.graph.reverse(), nodelist=lanes).astype('bool')
+
+    A_dfs['A_neighbors'] = nx.to_pandas_adjacency(
+        sumo_network.get_lane_graph_for_neighboring_lanes(
+            include_self_adjacency=False),
+        nodelist=lanes).astype('bool')
+
+    A_dfs['A_turn_movements'] = nx.to_pandas_adjacency(
+        sumo_network.get_lane_graph_for_turn_movements(),
+        nodelist=lanes).astype('bool')
+
+    A_dfs['A_through_movements'] = nx.to_pandas_adjacency(
+        sumo_network.get_lane_graph_for_thru_movements(),
+        nodelist=lanes).astype('bool')
+
+    return A_dfs
 
 
 def build_X_Y_tables_for_lanes(sumo_network,
