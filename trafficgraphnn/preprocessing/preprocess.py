@@ -1041,6 +1041,11 @@ def write_per_lane_tables(output_filename,
 
     X_df, Y_df = build_X_Y_tables_for_lanes(
         sumo_network, raw_xml_filename=raw_xml_filename, X_features=X_features,
+        Y_features=Y_features)
+
+    lanes_with_data = X_df.columns.get_level_values(0).unique()
+    assert len(lanes_with_data.difference(Y_df.columns.get_level_values(0))) == 0
+
     A_dfs = build_A_tables_for_lanes(sumo_network, lanes_with_data)
 
 
