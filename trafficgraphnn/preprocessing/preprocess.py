@@ -12,6 +12,7 @@ import re
 import multiprocessing
 import warnings
 from collections import OrderedDict
+from itertools import repeat
 from contextlib import ExitStack
 from xml.etree import cElementTree as et
 
@@ -1101,6 +1102,7 @@ def build_X_Y_tables_for_lanes(sumo_network,
                                Y_features=['nVehSeen',
                                            'maxJamLengthInMeters',
                                            'maxJamLengthInVehicles'],
+                               num_workers=None,
                                clip_ending_pad_timesteps=False):
     """Return per-lane dataframe for X and Y with specified feature sets"""
     # default to all lanes
@@ -1128,21 +1130,21 @@ def build_X_Y_tables_for_lanes(sumo_network,
     else:
         liu_serieses = {}
 
-    detector_dicts = {lane_id: sumo_network.graph.nodes[lane_id]['detectors']
-                      for lane_id in lane_subset}
-
-    X_dfs = []
-    Y_dfs = []
-    with pd.HDFStore(raw_xml_filename, 'r') as input_store:
-        for lane_id in lane_subset:
-            X_lane_df, Y_lane_df = _X_Y_dfs_for_lane(
-                input_store, lane_id, detector_dicts[lane_id],
-                X_features, Y_features,
-                green_series=green_serieses.get(lane_id, None),
-                liu_series=liu_serieses.get(lane_id, None))
-
-            X_dfs.append(X_lane_df)
-            Y_dfs.append(Y_lane_df)
+    with multiprocessing.Pool(num_workers) as pool:
+        dfs = pool.starmap(
+            _X_Y_dfs_for_lane,
+            zip(repeat(raw_xml_filename),
+                lane_subset,
+                [sumo_network.graph.nodes[lane]['detectors']
+                 for lane in lane_subset],
+                repeat(X_features),
+                repeat(Y_features),
+                [green_serieses[lane] if lane in lane_subset else None
+                 for lane in lane_subset],
+                [liu_serieses[lane] if lane in lane_subset else None
+                 for lane in lane_subset])
+        )
+        X_dfs, Y_dfs = zip(*dfs)
 
         X_df = pd.concat(X_dfs, join='outer', keys=lane_subset,
                          names=['lane', 'begin'])
@@ -1164,39 +1166,40 @@ def build_X_Y_tables_for_lanes(sumo_network,
     return X_df, Y_df
 
 
-def _X_Y_dfs_for_lane(input_store, lane_id, detector_dict,
+def _X_Y_dfs_for_lane(filename, lane_id, detector_dict,
                       X_features, Y_features, green_series=None,
                       liu_series=None):
-    # e1 (loop) detector data
-    e1_detectors = lane_detectors_of_type_sorted_by_position(
-        detector_dict, 'e1')
-    e1_dfs = OrderedDict((det_id,
-                            input_store['raw_xml/{}'.format(det_id)])
-                            for det_id in e1_detectors)
-    X_lane_dfs_e1 = __get_dfs_feats(e1_dfs, X_features, lane_id)
-    Y_lane_dfs_e1 = __get_dfs_feats(e1_dfs, Y_features, lane_id)
+    with pd.HDFStore(filename, 'r') as input_store:
+        # e1 (loop) detector data
+        e1_detectors = lane_detectors_of_type_sorted_by_position(
+            detector_dict, 'e1')
+        e1_dfs = OrderedDict((det_id,
+                                input_store['raw_xml/{}'.format(det_id)])
+                                for det_id in e1_detectors)
+        X_lane_dfs_e1 = __get_dfs_feats(e1_dfs, X_features, lane_id)
+        Y_lane_dfs_e1 = __get_dfs_feats(e1_dfs, Y_features, lane_id)
 
-    # e2 (lane area) detector data
-    e2_detectors = lane_detectors_of_type_sorted_by_position(
-        detector_dict, 'e2')
-    e2_dfs = OrderedDict((det_id,
-                            input_store['raw_xml/{}'.format(det_id)])
-                            for det_id in e2_detectors)
-    X_lane_dfs_e2 = __get_dfs_feats(e2_dfs, X_features, lane_id)
-    Y_lane_dfs_e2 = __get_dfs_feats(e2_dfs, Y_features, lane_id)
+        # e2 (lane area) detector data
+        e2_detectors = lane_detectors_of_type_sorted_by_position(
+            detector_dict, 'e2')
+        e2_dfs = OrderedDict((det_id,
+                                input_store['raw_xml/{}'.format(det_id)])
+                                for det_id in e2_detectors)
+        X_lane_dfs_e2 = __get_dfs_feats(e2_dfs, X_features, lane_id)
+        Y_lane_dfs_e2 = __get_dfs_feats(e2_dfs, Y_features, lane_id)
 
-    X_lane_dfs = [*X_lane_dfs_e1, *X_lane_dfs_e2]
-    Y_lane_dfs = [*Y_lane_dfs_e1, *Y_lane_dfs_e2]
+        X_lane_dfs = [*X_lane_dfs_e1, *X_lane_dfs_e2]
+        Y_lane_dfs = [*Y_lane_dfs_e1, *Y_lane_dfs_e2]
 
-    # add some more X features if needed
-    X_lane_dfs.append(green_series) # no-op if these are None
-    X_lane_dfs.append(liu_series)
+        # add some more X features if needed
+        X_lane_dfs.append(green_series) # no-op if these are None
+        X_lane_dfs.append(liu_series)
 
-    # append columns (features) together
-    X_lane_df = pd.concat(X_lane_dfs, axis=1)
-    Y_lane_df = pd.concat(Y_lane_dfs, axis=1)
+        # append columns (features) together
+        X_lane_df = pd.concat(X_lane_dfs, axis=1)
+        Y_lane_df = pd.concat(Y_lane_dfs, axis=1)
 
-    return X_lane_df, Y_lane_df
+        return X_lane_df, Y_lane_df
 
 
 def last_nonpad_timestep(df):

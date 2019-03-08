@@ -185,7 +185,7 @@ def get_preprocessed_filenames(directory):
         return [os.path.join(directory, f)
                 for f in os.listdir(directory)
                 if os.path.isfile(os.path.join(directory, f))
-                and re.match(r'sim_\d+.h5', os.path.basename(f))]
+                and re.match(r'\d+.h5', os.path.basename(f))]
     except FileNotFoundError:
         return []
 
