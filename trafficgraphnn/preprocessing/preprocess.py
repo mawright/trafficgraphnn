@@ -1048,6 +1048,9 @@ def write_per_lane_tables(output_filename,
     A_dfs = build_A_tables_for_lanes(sumo_network, lanes_with_data)
     A_df = pd.concat(A_dfs, axis=1)
 
+    if not os.path.isdir(os.path.dirname(output_filename)):
+        os.makedirs(os.path.dirname(output_filename))
+
     with pd.HDFStore(output_filename, 'w', complevel=complevel,
                      complib=complib) as store:
         store.put('X', X_df)
