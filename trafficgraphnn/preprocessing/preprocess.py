@@ -9,6 +9,7 @@ import logging
 import math
 import os
 import re
+import multiprocessing
 import warnings
 from collections import OrderedDict
 from contextlib import ExitStack
@@ -1100,9 +1101,7 @@ def build_X_Y_tables_for_lanes(sumo_network,
                                Y_features=['nVehSeen',
                                            'maxJamLengthInMeters',
                                            'maxJamLengthInVehicles'],
-                               Y_on_green_features=['maxJamLengthInMeters',
-                                                   'maxJamLengthInVehicles'],
-                               X_on_green_empty_value=-1):
+                               clip_ending_pad_timesteps=False):
     """Return per-lane dataframe for X and Y with specified feature sets"""
     # default to all lanes
     if lane_subset is None:
@@ -1200,20 +1199,20 @@ def _X_Y_dfs_for_lane(input_store, lane_id, detector_dict,
     return X_lane_df, Y_lane_df
 
 
-        X_df = pd.concat(X_dfs, axis=1, join='outer', keys=lane_subset)
-        Y_df = pd.concat(Y_dfs, axis=1, join='outer', keys=lane_subset)
+def last_nonpad_timestep(df):
+    features = [feat for feat in df.columns if feat in pad_value_for_feature]
+    try:
+        features.remove('green')
+    except ValueError:
+        pass
 
-        # fill in blanks
-        if 'green' in X_features:
-            X_df.loc[:, (slice(None), 'green')] = (X_df.loc[:, (slice(None), 'green')]
-                                                       .fillna(method='ffill'))
+    test_series = pd.Series([pad_value_for_feature[feat] for feat in features],
+                            index=features)
 
-        for lane in X_df.columns.get_level_values(0).unique():
-            X_df[lane] = X_df[lane].fillna(pad_value_for_feature)
-        for lane in Y_df.columns.get_level_values(0).unique():
-            Y_df[lane] = Y_df[lane].fillna(pad_value_for_feature)
+    is_pad_row = (df.loc[:, features] == test_series).all(axis=1)
+    last_nonpad = is_pad_row.index[~is_pad_row].get_level_values('begin').max()
 
-    return X_df, Y_df
+    return last_nonpad
 
 
 def __get_dfs_feats(det_dfs, features, lane_id):
