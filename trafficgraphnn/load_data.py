@@ -42,7 +42,6 @@ x_feature_subset_default = ['e1_0/occupancy',
                             'e1_0/speed',
                             'e1_1/occupancy',
                             'e1_1/speed',
-                            'liu_estimated_m',
                             'liu_estimated_veh',
                             'green']
 
