@@ -45,7 +45,8 @@ def run_preprocessing(sumo_network, output_filename=None):
             'preprocessed_data',
             '{:04}.h5').format(_next_file_number(sumo_network))
     hdf_filename = write_hdf_for_sumo_network(sumo_network)
-    liu_resuts = liu_method_for_net(sumo_network, hdf_filename)
+    write_per_lane_tables(output_filename, sumo_network, hdf_filename)
+    return output_filename
 
 
 class PreprocessData(object):
@@ -1033,20 +1034,25 @@ def write_per_lane_tables(output_filename,
                           Y_features=['nVehSeen',
                                       'maxJamLengthInMeters',
                                       'maxJamLengthInVehicles'],
-                          Y_on_green_features=['maxJamLengthInMeters',
-                                               'maxJamLengthInVehicles'],
-                          complib='blosc:lz4', complevel=5,
-                          X_on_green_empty_value=-1):
+                          complib='blosc:lz4', complevel=5):
     """Write an hdf file with per-lane X and Y data arrays"""
 
     X_df, Y_df = build_X_Y_tables_for_lanes(
         sumo_network, raw_xml_filename=raw_xml_filename, X_features=X_features,
         Y_features=Y_features)
 
-    lanes_with_data = X_df.columns.get_level_values(0).unique()
-    assert len(lanes_with_data.difference(Y_df.columns.get_level_values(0))) == 0
+    lanes_with_data = X_df.index.get_level_values(0).unique()
+    assert len(lanes_with_data.difference(
+               Y_df.index.get_level_values(0)).unique()) == 0
 
     A_dfs = build_A_tables_for_lanes(sumo_network, lanes_with_data)
+    A_df = pd.concat(A_dfs, axis=1)
+
+    with pd.HDFStore(output_filename, 'w', complevel=complevel,
+                     complib=complib) as store:
+        store.put('X', X_df)
+        store.put('Y', Y_df)
+        store.put('A', A_df)
 
 
 def build_A_tables_for_lanes(sumo_network, lanes=None):
