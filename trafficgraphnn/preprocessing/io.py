@@ -194,17 +194,12 @@ def get_sim_numbers_in_preprocess_store(store, lane_list=None):
     if lane_list is None:
         lane_list = store['A_downstream'].columns
 
-    def sim_numbers_for_lane(lane):
-            X_subelements = dir(store.root.__getattr__(lane).X)
-            samples = filter(lambda e: re.match(r'_\d{4,5}', e), X_subelements)
-            return list(map(lambda e: int(re.search(r'\d{4,5}', e).group()), samples))
-
     def sim_numbers_for_lane_2(lane):
         query_string = '{}/X/_{:04}'
         i = 1
         try:
             while True:
-                X = store.get(query_string.format(lane, i))
+                _ = store.get(query_string.format(lane, i))
                 i += 1
         except KeyError:
             pass
@@ -215,5 +210,4 @@ def get_sim_numbers_in_preprocess_store(store, lane_list=None):
     except NoSuchNodeError:
         return []
 
-    # assert all((sim_numbers_for_lane_2(lane) == sim_numbers for lane in lane_list))
     return sim_numbers
