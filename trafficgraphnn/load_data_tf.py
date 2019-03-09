@@ -4,8 +4,8 @@ import time
 
 import tensorflow as tf
 
-from trafficgraphnn.load_data import (on_green_feats,
-                                      get_file_and_sim_indeces_in_dirs,
+from trafficgraphnn.load_data import (on_green_feats_default,
+                                      get_file_names_in_dirs,
                                       pad_value_for_feature,
                                       windowed_unpadded_batch_of_generators,
                                       x_feature_subset_default,
@@ -55,46 +55,37 @@ def make_datasets(directories,
                                'A_neighbors'],
                   x_feature_subset=x_feature_subset_default,
                   y_feature_subset=y_feature_subset_default,
-                  buffer_size=10,
+                  y_on_green_mask_feats=on_green_feats_default,
                   average_interval=None):
 
-    file_and_sims = get_file_and_sim_indeces_in_dirs(directories)
-    file_and_sims = [(f, str(si)) for f, si in file_and_sims]
+    filenames = get_file_names_in_dirs(directories)
 
-    dataset = tf.data.Dataset.from_tensor_slices(file_and_sims)
+    dataset = tf.data.Dataset.from_tensor_slices(filenames)
     if shuffle:
         dataset = dataset.shuffle(int(1e5))
 
-    def split_squeeze(x):
-        x, y = tf.split(x, 2, axis=-1)
-        x = tf.squeeze(x, axis=-1)
-        y = tf.squeeze(y, axis=-1)
-        return x, y
+    dataset = dataset.batch(batch_size)
 
-    dataset = dataset.apply(tf.data.experimental.map_and_batch(split_squeeze,
-                                                               batch_size,
-                                                               2))
-
-    num_batches = math.ceil(len(file_and_sims) / batch_size)
+    num_batches = math.ceil(len(filenames) / batch_size)
     datasets = [dataset.skip(i).take(1) for i in range(num_batches)]
 
-
-    def windowed_padded_batch_func(filenames, sim_number):
-        return windowed_unpadded_batch_of_generators(filenames, sim_number,
+    def windowed_batch_func(files):
+        return windowed_unpadded_batch_of_generators(files,
                                                      window_size,
                                                      batch_size,
                                                      A_name_list,
                                                      x_feature_subset,
                                                      y_feature_subset,
-                                                     buffer_size)
+                                                     y_on_green_mask_feats,
+                                                     prefetch_all=True)
 
-    gen_op = lambda filename, sim_number: tf.data.Dataset.from_generator(
-        windowed_padded_batch_func,
+    gen_op = lambda filename: tf.data.Dataset.from_generator(
+        windowed_batch_func,
         output_types=(tf.bool, tf.float32, tf.float32),
         output_shapes=((None, None, None, None),
                        (None, None, len(x_feature_subset)),
                        (None, None, len(y_feature_subset))),
-        args=(filename, sim_number)
+        args=(filename,)
     )
 
     datasets = [ds.flat_map(gen_op) for ds in datasets]
@@ -147,7 +138,7 @@ def make_datasets(directories,
         reduced_one_tensor = one_tensor[:,0,:]
 
         def weighted_avg_or_max(t, feat):
-            if feat in on_green_feats:
+            if feat in y_on_green_mask_feats:
                 return tf.reduce_max(t, axis=1)
             else:
                 weights = zero_one_weight(t, feat)
@@ -205,7 +196,7 @@ class TFBatcher(object):
                               'A_neighbors'],
                  x_feature_subset=x_feature_subset_default,
                  y_feature_subset=y_feature_subset_default,
-                 buffer_size=10):
+                 y_on_green_mask_feats=on_green_feats_default):
 
         t0 = time.time()
         self._train_datasets = make_datasets(train_directories,
@@ -215,7 +206,7 @@ class TFBatcher(object):
                                              A_name_list,
                                              x_feature_subset,
                                              y_feature_subset,
-                                             buffer_size,
+                                             y_on_green_mask_feats,
                                              average_interval)
         if val_directories is not None:
             self._val_datasets = make_datasets(val_directories,
@@ -225,7 +216,7 @@ class TFBatcher(object):
                                                A_name_list,
                                                x_feature_subset,
                                                y_feature_subset,
-                                               buffer_size,
+                                               y_on_green_mask_feats,
                                                average_interval)
         else:
             self._val_datasets = None

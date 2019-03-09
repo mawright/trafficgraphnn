@@ -4,7 +4,6 @@ import tempfile
 import time
 from collections import defaultdict
 from contextlib import ExitStack
-from functools import partial
 from itertools import zip_longest
 
 import numpy as np
@@ -52,9 +51,10 @@ y_feature_subset_default = ['e2_0/nVehSeen',
 All_A_name_list = ['A_downstream', 'A_upstream', 'A_neighbors',
                    'A_turn_movements', 'A_through_movements']
 
-on_green_feats = ['liu_estimated_m', 'liu_estimated_veh',
-                  'maxJamLengthInMeters', 'maxJamLengthInVehicles',
-                  'e2_0/maxJamLengthInMeters', 'e2_0/maxJamLengthInVehicles']
+on_green_feats_default = ['maxJamLengthInMeters',
+                          'maxJamLengthInVehicles',
+                          'e2_0/maxJamLengthInMeters',
+                          'e2_0/maxJamLengthInVehicles']
 
 
 class Batch(object):
@@ -141,11 +141,17 @@ def batches_from_directories(directories,
         yield batch
 
 
+def get_file_names_in_dirs(directories):
+    directories = iterfy(directories)
+    filenames = list(flatten([get_preprocessed_filenames(directory)
+                              for directory in directories]))
+    return filenames
+
+
 def get_file_and_sim_indeces_in_dirs(directories):
     tstart = time.time()
-    directories = iterfy(directories)
-    filenames = flatten([get_preprocessed_filenames(directory)
-                         for directory in directories])
+    filenames = get_file_names_in_dirs(directories)
+
     file_and_sims = []
 
     for filename in filenames:
@@ -303,7 +309,6 @@ def windowed_batch_of_generators(
 
 def windowed_unpadded_batch_of_generators(
     filenames,
-    sim_indeces,
     window_size,
     batch_size_to_pad_to=None,
     A_name_list=['A_downstream',
@@ -311,9 +316,8 @@ def windowed_unpadded_batch_of_generators(
                  'A_neighbors'],
     x_feature_subset=x_feature_subset_default,
     y_feature_subset=y_feature_subset_default,
-    generator_buffer_size=10,
+    y_on_green_mask_feats=on_green_feats_default,
     prefetch_all=True):
-    assert len(filenames) == len(sim_indeces)
     if batch_size_to_pad_to is not None:
         num_dummy_generators = batch_size_to_pad_to - len(filenames)
 
@@ -326,17 +330,17 @@ def windowed_unpadded_batch_of_generators(
     if prefetch_all:
         gen_func = generator_prefetch_all_from_file
     else:
-        gen_func = partial(generator_from_file,
-                           buffer_size=generator_buffer_size)
+        raise NotImplementedError('Non-prefetching not supported currently.')
 
-    generators = [gen_func(f, si,
+    generators = [gen_func(f,
                            chunk_size=window_size,
                            repeat_A_over_time=True,
                            A_name_list=A_name_list,
                            x_feature_subset=x_feature_subset,
                            y_feature_subset=y_feature_subset,
+                           y_on_green_mask_feats=y_on_green_mask_feats,
                            )
-                  for f, si in zip(filenames, sim_indeces)]
+                  for f in filenames]
 
     generators.extend([iter(()) for _ in range(num_dummy_generators)])
 
@@ -347,20 +351,18 @@ def windowed_unpadded_batch_of_generators(
 
 def read_from_file(
     filename,
-    simulation_number,
     repeat_A_over_time=True,
     A_name_list=['A_downstream',
                  'A_upstream',
                  'A_neighbors'],
     x_feature_subset=x_feature_subset_default,
     y_feature_subset=y_feature_subset_default,
+    y_on_green_mask_feats=on_green_feats_default,
     return_X_Y_as_dfs=False):
 
     # Input handling if we came from TF
     if isinstance(filename, six.binary_type):
         filename = filename.decode()
-    if isinstance(simulation_number, six.string_types + (six.binary_type,)):
-        simulation_number = int(simulation_number)
 
     A_name_list, x_feature_subset, y_feature_subset = map(
         string_list_decode,
@@ -369,31 +371,28 @@ def read_from_file(
 
     t0 = time.time()
     with pd.HDFStore(filename, 'r') as store:
-        A_list = []
-        for A_name in A_name_list:
-            try:
-                A = store[A_name]
-                A_list.append(A)
-            except KeyError:
-                A_list.append(np.zeros_like(A_list[0]))
+        A_df = store['A']
+        lane_list = A_df.index
+        num_lanes = len(lane_list)
+        A = np.stack([A_df[A_name] if A_name in All_A_name_list
+                      else np.zeros((num_lanes, num_lanes), dtype='bool')
+                      for A_name in A_name_list])
 
-        lane_list = A_list[0].index
-        assert all((all(lane_list == A.index) for A in A_list))
-        A = np.stack([A.values for A in A_list])
-
-        X_dfs = [store['{}/X/_{:04}'.format(lane, simulation_number)]
-                for lane in lane_list]
-        X_dfs = [df.loc[:, x_feature_subset] for df in X_dfs]
-        X_df = pd.concat(X_dfs, keys=lane_list, names=['lane', 'time'])
-        X_df = X_df.swaplevel().sort_index()
+        X_df = store['X']
         X_df = X_df.fillna(pad_value_for_feature).astype(np.float32)
 
-        Y_dfs = [store['{}/Y/_{:04}'.format(lane, simulation_number)]
-                for lane in lane_list]
-        Y_dfs = [df.loc[:, y_feature_subset] for df in Y_dfs]
-        Y_df = pd.concat(Y_dfs, keys=lane_list, names=['lane', 'time'])
-        Y_df = Y_df.swaplevel().sort_index()
+        Y_df = store['Y']
         Y_df = Y_df.fillna(pad_value_for_feature).astype(np.float32)
+
+        # masking out Y features to be predicted only at green cycle start
+        if 'green' in X_df and len(y_on_green_mask_feats) > 0:
+            feats_to_mask = [feat for feat in y_on_green_mask_feats
+                             if feat in Y_df]
+            green_starts = X_df['green'].astype('uint8').shift(-1).diff() == 1
+            Y_df[feats_to_mask] = (Y_df[feats_to_mask]
+                                   .where(green_starts)
+                                   .fillna(pad_value_for_feature))
+
 
     t = time.time() - t0
     _logger.debug('Loading data from disk took %s s', t)
@@ -403,13 +402,13 @@ def read_from_file(
     len_y = len(y_feature_subset)
 
     if not return_X_Y_as_dfs:
-        X = X_df.values.reshape(-1, num_lanes, len_x)
-        Y = Y_df.values.reshape(-1, num_lanes, len_y)
+        X = X_df.values.reshape(num_lanes, -1, len_x).transpose([1, 0, 2])
+        Y = Y_df.values.reshape(num_lanes, -1, len_y).transpose([1, 0, 2])
         num_timesteps = X.shape[0]
     else:
         X = X_df
         Y = Y_df
-        num_timesteps = len(X.index.get_level_values(0).unique())
+        num_timesteps = len(X.index.get_level_values('begin').unique())
 
     A = np.expand_dims(A, 0)
     if repeat_A_over_time:
@@ -420,41 +419,50 @@ def read_from_file(
 
 def generator_prefetch_all_from_file(
     filename,
-    simulation_number,
     chunk_size=None,
     repeat_A_over_time=True,
     A_name_list=['A_downstream',
                  'A_upstream',
                  'A_neighbors'],
     x_feature_subset=x_feature_subset_default,
-    y_feature_subset=y_feature_subset_default):
+    y_feature_subset=y_feature_subset_default,
+    y_on_green_mask_feats=on_green_feats_default):
 
     A, X_df, Y_df = read_from_file(filename,
-                                   simulation_number,
                                    repeat_A_over_time,
                                    A_name_list,
                                    x_feature_subset,
                                    y_feature_subset,
+                                   y_on_green_mask_feats,
                                    True)
     try:
         slice_begin = 0
         slice_end = chunk_size - 1
         num_lanes = A.shape[-1]
-        len_x = len(x_feature_subset)
-        len_y = len(y_feature_subset)
+
+        if X_df.index.names[0] == 'lane':
+            def get_slice(df, time_start, time_end):
+                subdf = df.loc[pd.IndexSlice[:, time_start:time_end], :]
+                num_timesteps = len(subdf.index.get_level_values(1).unique())
+                num_feats = subdf.shape[-1]
+                return (subdf.values
+                             .reshape((num_lanes, num_timesteps, num_feats))
+                             .transpose((1, 0, 2)))
+        elif X_df.index.names[1] == 'lane':
+            def get_slice(df, time_start, time_end):
+                subdf = df.loc[pd.IndexSlice[:, time_start:time_end], :]
+                num_timesteps = len(subdf.index.get_level_values(0).unique())
+                num_feats = subdf.shape[-1]
+                return subdf.values.reshape((num_timesteps, num_lanes,
+                                             num_feats))
 
         while True:
-            time_slicer = slice(slice_begin, slice_end)
+            X_slice = get_slice(X_df, slice_begin, slice_end)
+            Y_slice = get_slice(Y_df, slice_begin, slice_end)
 
-            X_df_slice = X_df.loc[time_slicer]
-            Y_df_slice = Y_df.loc[time_slicer]
-
-            t = X_df_slice.index.get_level_values(0).unique().values
-            if t.size == 0:
+            if X_slice.size == 0:
+                assert Y_slice.size == 0
                 return
-
-            X_slice = X_df_slice.values.reshape(-1, num_lanes, len_x)
-            Y_slice = Y_df_slice.values.reshape(-1, num_lanes, len_y)
 
             if repeat_A_over_time:
                 A_slice = A[slice_begin:slice_begin+chunk_size]
