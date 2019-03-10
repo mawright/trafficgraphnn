@@ -8,7 +8,6 @@ import warnings
 import numpy as np
 import pandas as pd
 import tables
-from tables import NoSuchNodeError
 
 from trafficgraphnn.utils import (E1IterParseWrapper, E2IterParseWrapper,
                                   TLSSwitchIterParseWrapper, _col_dtype_key,
@@ -254,26 +253,3 @@ def get_preprocessed_filenames(directory):
                 and re.match(r'\d+.h5', os.path.basename(f))]
     except FileNotFoundError:
         return []
-
-
-def get_sim_numbers_in_preprocess_store(store, lane_list=None):
-    if lane_list is None:
-        lane_list = store['A_downstream'].columns
-
-    def sim_numbers_for_lane_2(lane):
-        query_string = '{}/X/_{:04}'
-        i = 1
-        try:
-            while True:
-                _ = store.get(query_string.format(lane, i))
-                i += 1
-        except KeyError:
-            pass
-        return list(range(1, i))
-
-    try:
-        sim_numbers = sim_numbers_for_lane_2(list(lane_list)[0])
-    except NoSuchNodeError:
-        return []
-
-    return sim_numbers
