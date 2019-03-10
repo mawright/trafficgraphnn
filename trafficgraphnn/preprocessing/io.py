@@ -1,5 +1,6 @@
 import collections
 import logging
+import multiprocessing
 import os
 import re
 import warnings
@@ -16,10 +17,13 @@ from trafficgraphnn.utils import (E1IterParseWrapper, E2IterParseWrapper,
 _logger = logging.getLogger(__name__)
 
 
-def write_hdf_for_sumo_network(sumo_network):
+def write_hdf_for_sumo_network(sumo_network, multiprocess=True):
     output_dir = os.path.join(os.path.dirname(sumo_network.netfile),
                               'output')
-    output_hdf = sumo_output_xmls_to_hdf(output_dir)
+    if multiprocess:
+        output_hdf = sumo_output_xmls_to_hdf_multiprocess(output_dir)
+    else:
+        output_hdf = sumo_output_xmls_to_hdf(output_dir)
 
     light_switch_out_files = light_switch_out_files_for_sumo_network(
         sumo_network)
@@ -88,14 +92,76 @@ def xml_to_df_hdf(parser,
         _append_to_store(store, buffer, all_ids)
 
 
+def detector_output_xml_to_df(xml_filename):
+    basename = os.path.basename(xml_filename)
+    if '_e1_' in basename:
+        parser = E1IterParseWrapper(xml_filename, True)
+    elif '_e2_' in basename:
+        parser = E2IterParseWrapper(xml_filename, True)
+    else:
+        return
+
+    rows = collections.defaultdict(list)
+    for row in parser.iterate_until(np.inf):
+        for k, v in row.items():
+            rows[k].append(v)
+
+    id_set = set(rows['id'])
+    # sanity check there is only one detector
+    assert len(id_set) == 1
+
+    det_id = id_set.pop()
+    converter = {col: _col_dtype_key[col]
+                      for col in rows.keys()
+                      if col in _col_dtype_key}
+
+    df = (pd.DataFrame.from_dict(rows)
+                      .astype(converter)
+                      .drop(columns='id')
+                      .set_index('begin'))
+    return {det_id: df}
+
+
+def sumo_output_xmls_to_hdf_multiprocess(output_dir,
+                                         hdf_filename='raw_xml.hdf',
+                                         complevel=5,
+                                         complib='blosc:lz4',
+                                         num_workers=None,
+                                         remove_old_if_exists=True):
+    file_list = output_files_in_dir(output_dir)
+    output_filename = os.path.join(output_dir, hdf_filename)
+
+    if (remove_old_if_exists and os.path.exists(output_filename)
+            and os.path.isfile(output_filename)):
+        os.remove(output_filename)
+        _logger.debug('Removed file %s for new one', output_filename)
+
+    with multiprocessing.Pool(num_workers) as pool:
+        dfs = pool.map(detector_output_xml_to_df, file_list)
+
+    dfs = {k: v for d in dfs if d is not None for k, v in d.items()}
+
+    with pd.HDFStore(output_filename, complevel=complevel,
+                     complib=complib) as store:
+        for det_id, df in dfs.items():
+            store.append('raw_xml/{}'.format(det_id), df)
+
+    return output_filename
+
+
+def output_files_in_dir(output_dir):
+    file_list = [os.path.join(output_dir, f) for f in os.listdir(output_dir)]
+    file_list = [f for f in file_list
+                 if os.path.isfile(f) and os.path.splitext(f)[-1] == '.xml']
+    return file_list
+
+
 def sumo_output_xmls_to_hdf(output_dir,
                             hdf_filename='raw_xml.hdf',
                             complevel=5,
                             complib='blosc:lz4',
                             remove_old_if_exists=True):
-    file_list = [os.path.join(output_dir, f) for f in os.listdir(output_dir)]
-    file_list = [f for f in file_list
-                 if os.path.isfile(f) and os.path.splitext(f)[-1] == '.xml']
+    file_list = output_files_in_dir(output_dir)
     output_filename = os.path.join(output_dir, hdf_filename)
 
     if (remove_old_if_exists and os.path.exists(output_filename)
