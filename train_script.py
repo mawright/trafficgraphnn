@@ -120,7 +120,7 @@ def main(
 
     callback_list = make_callbacks(model, write_dir, do_validation)
 
-    steps = batch_gen.num_batches * (5000 // time_window)
+    steps = batch_gen.num_batches * (2000 // time_window)
     set_callback_params(callback_list, epochs, batch_size, verbose,
                         do_validation, model, steps)
 
@@ -137,37 +137,37 @@ def main(
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('net_name', type=str, help='Name of Sumo Network')
-    parser.add_argument('A_downstream', '-Adown', action='store_true',
+    parser.add_argument('--A_downstream', '-Adown', action='store_true',
                         help='Use the downstream-lane adjacency matrix.')
-    parser.add_argument('A_upstream', '-Aup', action='store_true',
+    parser.add_argument('--A_upstream', '-Aup', action='store_true',
                         help='Use the downstream-lane adjacency matrix.')
-    parser.add_argument('A_neighbors', '-Aneigh', action='store_true',
+    parser.add_argument('--A_neighbors', '-Aneigh', action='store_true',
                         help='Use the neighboring-lane adjacency matrix.')
-    parser.add_argument('val_split', '-v', type=float, default=.2,
+    parser.add_argument('--val_split', '-v', type=float, default=.2,
                         help='Data proportion to use for validation')
-    parser.add_argument('batch_size', '-b', type=int, default=4,
+    parser.add_argument('--batch_size', '-b', type=int, default=4,
                         help='Training batch size')
-    parser.add_argument('time_window', '-tw', type=int, default=150,
+    parser.add_argument('--time_window', '-tw', type=int, default=150,
                         help='Subsequence time window (s)')
-    parser.add_argument('average_interval', '-a', type=int,
+    parser.add_argument('--average_interval', '-a', type=int,
                         help='Hard averaging downsampling interval (s)')
-    parser.add_argument('epochs', '-e', type=int,
+    parser.add_argument('--epochs', '-e', type=int,
                         help='Number of training epochs.')
-    parser.add_argument('attn_dim', type=int, default=64,
+    parser.add_argument('--attn_dim', type=int, default=64,
                         help='Dimensionality of attentional embeddings')
-    parser.add_argument('attn_heads', type=int, default=4,
+    parser.add_argument('--attn_heads', type=int, default=4,
                         help='Number of attention heads per layer')
-    parser.add_argument('attn_depth', type=int, default=2,
+    parser.add_argument('--attn_depth', type=int, default=2,
                         help='Number of stacked attentional layers')
-    parser.add_argument('dense_dim', type=int, default=64,
+    parser.add_argument('--dense_dim', type=int, default=64,
                         help='Dimensionality of FC layers after attention ones')
-    parser.add_argument('rnn_dim', type=int, default=64,
+    parser.add_argument('--rnn_dim', type=int, default=64,
                         help='Dimensionality of per-lane RNN embedding')
-    parser.add_argument('dropout_rate', type=float, default=.3,
+    parser.add_argument('--dropout_rate', type=float, default=.3,
                         help='Inter-layer dropout probability')
-    parser.add_argument('attn_dropout', type=float, default=0.,
+    parser.add_argument('--attn_dropout', type=float, default=0.,
                         help='Probability of dropout on attention weights')
-    parser.add_argument('seed', '-s', type=int, help='Random seed',
+    parser.add_argument('--seed', '-s', type=int, help='Random seed',
                         default=123)
     args = parser.parse_args()
 
