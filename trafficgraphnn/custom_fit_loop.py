@@ -104,7 +104,8 @@ def fit_loop_train_one_epoch_tf(model, callbacks, batch_generator, epoch,
     # set up bookkeeping
     batch_size = batch_generator.batch_size * batch_generator.window_size
     i_step = 0
-    for batch in batch_generator.train_batches:
+    for i_batch, batch in enumerate(batch_generator.train_batches):
+        t0 = time.time()
         model.reset_states()
         batch.initialize(K.get_session(), feed_dict)
 
@@ -130,10 +131,12 @@ def fit_loop_train_one_epoch_tf(model, callbacks, batch_generator, epoch,
             finally:
                 if model.stop_training:
                     raise RuntimeError
+        _logger.debug('Training on batch %s took %s s',
+                      i_batch, time.time() - t0)
 
     val_logs = {'val_' + m: [] for m in model.metrics_names}
     i_step = 0
-    for batch in batch_generator.val_batches:
+    for i_batch, batch in enumerate(batch_generator.val_batches):
         model.reset_states()
         batch.initialize(K.get_session(), feed_dict)
 
@@ -156,6 +159,8 @@ def fit_loop_train_one_epoch_tf(model, callbacks, batch_generator, epoch,
                 i_step += 1
             except tf.errors.OutOfRangeError:
                 break
+        _logger.debug('Evaluating on batch %s took %f s',
+                      i_batch, time.time() - t0)
 
     for k in val_logs.keys():
         val_logs[k] = np.mean(val_logs[k])
