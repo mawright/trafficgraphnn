@@ -79,9 +79,7 @@ def write_per_lane_tables(output_filename,
 def build_A_tables_for_lanes(sumo_network, lanes=None):
     """Returns dict of dataframes for different lane adjacency matrices"""
     if lanes is None:
-        lanes = [lane for lane, lane_data
-                       in sumo_network.graph.nodes.data('detectors')
-                       if lane_data is not None]
+        lanes = sumo_network.lanes_with_detectors()
 
     A_dfs = {}
     A_dfs['A_downstream'] = nx.to_pandas_adjacency(
@@ -122,9 +120,7 @@ def build_X_Y_tables_for_lanes(sumo_network,
     """Return per-lane dataframe for X and Y with specified feature sets"""
     # default to all lanes
     if lane_subset is None:
-        lane_subset = [lane for lane, lane_data
-                       in sumo_network.graph.nodes.data('detectors')
-                       if lane_data is not None]
+        lane_subset = sumo_network.lanes_with_detectors()
     if raw_xml_filename is None:
         raw_xml_filename = os.path.join(os.path.dirname(sumo_network.netfile),
                                         'output', 'raw_xml.hdf')
