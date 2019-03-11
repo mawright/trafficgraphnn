@@ -66,6 +66,19 @@ class SumoNetwork(object):
                 + list(iterfy(config_gen.non_detector_addl_files))),
         )
 
+    @classmethod
+    def from_preexisting_directory(
+        cls, directory, lanewise=True, undirected_graph=False):
+        net_name = os.path.basename(os.path.normpath(directory))
+        net_file = os.path.join(directory, net_name + '.net.xml')
+        addlfiles = [os.path.join(directory, net_name + '_e1.add.xml'),
+                     os.path.join(directory, net_name + '_e2.add.xml'),
+                     os.path.join(directory, 'tls_output.add.xml')]
+        routefile = os.path.join(directory, net_name + '_rand.routes.xml')
+        return cls(
+            net_file, lanewise=lanewise, undirected_graph=undirected_graph,
+            routefile=routefile, addlfiles=addlfiles)
+
     def classify_additional_files(self):
         for addlfile in self.additional_files:
             tree = etree.iterparse(addlfile, tag=['e1Detector', 'inductionLoop',
@@ -183,6 +196,10 @@ class SumoNetwork(object):
 
     def set_new_graph(self, new_graph):
         self.graph = new_graph
+
+    def lanes_with_detectors(self):
+        return [lane for lane, lane_data in self.graph.nodes.data('detectors')
+                if lane_data is not None]
 
     def get_neighboring_lanes(self, lane_id, include_input_lane=False):
         """Get ids of lanes in the same edge as the passed one.
