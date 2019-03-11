@@ -1,25 +1,23 @@
+import argparse
 import logging
 import os
-import argparse
 
 import numpy as np
 import tensorflow as tf
 
 from keras import backend as K
-from keras.layers import (RNN, Dense, Dropout, GRUCell, Input, InputSpec,
-                          Lambda, TimeDistributed)
+from keras.layers import Dense, Dropout, Input, TimeDistributed
 from keras.models import Model
+from trafficgraphnn import SumoNetwork
 from trafficgraphnn.custom_fit_loop import (fit_loop_init, fit_loop_tf,
                                             make_callbacks,
                                             set_callback_params)
 from trafficgraphnn.layers import ReshapeFoldInLanes, ReshapeUnfoldLanes
 from trafficgraphnn.load_data_tf import TFBatcher
-from trafficgraphnn import SumoNetwork
 from trafficgraphnn.losses import (negative_masked_mae, negative_masked_mape,
                                    negative_masked_mse)
-from trafficgraphnn.nn_modules import (gat_encoder, gat_single_A_encoder,
-                                       output_tensor_slices, rnn_attn_decode,
-                                       rnn_encode)
+from trafficgraphnn.nn_modules import (gat_encoder, output_tensor_slices,
+                                       rnn_attn_decode, rnn_encode)
 
 _logger = logging.getLogger(__name__)
 
@@ -88,8 +86,8 @@ def main(
     A_in = Input(batch_shape=(batch_size, None, None, num_lanes, num_lanes),
                 name='A', tensor=Atens)
 
-    X = gat_single_A_encoder(X_in, A_in, attn_depth, attn_dim, attn_heads,
-                             dropout_rate, attn_dropout, 'relu')
+    X = gat_encoder(X_in, A_in, attn_depth, attn_dim, attn_heads,
+                    dropout_rate, attn_dropout, 'relu')
 
     predense = TimeDistributed(Dropout(dropout_rate))(X)
 
