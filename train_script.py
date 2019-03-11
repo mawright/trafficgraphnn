@@ -28,7 +28,7 @@ def main(
     A_name_list=['A_downstream'],
     batch_size=4,
     time_window=150,
-    # average_interval=30,
+    average_interval=None,
     epochs=50,
     attn_dim=64,
     attn_heads=4,
