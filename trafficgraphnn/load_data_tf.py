@@ -165,7 +165,6 @@ class TFBatcher(object):
                  window_size,
                  average_interval=None,
                  val_proportion=.2,
-                 do_drop_remainder_batch=True,
                  shuffle=True,
                  A_name_list=['A_downstream',
                               'A_upstream',
