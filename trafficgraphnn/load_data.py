@@ -10,8 +10,7 @@ import numpy as np
 import pandas as pd
 import six
 
-from trafficgraphnn.preprocessing.io import (get_preprocessed_filenames,
-                                             get_sim_numbers_in_preprocess_store)
+from trafficgraphnn.preprocessing.io import get_preprocessed_filenames
 from trafficgraphnn.utils import flatten, iterfy, string_list_decode
 
 _logger = logging.getLogger(__name__)
@@ -146,21 +145,6 @@ def get_file_names_in_dirs(directories):
     filenames = list(flatten([get_preprocessed_filenames(directory)
                               for directory in directories]))
     return filenames
-
-
-def get_file_and_sim_indeces_in_dirs(directories):
-    tstart = time.time()
-    filenames = get_file_names_in_dirs(directories)
-
-    file_and_sims = []
-
-    for filename in filenames:
-        for sim_number in get_sim_numbers_in_file(filename):
-            file_and_sims.append((filename, sim_number))
-
-    t = time.time() - tstart
-    _logger.debug('getting file and sim indeces took %s s', t)
-    return file_and_sims
 
 
 def get_pad_scalars(x_feature_subset, y_feature_subset):
@@ -644,10 +628,6 @@ def _timestep_iterator(dfs):
             yield np.stack([six.next(it)[1].values for it in iterators], 0)
     except StopIteration:
         return
-
-def get_sim_numbers_in_file(filename):
-    with pd.HDFStore(filename, 'r') as store:
-        return get_sim_numbers_in_preprocess_store(store)
 
 def get_pad_value_for_feature(feature):
     return pad_value_for_feature[feature]
