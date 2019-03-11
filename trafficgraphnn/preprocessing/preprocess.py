@@ -118,7 +118,7 @@ def build_X_Y_tables_for_lanes(sumo_network,
                                            'maxJamLengthInMeters',
                                            'maxJamLengthInVehicles'],
                                num_workers=None,
-                               clip_ending_pad_timesteps=False):
+                               clip_ending_pad_timesteps=True):
     """Return per-lane dataframe for X and Y with specified feature sets"""
     # default to all lanes
     if lane_subset is None:
