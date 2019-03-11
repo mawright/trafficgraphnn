@@ -27,14 +27,13 @@ else:
 class SumoNetwork(object):
     def __init__(
         self, netfile, lanewise=True, undirected_graph=False,
-        routefile=None, addlfiles=None, seed=None, binfile='sumo'
+        routefile=None, addlfiles=None, binfile='sumo'
     ):
         self.netfile = netfile
         self.net = readNet(netfile)
         self.undirected_graph = undirected_graph
         self.lanewise = lanewise
         self.routefile = routefile
-        self.seed = seed
         self.data_dfs = []
 
         self.detector_def_files = []
@@ -58,7 +57,6 @@ class SumoNetwork(object):
     @classmethod
     def from_gen_config(
         cls, config_gen, lanewise=True, undirected_graph=False,
-        seed=None
     ):
         return cls(
             config_gen.net_output_file, lanewise=lanewise,
@@ -66,7 +64,6 @@ class SumoNetwork(object):
             addlfiles=(
                 list(iterfy(config_gen.detector_def_files))
                 + list(iterfy(config_gen.non_detector_addl_files))),
-            seed=seed
         )
 
     def classify_additional_files(self):
@@ -91,9 +88,6 @@ class SumoNetwork(object):
         assert os.path.exists(routefile)
         self.routefile = routefile
 
-    def set_seed(self, seed):
-        self.seed = seed
-
     def add_additional_file(self, addlfile):
         assert os.path.exists(addlfile)
         self.additional_files.append(addlfile)
@@ -106,7 +100,7 @@ class SumoNetwork(object):
         self.other_addl_files = []
 
     def get_sumo_command(self, with_bin_file=True, queue_output_file=None,
-                         **kwargs):
+                         seed=None, **kwargs):
         if self.routefile is None:
             raise ValueError('Route file not set.')
         sumo_args = [
@@ -133,12 +127,13 @@ class SumoNetwork(object):
             sumo_args.extend(
                 ['--queue-output', queue_output_file]
             )
-        if self.seed is not None:
-            assert type(self.seed) in six.integer_types
-            sumo_args.extend(['--seed', str(self.seed)])
+        if seed is not None:
+            assert type(seed) in six.integer_types
         else:
             _logger.warning('Seed not set, SUMO seed will be random.')
-            sumo_args.extend(['--random', 'true'])
+            # assume sumo uses basic C 16-bit integers
+            seed = np.random.randint(np.iinfo(np.int16).max)
+            sumo_args.extend(['--seed', str(seed)])
 
         if self.binfile == 'sumo-gui':
             sumo_args.extend(['--start', '--quit'])
