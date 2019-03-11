@@ -62,13 +62,13 @@ class Batch(object):
 
     def __init__(self,
                  filenames,
-                 sim_indeces,
                  window_size,
                  A_name_list=['A_downstream',
                               'A_upstream',
                               'A_neighbors'],
                  x_feature_subset=x_feature_subset_default,
                  y_feature_subset=y_feature_subset_default):
+        self.filenames = filenames
         self.A_name_list = A_name_list
         self.x_feature_subset = x_feature_subset
         self.y_feature_subset = y_feature_subset
@@ -77,38 +77,16 @@ class Batch(object):
 
         if isinstance(filenames, np.ndarray):
             filenames = filenames.tolist()
-        if isinstance(sim_indeces, np.ndarray):
-            sim_indeces = sim_indeces.tolist()
 
         self.readers = windowed_batch_of_generators(
-            filenames, sim_indeces, window_size, A_name_list, x_feature_subset,
+            filenames, window_size, A_name_list, x_feature_subset,
             y_feature_subset)
-
-        self._batch_sources = [f'{filename}-{sim_number}'
-                               for filename, sim_number
-                               in zip(filenames, sim_indeces)]
 
     def iterate(self, try_broadcast_A=False):
         for output in self.readers:
             yield pad_and_stack_batch(output,
                                       self.pad_scalars,
                                       try_broadcast_A=try_broadcast_A)
-
-    @classmethod
-    def from_file(cls,
-                  filename,
-                  window_size,
-                  sim_subset=None,
-                  A_name_list=['A_downstream',
-                               'A_upstream',
-                               'A_neighbors'],
-                  x_feature_subset=x_feature_subset_default,
-                  y_feature_subset=y_feature_subset_default):
-        if sim_subset is None:
-            sim_subset = get_sim_numbers_in_file(filename)
-        return cls([filename] * len(sim_subset), sim_subset, window_size,
-                   A_name_list=A_name_list, x_feature_subset=x_feature_subset,
-                   y_feature_subset=y_feature_subset)
 
 
 def batches_from_directories(directories,
@@ -121,20 +99,16 @@ def batches_from_directories(directories,
                              x_feature_subset=x_feature_subset_default,
                              y_feature_subset=y_feature_subset_default):
 
-    file_and_sims = get_file_and_sim_indeces_in_dirs(directories)
+    filenames = get_file_names_in_dirs(directories)
 
     if shuffle:
-        np.random.shuffle(file_and_sims)
-
-    filenames, sim_indeces = list(map(list, zip(*file_and_sims)))
+        np.random.shuffle(filenames)
 
     batched_filenames = [filenames[i:i + batch_size]
                          for i in range(0, len(filenames), batch_size)]
-    batched_sim_indeces = [sim_indeces[i:i + batch_size]
-                         for i in range(0, len(sim_indeces), batch_size)]
 
-    for f_batch, si_batch in zip(batched_filenames, batched_sim_indeces):
-        batch = Batch(f_batch, si_batch, window_size, A_name_list=A_name_list,
+    for f_batch in batched_filenames:
+        batch = Batch(f_batch, window_size, A_name_list=A_name_list,
                       x_feature_subset=x_feature_subset,
                       y_feature_subset=y_feature_subset)
         yield batch
@@ -270,7 +244,6 @@ def _slice_off_empty_timesteps(nested_list, empty_timesteps):
 
 def windowed_batch_of_generators(
     filenames,
-    sim_indeces,
     window_size,
     A_name_list=['A_downstream',
                  'A_upstream',
@@ -278,14 +251,13 @@ def windowed_batch_of_generators(
     x_feature_subset=x_feature_subset_default,
     y_feature_subset=y_feature_subset_default):
 
-    assert len(filenames) == len(sim_indeces)
-    generators = [generator_from_file(f, si,
-                                      chunk_size=window_size,
-                                      repeat_A_over_time=True,
-                                      A_name_list=A_name_list,
-                                      x_feature_subset=x_feature_subset,
-                                      y_feature_subset=y_feature_subset)
-                  for f, si in zip(filenames, sim_indeces)]
+    generators = [generator_prefetch_all_from_file(
+        f,
+        chunk_size=window_size,
+        repeat_A_over_time=True,
+        A_name_list=A_name_list,
+        x_feature_subset=x_feature_subset,
+        y_feature_subset=y_feature_subset) for f in filenames]
 
     reader = zip_longest(*generators)
     return reader
@@ -460,174 +432,6 @@ def generator_prefetch_all_from_file(
     except TypeError:
         return
 
-
-class _Buffer(object):
-    def __init__(self, source_df, start_t, window_size, num_windows):
-        self.dfs = []
-        max_time = start_t + window_size * num_windows - 1
-        unwindowed_df = source_df.loc[start_t:max_time].copy()
-        window_end_t = start_t + window_size - 1
-        for _ in range(num_windows):
-            slicer = slice(start_t, window_end_t)
-            df = unwindowed_df.loc[slicer]
-            self.dfs.append(df)
-            start_t += window_size
-            window_end_t += window_size
-
-    def __iter__(self):
-        yield from self.dfs
-
-
-def generator_from_file(
-    filename,
-    simulation_number,
-    chunk_size=None,
-    repeat_A_over_time=True,
-    A_name_list=['A_downstream',
-                 'A_upstream',
-                 'A_neighbors'],
-    x_feature_subset=x_feature_subset_default,
-    y_feature_subset=y_feature_subset_default,
-    buffer_size=10):
-
-    # Input handling if we came from TF
-    if isinstance(filename, six.binary_type):
-        filename = filename.decode()
-    if isinstance(simulation_number, six.string_types + (six.binary_type,)):
-        simulation_number = int(simulation_number)
-
-    A_name_list, x_feature_subset, y_feature_subset = map(
-        string_list_decode,
-        [A_name_list, x_feature_subset, y_feature_subset])
-    assert all([A_name in All_A_name_list for A_name in A_name_list])
-
-    filedir = os.path.dirname(filename)
-
-    with ExitStack() as stack:
-        temp_dir = stack.enter_context(tempfile.TemporaryDirectory(dir=filedir))
-        temp_store_name = os.path.join(temp_dir, 'temp.h5')
-        temp_store = stack.enter_context(pd.HDFStore(temp_store_name,
-                                                     complevel=5,
-                                                     complib='blosc:lz4'))
-        with pd.HDFStore(filename, 'r') as store:
-            A_list = []
-            for A_name in A_name_list:
-                try:
-                    A = store[A_name]
-                    A_list.append(A)
-                except KeyError:
-                    A_list.append(np.zeros_like(A_list[0]))
-
-            lane_list = A_list[0].index
-            assert all((all(lane_list == A.index) for A in A_list))
-            A = np.stack([A.values for A in A_list])
-
-            X_df_strings = ['{}/X/_{:04}'.format(lane, simulation_number)
-                            for lane in lane_list]
-            _read_concat_write(store, X_df_strings, x_feature_subset,
-                              temp_store, 'X', lane_list)
-
-            Y_df_strings = ['{}/Y/_{:04}'.format(lane, simulation_number)
-                            for lane in lane_list]
-            _read_concat_write(store, Y_df_strings, y_feature_subset,
-                              temp_store, 'Y', lane_list)
-
-        slice_begin = 0
-        slice_end = chunk_size - 1
-        num_lanes = A.shape[-1]
-        len_x = len(x_feature_subset)
-        len_y = len(y_feature_subset)
-
-        try:
-            while True:
-                X_buffer = _Buffer(temp_store['X'], slice_begin, chunk_size,
-                                   buffer_size)
-                Y_buffer = _Buffer(temp_store['Y'], slice_begin, chunk_size,
-                                   buffer_size)
-                assert len(X_buffer.dfs) == len(Y_buffer.dfs)
-
-                for X_df, Y_df in zip(X_buffer, Y_buffer):
-
-                    X_t = X_df.index.get_level_values(0).unique().values
-                    Y_t = Y_df.index.get_level_values(0).unique().values
-                    assert np.array_equal(X_t, Y_t)
-
-                    num_timesteps = X_t.size
-                    if num_timesteps == 0:
-                        return
-
-                    assert slice_begin == X_t[0]
-                    try:
-                        assert slice_end == X_t[-1]
-                    except AssertionError:
-                        assert slice_begin + num_timesteps - 1 == X_t[-1]
-
-                    X_slice = X_df.values.reshape(-1, num_lanes, len_x)
-                    Y_slice = Y_df.values.reshape(-1, num_lanes, len_y)
-
-                    if repeat_A_over_time:
-                        A_slice = np.broadcast_to(A, [num_timesteps, *A.shape])
-                    else:
-                        A_slice = A
-
-                    yield A_slice, X_slice, Y_slice
-
-                    slice_begin += chunk_size
-                    slice_end += chunk_size
-        except TypeError:
-            return
-
-
-def _read_concat_write(source_store, read_strings, col_subset, write_store,
-                       write_key, lane_list):
-    dfs = [source_store[k].loc[:, col_subset] for k in read_strings]
-    df = _merge_fill(dfs, lane_list)
-    write_store.append(write_key, df, complevel=5, complib='blosc:lz4')
-
-
-def _merge_fill(dfs, lane_list):
-    df = pd.concat(dfs, keys=lane_list, names=['lane', 'time'])
-    df = df.swaplevel().sort_index()
-    df = df.fillna(pad_value_for_feature).astype(np.float32)
-    return df
-
-
-def _colwise_iterator(listoflist_series, return_time=True):
-    col_iterators = [[col.items() for col in lane_cols] for lane_cols in listoflist_series]
-    if return_time:
-        def step_iters():
-            step = [[next(it) for it in lane_its] for lane_its in col_iterators]
-            time = step[0][0][0]
-            step = tuple([time, tuple([np.stack([row[1] for row in per_lane]) for per_lane in step])])
-            return step
-    else:
-        def step_iters():
-            return tuple(np.stack([next(it)[1] for it in lane_its]) for lane_its in col_iterators)
-    try:
-        while True:
-            col_out = step_iters()
-            yield col_out
-    except StopIteration:
-        return
-
-
-def _df_iterator(dfs, num_feats):
-    iterators = [df.iterrows() for df in dfs]
-    try:
-        while True:
-            rows = [six.next(it)[1].values for it in iterators]
-            yield np.split(np.transpose(rows), num_feats)
-    except StopIteration:
-        return
-
-
-def _timestep_iterator(dfs):
-    iterators = [df.iterrows() for df in dfs]
-    try:
-        while True:
-            yield np.stack([six.next(it)[1].values for it in iterators], 0)
-    except StopIteration:
-        return
 
 def get_pad_value_for_feature(feature):
     return pad_value_for_feature[feature]
