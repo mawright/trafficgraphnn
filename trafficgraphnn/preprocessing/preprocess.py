@@ -6,7 +6,7 @@ import logging
 import multiprocessing
 import os
 import re
-import multiprocessing
+import time
 from collections import OrderedDict
 from itertools import repeat
 
@@ -21,7 +21,6 @@ from trafficgraphnn.preprocessing.io import (get_preprocessed_filenames,
                                              write_hdf_for_sumo_network)
 from trafficgraphnn.preprocessing.liumethod_new import liu_method_for_net
 
-
 _logger = logging.getLogger(__name__)
 
 
@@ -31,8 +30,14 @@ def run_preprocessing(sumo_network, output_filename=None):
             os.path.dirname(sumo_network.netfile),
             'preprocessed_data',
             '{:04}.h5').format(_next_file_number(sumo_network))
+    t0 = time.time()
     hdf_filename = write_hdf_for_sumo_network(sumo_network)
+    t = time.time() - t0
+    _logger.debug('Extracting xml took {} s'.format(t))
+    t0 = time.time()
     write_per_lane_tables(output_filename, sumo_network, hdf_filename)
+    t - time.time() - t0
+    _logger.debug('Writing preprocessed data took {} s'.format(t))
     return output_filename
 
 
