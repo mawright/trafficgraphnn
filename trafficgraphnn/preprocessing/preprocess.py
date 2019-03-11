@@ -3,6 +3,7 @@
 Use to put data into hdf stores with A, X, Y arrays.
 """
 import logging
+import multiprocessing
 import os
 import re
 import multiprocessing
