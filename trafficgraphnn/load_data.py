@@ -1,9 +1,6 @@
 import logging
-import os
-import tempfile
 import time
 from collections import defaultdict
-from contextlib import ExitStack
 from itertools import zip_longest
 
 import numpy as np
@@ -283,19 +280,17 @@ def windowed_unpadded_batch_of_generators(
 
     default_val = (fill_A, fill_X, fill_Y)
 
-    if prefetch_all:
-        gen_func = generator_prefetch_all_from_file
-    else:
+    if not prefetch_all:
         raise NotImplementedError('Non-prefetching not supported currently.')
 
-    generators = [gen_func(f,
-                           chunk_size=window_size,
-                           repeat_A_over_time=True,
-                           A_name_list=A_name_list,
-                           x_feature_subset=x_feature_subset,
-                           y_feature_subset=y_feature_subset,
-                           y_on_green_mask_feats=y_on_green_mask_feats,
-                           )
+    generators = [generator_prefetch_all_from_file(
+        f,
+        chunk_size=window_size,
+        repeat_A_over_time=True,
+        A_name_list=A_name_list,
+        x_feature_subset=x_feature_subset,
+        y_feature_subset=y_feature_subset,
+        y_on_green_mask_feats=y_on_green_mask_feats)
                   for f in filenames]
 
     generators.extend([iter(()) for _ in range(num_dummy_generators)])
@@ -334,10 +329,10 @@ def read_from_file(
                       else np.zeros((num_lanes, num_lanes), dtype='bool')
                       for A_name in A_name_list])
 
-        X_df = store['X']
+        X_df = store['X'].loc[:,x_feature_subset]
         X_df = X_df.fillna(pad_value_for_feature).astype(np.float32)
 
-        Y_df = store['Y']
+        Y_df = store['Y'].loc[:,y_feature_subset]
         Y_df = Y_df.fillna(pad_value_for_feature).astype(np.float32)
 
         # masking out Y features to be predicted only at green cycle start
