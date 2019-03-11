@@ -19,6 +19,10 @@ def gat_single_A_encoder(X_tensor, A_tensor, attn_depth, attn_dims, num_heads,
         [attn_dims, num_heads, dropout_rate, attn_dropout_rate])
 
     X = X_tensor
+    # if A is 5-dimensional (batch, time, edgetype, lane, lane), squeeze out
+    # the edge type dim
+    if len(A_tensor.shape) > 4:
+        A_tensor = K.squeeze(A_tensor, -3)
     for dim, head, drop, attndrop in zip(attn_dims, num_heads, dropout_rate,
                                          attn_dropout_rate):
         X = TimeDistributed(Dropout(drop))(X)
@@ -45,7 +49,8 @@ def gat_encoder(X_tensor, A_tensor, attn_dims, num_heads,
     X = X_tensor
     for dim, head, drop, attndrop, reduct in zip(attn_dims, num_heads,
                                                  dropout_rate,
-                                                 attn_dropout_rate):
+                                                 attn_dropout_rate,
+                                                 attn_reduction):
         X = TimeDistributed(Dropout(drop))(X)
         X = TimeDistributedMultiInput(
             BatchMultigraphAttention(dim,
