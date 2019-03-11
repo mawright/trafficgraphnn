@@ -1,15 +1,17 @@
 import logging
 import math
+import os
 import time
 
 import tensorflow as tf
 
 from trafficgraphnn.load_data import (on_green_feats_default,
-                                      get_file_names_in_dirs,
                                       pad_value_for_feature,
                                       windowed_unpadded_batch_of_generators,
                                       x_feature_subset_default,
                                       y_feature_subset_default)
+from trafficgraphnn.preprocessing.io import get_preprocessed_filenames
+from trafficgraphnn.utils import iterfy
 
 _logger = logging.getLogger(__name__)
 
@@ -46,7 +48,7 @@ class TFHandleBatch(object):
         feed_dict[self.parent.handle] = self.handle
 
 
-def make_datasets(directories,
+def make_datasets(filenames,
                   batch_size,
                   window_size=None,
                   shuffle=True,
@@ -57,8 +59,6 @@ def make_datasets(directories,
                   y_feature_subset=y_feature_subset_default,
                   y_on_green_mask_feats=on_green_feats_default,
                   average_interval=None):
-
-    filenames = get_file_names_in_dirs(directories)
 
     dataset = tf.data.Dataset.from_tensor_slices(filenames)
     if shuffle:
@@ -91,74 +91,50 @@ def make_datasets(directories,
     datasets = [ds.flat_map(gen_op) for ds in datasets]
 
     def split_for_pad(A, X, Y):
-        X = tf.split(X, len(x_feature_subset), axis=-1)
-        Y = tf.split(Y, len(y_feature_subset), axis=-1)
-        squeeze = lambda t: tf.squeeze(t, -1)
+        X = tf.unstack(X, axis=-1)
+        Y = tf.unstack(Y, axis=-1)
         return (A,
-                dict(zip(x_feature_subset, map(squeeze, X))),
-                dict(zip(y_feature_subset, map(squeeze, Y))))
+                dict(zip(x_feature_subset, X)),
+                dict(zip(y_feature_subset, Y)))
 
     datasets = [ds.map(split_for_pad, 2) for ds in datasets]
 
     xpad =  {x: pad_value_for_feature[x] for x in x_feature_subset}
     ypad =  {y: pad_value_for_feature[y] for y in y_feature_subset}
 
-    def average_over_interval(A, X, Y, average_interval):
-        shape = tf.shape(X[x_feature_subset[0]])
-        num_timesteps = shape[0]
-        divided = num_timesteps / average_interval
-        num_intervals = tf.ceil(divided)
-        deficit = tf.cast(num_intervals * average_interval, tf.int32) - num_timesteps
-        padding = [[0, deficit], [0, 0]]
-
-        PAD_VALUE = -2
-
-        padded_X = {feat: tf.pad(t, padding,
-                                 constant_values=PAD_VALUE)
-                    for feat, t in X.items()}
-        padded_Y = {feat: tf.pad(t, padding,
-                                 constant_values=PAD_VALUE)
-                    for feat, t in Y.items()}
-
-        new_shape = [num_intervals, average_interval, shape[-1]]
-        reshaped_X = {feat: tf.reshape(t, new_shape)
-                      for feat, t in padded_X.items()}
-        reshaped_Y = {feat: tf.reshape(t, new_shape)
-                      for feat, t in padded_Y.items()}
-
-        zero_tensor = tf.zeros(new_shape)
-        one_tensor = tf.ones(new_shape)
-
-        def zero_one_weight(t, feat):
-            test = tf.logical_or(tf.equal(t, PAD_VALUE),
-                                 tf.equal(t, pad_value_for_feature[feat]))
-            return tf.where(test, zero_tensor, one_tensor)
-            # return tf.where(tf.equal(t, PAD_VALUE), zero_tensor, one_tensor)
-
-        reduced_one_tensor = one_tensor[:,0,:]
-
-        def weighted_avg_or_max(t, feat):
-            if feat in y_on_green_mask_feats:
-                return tf.reduce_max(t, axis=1)
-            else:
-                weights = zero_one_weight(t, feat)
-                num = tf.reduce_sum(t * weights, axis=1)
-                den = tf.reduce_sum(weights, axis=1)
-                out = num / den
-                pad_value = pad_value_for_feature[feat]
-                return tf.where(tf.is_nan(out), reduced_one_tensor * pad_value, out)
-
-        new_X = {feat: weighted_avg_or_max(t, feat)
-                 for feat, t in reshaped_X.items()}
-        new_Y = {feat: weighted_avg_or_max(t, feat)
-                 for feat, t in reshaped_Y.items()}
-
-        get_As = tf.range(0, num_timesteps, average_interval)
-        new_A = tf.gather(A, get_As)
-
-        return new_A, new_X, new_Y
-
     if average_interval is not None and average_interval > 1:
+        def average_over_interval(A, X, Y, average_interval):
+            shape = tf.shape(X[x_feature_subset[0]])
+            num_timesteps = shape[0]
+            divided = num_timesteps / average_interval
+            num_intervals = tf.ceil(divided)
+            deficit = tf.cast(num_intervals * average_interval, tf.int32) - num_timesteps
+            padding = [[0, deficit], [0, 0]]
+
+            def pad_reshape_average(tensor_dict):
+                outputs = {}
+                for feature, tensor in tensor_dict.items():
+                    PAD_VALUE = pad_value_for_feature[feature]
+                    padded = tf.pad(tensor, padding, constant_values=PAD_VALUE)
+
+                    reshaped = tf.reshape(padded,
+                                            [num_intervals, average_interval, -1])
+
+                    if feature in y_on_green_mask_feats:
+                        averaged = tf.reduce_max(reshaped, 1)
+                    else:
+                        averaged = tf.reduce_mean(reshaped, 1)
+                    outputs[feature] = averaged
+
+                return outputs
+
+            new_X = pad_reshape_average(X)
+            new_Y = pad_reshape_average(Y)
+
+            get_As = tf.range(0, num_timesteps, average_interval)
+            new_A = tf.gather(A, get_As)
+
+            return new_A, new_X, new_Y
         datasets = [ds.map(lambda A, X, Y:
                            average_over_interval(A, X, Y, average_interval))
                     for ds in datasets]
@@ -184,11 +160,11 @@ def make_datasets(directories,
 
 class TFBatcher(object):
     def __init__(self,
-                 train_directories,
+                 filenames_or_dirs,
                  batch_size,
                  window_size,
                  average_interval=None,
-                 val_directories=None,
+                 val_proportion=.2,
                  do_drop_remainder_batch=True,
                  shuffle=True,
                  A_name_list=['A_downstream',
@@ -198,8 +174,21 @@ class TFBatcher(object):
                  y_feature_subset=y_feature_subset_default,
                  y_on_green_mask_feats=on_green_feats_default):
 
+        filenames_or_dirs = iterfy(filenames_or_dirs)
+        filenames = []
+        for entry in filenames_or_dirs:
+            if os.path.isfile(entry):
+                filenames.append(entry)
+            elif os.path.isdir(entry):
+                filenames.extend(get_preprocessed_filenames(entry))
+
+        num_training = int(len(filenames) * val_proportion)
+
+        train_files = filenames[:-num_training]
+        val_files = filenames[-num_training:]
+
         t0 = time.time()
-        self._train_datasets = make_datasets(train_directories,
+        self._train_datasets = make_datasets(train_files,
                                              batch_size,
                                              window_size,
                                              shuffle,
@@ -208,8 +197,8 @@ class TFBatcher(object):
                                              y_feature_subset,
                                              y_on_green_mask_feats,
                                              average_interval)
-        if val_directories is not None:
-            self._val_datasets = make_datasets(val_directories,
+        if len(val_files) > 0:
+            self._val_datasets = make_datasets(val_files,
                                                batch_size,
                                                window_size,
                                                False,
