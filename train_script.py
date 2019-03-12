@@ -173,7 +173,7 @@ if __name__ == '__main__':
                         help='Subsequence time window (s)')
     parser.add_argument('--average_interval', '-a', type=int,
                         help='Hard averaging downsampling interval (s)')
-    parser.add_argument('--epochs', '-e', type=int,
+    parser.add_argument('--epochs', '-e', type=int, default=30,
                         help='Number of training epochs.')
     parser.add_argument('--attn_dim', type=int, default=64,
                         help='Dimensionality of attentional embeddings')
