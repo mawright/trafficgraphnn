@@ -117,8 +117,8 @@ def make_datasets(filenames,
                     PAD_VALUE = pad_value_for_feature[feature]
                     padded = tf.pad(tensor, padding, constant_values=PAD_VALUE)
 
-                    reshaped = tf.reshape(padded,
-                                            [num_intervals, average_interval, -1])
+                    reshaped = tf.reshape(
+                        padded, [num_intervals, average_interval, shape[-1]])
 
                     if feature in y_on_green_mask_feats:
                         averaged = tf.reduce_max(reshaped, 1)
