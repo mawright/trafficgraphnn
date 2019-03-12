@@ -187,6 +187,8 @@ class BatchMultigraphAttention(Layer):
             output = K.mean(K.stack(outputs, axis=0), axis=0)  #( batch x N x EF')
 
         output = self.activation(output)
+        if 0. < self.attn_dropout < 1.:
+            output._uses_learning_phase = True
 
         return output
 
