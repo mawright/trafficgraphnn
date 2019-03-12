@@ -12,13 +12,20 @@ from keras.engine.topology import Layer
 
 class ReshapeFoldInLanes(Layer):
     def __init__(self,
+                 batch_size=None,
                  **kwargs):
+        self.batch_size = batch_size
         super(ReshapeFoldInLanes, self).__init__(**kwargs)
 
     def call(self, x):
         x_permuted = K.permute_dimensions(x, (0, 2, 1, 3))
         shape = K.shape(x_permuted)
         int_shape = K.int_shape(x_permuted)
+
+        if int_shape[0] is not None:
+            shape1 = -1 # can be inferred
+        elif self.batch_size is not None and int_shape[1] is not None:
+            shape1 = self.batch_size * int_shape[1] # needs to be specified
 
         if int_shape[2] is not None:
             shape2 = int_shape[2]
@@ -29,12 +36,14 @@ class ReshapeFoldInLanes(Layer):
         else:
             shape3 = shape[3]
 
-        x_reshaped = K.reshape(x_permuted, (-1, shape2, shape3))
+        x_reshaped = K.reshape(x_permuted, (shape1, shape2, shape3))
         return x_reshaped
 
     def compute_output_shape(self, input_shape):
         if input_shape[0] is not None and input_shape[2] is not None:
             first_dim = input_shape[0] * input_shape[2]
+        elif self.batch_size is not None and input_shape[2] is not None:
+            first_dim = self.batch_size * input_shape[2]
         else:
             first_dim = None
         return (first_dim, input_shape[1], input_shape[3])
@@ -71,8 +80,7 @@ class ReshapeUnfoldLanes(Layer):
         return x_permuted
 
     def compute_output_shape(self, input_shape):
-#        shape = [-1, input_shape[-2], self.num_lanes, input_shape[-1]]
-        shape = [None, input_shape[-2], self.num_lanes, input_shape[-1]] #test
+        shape = [input_shape[0], input_shape[-2], self.num_lanes, input_shape[-1]]
         return tuple(shape)
 
     def get_config(self):
