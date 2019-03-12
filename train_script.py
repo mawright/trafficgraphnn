@@ -1,4 +1,5 @@
 import argparse
+import json
 import logging
 import os
 
@@ -10,7 +11,7 @@ from keras.layers import Dense, Dropout, Input, TimeDistributed
 from keras.models import Model
 from trafficgraphnn import SumoNetwork
 from trafficgraphnn.custom_fit_loop import (fit_loop_init, fit_loop_tf,
-                                            make_callbacks,
+                                            get_logging_dir, make_callbacks,
                                             set_callback_params)
 from trafficgraphnn.layers import ReshapeFoldInLanes, ReshapeUnfoldLanes
 from trafficgraphnn.load_data_tf import TFBatcher
@@ -18,6 +19,7 @@ from trafficgraphnn.losses import (negative_masked_mae, negative_masked_mape,
                                    negative_masked_mse)
 from trafficgraphnn.nn_modules import (gat_encoder, output_tensor_slices,
                                        rnn_attn_decode, rnn_encode)
+from trafficgraphnn.utils import iterfy
 
 _logger = logging.getLogger(__name__)
 
@@ -62,6 +64,8 @@ def main(
                         'e2_0/maxJamLengthInVehicles']
 
     write_dir = os.path.join(net_dir, 'models')
+    if not os.path.isdir(write_dir):
+        os.makedirs(write_dir)
 
     batch_gen = TFBatcher(data_dir,
                           batch_size,
@@ -83,11 +87,15 @@ def main(
     X_in = Input(batch_shape=(batch_size, None, num_lanes, len(x_feature_subset)),
                 name='X', tensor=Xtens)
     # A dimensions: timesteps x lanes x lanes
-    A_in = Input(batch_shape=(batch_size, None, None, num_lanes, num_lanes),
-                name='A', tensor=Atens)
+    A_in = Input(batch_shape=(batch_size, None, len(A_name_list),
+                              num_lanes, num_lanes),
+                 name='A', tensor=Atens)
 
-    X = gat_encoder(X_in, A_in, attn_depth, attn_dim, attn_heads,
-                    dropout_rate, attn_dropout, 'relu')
+    attn_dim = iterfy(attn_dim) * attn_depth
+    attn_heads = iterfy(attn_heads) * attn_depth
+
+    X = gat_encoder(X_in, A_in, attn_dim, attn_heads,
+                    dropout_rate, attn_dropout, gat_activation='relu')
 
     predense = TimeDistributed(Dropout(dropout_rate))(X)
 
@@ -110,7 +118,7 @@ def main(
     Ytens = batch_gen.Y_slices
 
     model.compile(optimizer='Adam',
-                  loss=negative_masked_mse,
+                  loss=['mse', negative_masked_mse],
                   metrics=[negative_masked_mae, negative_masked_mape],
                   target_tensors=Ytens,
                   )
@@ -119,6 +127,18 @@ def main(
     do_validation = True
 
     callback_list = make_callbacks(model, write_dir, do_validation)
+
+    # record hyperparameters
+    hyperparams = dict(
+        net_name=net_name, A_name_list=A_name_list,
+        val_split_proportion=val_split_proportion, batch_size=batch_size,
+        time_window=time_window, average_interval=average_interval,
+        epochs=epochs, attn_dim=attn_dim, attn_depth=attn_depth,
+        rnn_dim=rnn_dim, dense_dim=dense_dim, dropout_rate=dropout_rate,
+        attn_dropout=attn_dropout, seed=seed)
+    logdir = get_logging_dir(callback_list)
+    with open(os.path.join(logdir, 'params.json')) as f:
+        json.dump(hyperparams,f)
 
     steps = batch_gen.num_batches * (2000 // time_window)
     set_callback_params(callback_list, epochs, batch_size, verbose,

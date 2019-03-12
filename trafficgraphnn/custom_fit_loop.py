@@ -1,13 +1,13 @@
+import datetime
 import logging
 import os
 import time
-import datetime
 
 import numpy as np
 import tensorflow as tf
 
 import keras.backend as K
-from keras.callbacks import (BaseLogger, CallbackList, History,
+from keras.callbacks import (BaseLogger, CallbackList, CSVLogger, History,
                              ModelCheckpoint, ProgbarLogger, ReduceLROnPlateau,
                              TensorBoard, TerminateOnNaN)
 
@@ -15,13 +15,15 @@ _logger = logging.getLogger(__name__)
 
 
 def make_callbacks(model, model_save_dir, do_validation=False):
+    timestamp = '{:%Y-%m-%d_%H:%M:%S}'.format(datetime.datetime.now())
     callback_list = CallbackList()
     callback_list.append(BaseLogger())
     callback_list.append(TerminateOnNaN())
+    callback_list.append(CSVLogger(os.path.join(model_save_dir,
+                                                timestamp, 'log.csv')))
     callback_list.append(
-        TensorBoard(log_dir='./logs/{:%Y-%m-%d_%H:%M:%S}'.format(
-            datetime.datetime.now()),
-                    update_freq=1000))
+        TensorBoard(log_dir=os.path.join(
+            model_save_dir, 'logs', timestamp), update_freq=1000))
     history = History()
     callback_list.append(history)
     model.history = history
@@ -38,11 +40,18 @@ def make_callbacks(model, model_save_dir, do_validation=False):
         add_str = '{%s:.4f}' % metric
         filename = filename + add_str
     filename = filename + '.hdf5'
-    callback_list.append(ModelCheckpoint(os.path.join(model_save_dir, filename)))
+    callback_list.append(ModelCheckpoint(os.path.join(model_save_dir,
+                                                      timestamp, filename)))
     callback_list.append(ReduceLROnPlateau(verbose=1))
 
     callback_list.set_model(model)
     return callback_list
+
+
+def get_logging_dir(callback_list):
+    for callback in callback_list:
+        if isinstance(callback, CSVLogger):
+            return os.path.dirname(callback.filename)
 
 
 def set_callback_params(callbacks,
