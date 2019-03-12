@@ -175,3 +175,25 @@ def fit_loop_train_one_epoch_tf(model, callbacks, batch_generator, epoch,
         val_logs[k] = np.mean(val_logs[k])
 
     callbacks.on_epoch_end(epoch, val_logs)
+
+
+def predict_eval_function(model):
+    inputs = (model._feed_inputs
+              + model._feed_targets
+              + model._feed_sample_weights)
+    if model._uses_dynamic_learning_phase():
+        inputs += [K.learning_phase()]
+
+    outputs = model.outputs + [model.total_loss] + model.metrics_tensors
+    # Gets network outputs. Does not update weights.
+    # Does update the network states.
+    kwargs = getattr(model, '_function_kwargs', {})
+    predict_eval_function = K.function(
+        inputs,
+        outputs,
+        updates=model.state_updates + model.metrics_updates,
+        name='predict_eval_function',
+        **kwargs)
+    model.predict_eval_function = predict_eval_function
+    return predict_eval_function
+
