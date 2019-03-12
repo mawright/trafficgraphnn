@@ -50,7 +50,7 @@ class TFHandleBatch(object):
 
 def make_datasets(filenames,
                   batch_size,
-                  window_size=None,
+                  window_size,
                   shuffle=True,
                   A_name_list=['A_downstream',
                                'A_upstream',
