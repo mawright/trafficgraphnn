@@ -84,10 +84,10 @@ def main(
     Atens = tf.cast(batch_gen.A, tf.float32)
 
     # X dimensions: timesteps x lanes x feature dim
-    X_in = Input(batch_shape=(batch_size, None, num_lanes, len(x_feature_subset)),
+    X_in = Input(batch_shape=(None, None, num_lanes, len(x_feature_subset)),
                 name='X', tensor=Xtens)
     # A dimensions: timesteps x lanes x lanes
-    A_in = Input(batch_shape=(batch_size, None, len(A_name_list),
+    A_in = Input(batch_shape=(None, None, len(A_name_list),
                               num_lanes, num_lanes),
                  name='A', tensor=Atens)
 
@@ -101,7 +101,7 @@ def main(
 
     dense1 = TimeDistributed(Dense(dense_dim, activation='relu'))(predense)
 
-    reshaped_1 = ReshapeFoldInLanes()(dense1)
+    reshaped_1 = ReshapeFoldInLanes(batch_size=batch_size)(dense1)
 
     encoded = rnn_encode(reshaped_1, [rnn_dim], 'GRU', True)
 
@@ -137,7 +137,9 @@ def main(
         rnn_dim=rnn_dim, dense_dim=dense_dim, dropout_rate=dropout_rate,
         attn_dropout=attn_dropout, seed=seed)
     logdir = get_logging_dir(callback_list)
-    with open(os.path.join(logdir, 'params.json')) as f:
+    if not os.path.exists(logdir):
+        os.makedirs(logdir)
+    with open(os.path.join(logdir, 'params.json'), 'w') as f:
         json.dump(hyperparams,f)
 
     steps = batch_gen.num_batches * (2000 // time_window)
