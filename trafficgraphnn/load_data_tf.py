@@ -5,7 +5,7 @@ import time
 
 import tensorflow as tf
 
-from trafficgraphnn.load_data import (on_green_feats_default,
+from trafficgraphnn.load_data import (per_cycle_features_default,
                                       pad_value_for_feature,
                                       windowed_unpadded_batch_of_generators,
                                       x_feature_subset_default,
@@ -57,6 +57,8 @@ def make_datasets(filenames,
                                'A_neighbors'],
                   x_feature_subset=x_feature_subset_default,
                   y_feature_subset=y_feature_subset_default,
+                  per_cycle_features=per_cycle_features_default,
+                  average_interval=None,
                   num_parallel_calls=None):
 
     if num_parallel_calls is None:
@@ -78,7 +80,7 @@ def make_datasets(filenames,
                                                      A_name_list,
                                                      x_feature_subset,
                                                      y_feature_subset,
-                                                     y_on_green_mask_feats,
+                                                     per_cycle_features,
                                                      prefetch_all=True)
 
     gen_op = lambda filename: tf.data.Dataset.from_generator(
@@ -122,7 +124,7 @@ def make_datasets(filenames,
                     reshaped = tf.reshape(
                         padded, [num_intervals, average_interval, shape[-1]])
 
-                    if feature in y_on_green_mask_feats:
+                    if feature in per_cycle_features:
                         averaged = tf.reduce_max(reshaped, 1)
                     else:
                         averaged = tf.reduce_mean(reshaped, 1)
@@ -175,7 +177,7 @@ class TFBatcher(object):
                               'A_neighbors'],
                  x_feature_subset=x_feature_subset_default,
                  y_feature_subset=y_feature_subset_default,
-                 y_on_green_mask_feats=on_green_feats_default):
+                 per_cycle_features=per_cycle_features_default):
 
         filenames_or_dirs = iterfy(filenames_or_dirs)
         filenames = []
@@ -198,7 +200,7 @@ class TFBatcher(object):
                                              A_name_list,
                                              x_feature_subset,
                                              y_feature_subset,
-                                             y_on_green_mask_feats,
+                                             per_cycle_features,
                                              average_interval)
         if len(val_files) > 0:
             self._val_datasets = make_datasets(val_files,
@@ -208,7 +210,7 @@ class TFBatcher(object):
                                                A_name_list,
                                                x_feature_subset,
                                                y_feature_subset,
-                                               y_on_green_mask_feats,
+                                               per_cycle_features,
                                                average_interval)
         else:
             self._val_datasets = None

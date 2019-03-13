@@ -47,10 +47,12 @@ y_feature_subset_default = ['e2_0/nVehSeen',
 All_A_name_list = ['A_downstream', 'A_upstream', 'A_neighbors',
                    'A_turn_movements', 'A_through_movements']
 
-on_green_feats_default = ['maxJamLengthInMeters',
-                          'maxJamLengthInVehicles',
-                          'e2_0/maxJamLengthInMeters',
-                          'e2_0/maxJamLengthInVehicles']
+per_cycle_features_default = ['maxJamLengthInMeters',
+                              'maxJamLengthInVehicles',
+                              'e2_0/maxJamLengthInMeters',
+                              'e2_0/maxJamLengthInVehicles',
+                              'liu_estimated_veh',
+                              'liu_estimated_m']
 
 
 class Batch(object):
@@ -269,7 +271,7 @@ def windowed_unpadded_batch_of_generators(
                  'A_neighbors'],
     x_feature_subset=x_feature_subset_default,
     y_feature_subset=y_feature_subset_default,
-    y_on_green_mask_feats=on_green_feats_default,
+    per_cycle_features=per_cycle_features_default,
     prefetch_all=True):
     if batch_size_to_pad_to is not None:
         num_dummy_generators = batch_size_to_pad_to - len(filenames)
@@ -290,7 +292,7 @@ def windowed_unpadded_batch_of_generators(
         A_name_list=A_name_list,
         x_feature_subset=x_feature_subset,
         y_feature_subset=y_feature_subset,
-        y_on_green_mask_feats=y_on_green_mask_feats)
+        per_cycle_features=per_cycle_features)
                   for f in filenames]
 
     generators.extend([iter(()) for _ in range(num_dummy_generators)])
@@ -308,7 +310,7 @@ def read_from_file(
                  'A_neighbors'],
     x_feature_subset=x_feature_subset_default,
     y_feature_subset=y_feature_subset_default,
-    y_on_green_mask_feats=on_green_feats_default,
+    per_cycle_features=per_cycle_features_default,
     return_X_Y_as_dfs=False):
 
     # Input handling if we came from TF
@@ -336,8 +338,8 @@ def read_from_file(
         Y_df = Y_df.fillna(pad_value_for_feature).astype(np.float32)
 
         # masking out Y features to be predicted only at green cycle start
-        if 'green' in X_df and len(y_on_green_mask_feats) > 0:
-            feats_to_mask = [feat for feat in y_on_green_mask_feats
+        if 'green' in X_df and len(per_cycle_features) > 0:
+            feats_to_mask = [feat for feat in per_cycle_features
                              if feat in Y_df]
             green_starts = X_df['green'].astype('uint8').shift(-1).diff() == 1
             Y_df[feats_to_mask] = (Y_df[feats_to_mask]
@@ -377,14 +379,14 @@ def generator_prefetch_all_from_file(
                  'A_neighbors'],
     x_feature_subset=x_feature_subset_default,
     y_feature_subset=y_feature_subset_default,
-    y_on_green_mask_feats=on_green_feats_default):
+    per_cycle_features=per_cycle_features_default):
 
     A, X_df, Y_df = read_from_file(filename,
                                    repeat_A_over_time,
                                    A_name_list,
                                    x_feature_subset,
                                    y_feature_subset,
-                                   y_on_green_mask_feats,
+                                   per_cycle_features,
                                    True)
     try:
         slice_begin = 0
