@@ -156,12 +156,12 @@ def fit_loop_train_one_epoch_tf(model, callbacks, batch_generator, epoch,
 
                 callbacks.on_test_batch_begin(i_step)
                 logs = model.test_on_batch(x=None, y=None)
-                train_step_time = time.time() - tstep
+                step_time = time.time() - tstep
 
                 logs = val_named_logs(model, logs)
                 logs['size'] = batch_size
                 logs['batch'] = i_step
-                logs['time'] = train_step_time
+                logs['time'] = step_time
                 for k, v in val_logs.items():
                     v.append(logs[k])
 
