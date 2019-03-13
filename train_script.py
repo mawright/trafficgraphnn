@@ -1,6 +1,7 @@
 import argparse
 import json
 import logging
+import math
 import os
 
 import numpy as np
@@ -78,8 +79,6 @@ def main(
                           y_feature_subset=y_feature_subset,
                           )
 
-    batch_gen.init_initializable_iterator()
-
     Xtens = batch_gen.X
     Atens = tf.cast(batch_gen.A, tf.float32)
 
@@ -142,7 +141,7 @@ def main(
     with open(os.path.join(logdir, 'params.json'), 'w') as f:
         json.dump(hyperparams,f)
 
-    steps = batch_gen.num_batches * (2000 // time_window)
+    steps = batch_gen.num_train_batches * math.ceil(2000 / time_window)
     set_callback_params(callback_list, epochs, batch_size, verbose,
                         do_validation, model, steps)
 

@@ -1,9 +1,10 @@
 import logging
-import math
 import os
 import time
 
 import tensorflow as tf
+import numpy as np
+from keras import backend as K
 
 from trafficgraphnn.load_data import (per_cycle_features_default,
                                       pad_value_for_feature,
@@ -17,15 +18,15 @@ _logger = logging.getLogger(__name__)
 
 
 class TFBatch(object):
-    def __init__(self, dataset, initializer):
-        self.dataset = dataset
+    def __init__(self, filenames, filename_ph, initializer):
+        self.filenames = filenames
+        self.filename_ph = filename_ph
         self.initializer = initializer
 
-    def initialize(self, session, *args, **kwargs):
-        session.run(self.initializer)
-
-    def set_self_as_active(self, **kwargs):
-        pass
+    def initialize(self, session=None):
+        if session is None:
+            session = K.get_session()
+        session.run(self.initializer, {self.filename_ph: self.filenames})
 
 
 class TFHandleBatch(object):
@@ -48,30 +49,22 @@ class TFHandleBatch(object):
         feed_dict[self.parent.handle] = self.handle
 
 
-def make_datasets(filenames,
-                  batch_size,
-                  window_size,
-                  shuffle=True,
-                  A_name_list=['A_downstream',
-                               'A_upstream',
-                               'A_neighbors'],
-                  x_feature_subset=x_feature_subset_default,
-                  y_feature_subset=y_feature_subset_default,
-                  per_cycle_features=per_cycle_features_default,
-                  average_interval=None,
-                  num_parallel_calls=None):
+def make_dataset(filename_ph,
+                 batch_size,
+                 window_size,
+                 A_name_list=['A_downstream',
+                              'A_upstream',
+                              'A_neighbors'],
+                 x_feature_subset=x_feature_subset_default,
+                 y_feature_subset=y_feature_subset_default,
+                 per_cycle_features=per_cycle_features_default,
+                 average_interval=None,
+                 num_parallel_calls=None):
 
     if num_parallel_calls is None:
         num_parallel_calls = os.cpu_count()
 
-    dataset = tf.data.Dataset.from_tensor_slices(filenames)
-    if shuffle:
-        dataset = dataset.shuffle(int(1e5))
-
-    dataset = dataset.batch(batch_size)
-
-    num_batches = math.ceil(len(filenames) / batch_size)
-    datasets = [dataset.skip(i).take(1) for i in range(num_batches)]
+    dataset = tf.data.Dataset.from_tensors(filename_ph)
 
     def windowed_batch_func(files):
         return windowed_unpadded_batch_of_generators(files,
@@ -89,10 +82,9 @@ def make_datasets(filenames,
         output_shapes=((None, None, None, None),
                        (None, None, len(x_feature_subset)),
                        (None, None, len(y_feature_subset))),
-        args=(filename,)
-    )
+        args=(filename,))
 
-    datasets = [ds.flat_map(gen_op) for ds in datasets]
+    dataset = dataset.flat_map(gen_op)
 
     def split_for_pad(A, X, Y):
         X = tf.unstack(X, axis=-1)
@@ -101,7 +93,7 @@ def make_datasets(filenames,
                 dict(zip(x_feature_subset, X)),
                 dict(zip(y_feature_subset, Y)))
 
-    datasets = [ds.map(split_for_pad, num_parallel_calls) for ds in datasets]
+    dataset = dataset.map(split_for_pad, num_parallel_calls)
 
     xpad =  {x: pad_value_for_feature[x] for x in x_feature_subset}
     ypad =  {y: pad_value_for_feature[y] for y in y_feature_subset}
@@ -139,29 +131,26 @@ def make_datasets(filenames,
             new_A = tf.gather(A, get_As)
 
             return new_A, new_X, new_Y
-        datasets = [ds.map(lambda A, X, Y:
-                           average_over_interval(A, X, Y, average_interval),
-                           num_parallel_calls=num_parallel_calls)
-                    for ds in datasets]
+        dataset = dataset.map(lambda A, X, Y:
+                              average_over_interval(A, X, Y, average_interval),
+                              num_parallel_calls=num_parallel_calls)
 
-    datasets = [ds.padded_batch(
+    dataset = dataset.padded_batch(
         batch_size,
         ((-1, -1, -1, -1), {x: (-1, -1) for x in x_feature_subset},
                            {y: (-1, -1) for y in y_feature_subset}),
-        (False, xpad, ypad)
-    ) for ds in datasets]
+        (False, xpad, ypad))
 
     def stack_post_pad(A, X, Y):
         X_stacked = tf.stack([X[x] for x in x_feature_subset], -1)
         Y_stacked = tf.stack([Y[y] for y in y_feature_subset], -1)
         return A, X_stacked, Y_stacked
 
-    datasets = [ds.map(stack_post_pad, num_parallel_calls=num_parallel_calls)
-                for ds in datasets]
+    dataset = dataset.map(stack_post_pad, num_parallel_calls=num_parallel_calls)
 
-    datasets = [ds.prefetch(1) for ds in datasets]
+    dataset = dataset.prefetch(1)
 
-    return datasets
+    return dataset
 
 
 class TFBatcher(object):
@@ -186,54 +175,59 @@ class TFBatcher(object):
                 filenames.append(entry)
             elif os.path.isdir(entry):
                 filenames.extend(get_preprocessed_filenames(entry))
+        self.batch_size = batch_size
+        self.window_size = window_size
+        self.average_interval = average_interval
+        self.val_proportion = val_proportion
+        self.shuffle_on_epoch = shuffle
+        self.A_name_list = A_name_list
+        self.x_feature_subset = x_feature_subset
+        self.y_feature_subset = y_feature_subset
+        self.per_cycle_features = per_cycle_features
 
         num_training = int(len(filenames) * val_proportion)
 
-        train_files = filenames[:-num_training]
-        val_files = filenames[-num_training:]
+        self.train_files = filenames[:-num_training]
+        self.train_file_batches = self._split_batches(self.train_files)
+        self.val_files = filenames[-num_training:]
+        self.val_file_batches = self._split_batches(self.val_files)
+
+        self.filename_ph = tf.placeholder(tf.string, [None], 'filenames')
 
         t0 = time.time()
-        self._train_datasets = make_datasets(train_files,
-                                             batch_size,
-                                             window_size,
-                                             shuffle,
-                                             A_name_list,
-                                             x_feature_subset,
-                                             y_feature_subset,
-                                             per_cycle_features,
-                                             average_interval)
-        if len(val_files) > 0:
-            self._val_datasets = make_datasets(val_files,
-                                               batch_size,
-                                               window_size,
-                                               False,
-                                               A_name_list,
-                                               x_feature_subset,
-                                               y_feature_subset,
-                                               per_cycle_features,
-                                               average_interval)
-        else:
-            self._val_datasets = None
+        self._tf_dataset = make_dataset(self.filename_ph,
+                                        batch_size,
+                                        window_size,
+                                        A_name_list,
+                                        x_feature_subset,
+                                        y_feature_subset,
+                                        per_cycle_features,
+                                        average_interval)
+
         t = time.time() - t0
         _logger.debug('Made TFBatcher object in %s s', t)
 
-        self.batch_size = batch_size
-        self.window_size = window_size
+        self.init_initializable_iterator()
+        self.val_batches = [TFBatch(files, self.filename_ph, self.init_op)
+                            for files in self.val_file_batches]
 
-    def make_init_ops_and_batch(self, datasets):
-        init_ops = [self.iterator.make_initializer(ds)
-                    for ds in datasets]
-        batches = [TFBatch(ds, init) for ds, init in zip(datasets, init_ops)]
-        return batches
+    def _split_batches(self, filename_list):
+        return [filename_list[i:i+self.batch_size] for i
+                in range(0, len(filename_list), self.batch_size)]
+
+    def shuffle(self):
+        np.random.shuffle(self.train_files)
+
+    def init_epoch(self):
+        if self.shuffle_on_epoch:
+            self.shuffle()
+        self.train_file_batches = self._split_batches(self.train_files)
+        self.train_batches = [TFBatch(files, self.filename_ph, self.init_op)
+                              for files in self.train_file_batches]
 
     def init_initializable_iterator(self):
-        self.iterator = tf.data.Iterator.from_structure(
-            self._train_datasets[0].output_types,
-            self._train_datasets[0].output_shapes)
-
-        self.train_batches = self.make_init_ops_and_batch(self._train_datasets)
-        if self._val_datasets is not None:
-            self.val_batches = self.make_init_ops_and_batch(self._val_datasets)
+        self.iterator = self._tf_dataset.make_initializable_iterator()
+        self.init_op = self.iterator.initializer
 
         self._init_outputs()
 
@@ -242,14 +236,8 @@ class TFBatcher(object):
 
         self.iterator = tf.data.Iterator.from_string_handle(
             self.handle,
-            self._train_datasets[0].output_types,
-            self._train_datasets[0].output_shapes)
-
-        self.train_batches = self.make_per_dataset_iterators_and_handles(
-            self._train_datasets, session)
-        if self._val_datasets is not None:
-            self.val_batches = self.make_per_dataset_iterators_and_handles(
-                self._val_datasets, session)
+            self._tf_dataset.output_types,
+            self._tf_dataset.output_shapes)
 
         self._init_outputs()
 
@@ -268,12 +256,4 @@ class TFBatcher(object):
 
     @property
     def num_train_batches(self):
-        return len(self.train_batches)
-
-    @property
-    def num_val_batches(self):
-        return len(self.val_batches)
-
-    @property
-    def num_batches(self):
-        return self.num_train_batches
+        return len(self.train_file_batches)

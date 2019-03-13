@@ -114,10 +114,11 @@ def fit_loop_train_one_epoch_tf(model, callbacks, batch_generator, epoch,
     # set up bookkeeping
     batch_size = batch_generator.batch_size * batch_generator.window_size
     i_step = 0
+    sess = K.get_session()
     for i_batch, batch in enumerate(batch_generator.train_batches):
         t0 = time.time()
         model.reset_states()
-        batch.initialize(K.get_session(), feed_dict)
+        batch.initialize(sess)
 
         while True:
             try:
@@ -148,7 +149,7 @@ def fit_loop_train_one_epoch_tf(model, callbacks, batch_generator, epoch,
     i_step = 0
     for i_batch, batch in enumerate(batch_generator.val_batches):
         model.reset_states()
-        batch.initialize(K.get_session(), feed_dict)
+        batch.initialize(sess)
 
         while True:
             try:
