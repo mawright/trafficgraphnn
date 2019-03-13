@@ -10,6 +10,7 @@ import keras.backend as K
 from keras.callbacks import (BaseLogger, CallbackList, CSVLogger, History,
                              ModelCheckpoint, ProgbarLogger, ReduceLROnPlateau,
                              TensorBoard, TerminateOnNaN)
+from trafficgraphnn.utils import iterfy
 
 _logger = logging.getLogger(__name__)
 
@@ -177,23 +178,72 @@ def fit_loop_train_one_epoch_tf(model, callbacks, batch_generator, epoch,
     callbacks.on_epoch_end(epoch, val_logs)
 
 
-def predict_eval_function(model):
-    inputs = (model._feed_inputs
-              + model._feed_targets
-              + model._feed_sample_weights)
-    if model._uses_dynamic_learning_phase():
-        inputs += [K.learning_phase()]
+class PredictEvalFunction(object):
+    def __init__(self, model):
 
-    outputs = model.outputs + [model.total_loss] + model.metrics_tensors
-    # Gets network outputs. Does not update weights.
-    # Does update the network states.
-    kwargs = getattr(model, '_function_kwargs', {})
-    predict_eval_function = K.function(
-        inputs,
-        outputs,
-        updates=model.state_updates + model.metrics_updates,
-        name='predict_eval_function',
-        **kwargs)
-    model.predict_eval_function = predict_eval_function
-    return predict_eval_function
+        # construction
+        inputs = (model._feed_inputs
+                  + model._feed_targets
+                  + model._feed_sample_weights)
+        if model._uses_dynamic_learning_phase():
+            inputs += [K.learning_phase()]
 
+        outputs = (model.inputs
+                   + model.targets
+                   + model.outputs
+                   + [model.total_loss]
+                   + model.metrics_tensors)
+        # Gets network outputs. Does not update weights.
+        # Does update the network states.
+        kwargs = getattr(model, '_function_kwargs', {})
+        predict_eval_function = K.function(
+            inputs,
+            outputs,
+            updates=model.state_updates + model.metrics_updates,
+            name='predict_eval_function',
+            **kwargs)
+        model.predict_eval_function = predict_eval_function
+
+        self.outputs = outputs
+        self.func = predict_eval_function
+
+        # bookkeeping for unpacking
+        self.len_inputs = len(model.inputs)
+        self.len_targets = len(model.targets)
+        self.len_outputs = len(model.outputs)
+        self.len_loss = len([model.total_loss])
+        self.len_metrics = len(model.metrics_tensors)
+
+    def call(self, inputs=None):
+        inputs = iterfy(inputs)
+        func_output = self.func(inputs)
+        inputs, targets, outputs, loss, metrics =  self._unpack(func_output)
+        return dict(inputs=inputs, targets=targets, outputs=outputs,
+                    loss=loss, metrics=metrics)
+
+    def _unpack(self, output):
+        i = 0
+        for sublist_len in [self.len_inputs, self.len_targets,
+                            self.len_outputs, self.len_loss, self.len_metrics]:
+            yield output[i:i+sublist_len]
+            i += sublist_len
+
+
+def predict_eval_tf(model, callbacks, batch_generator):
+    if not hasattr(model, 'predict_eval_function'):
+        func = PredictEvalFunction(model)
+    else:
+        func = model.predict_eval_function
+    model_write_dir = get_logging_dir(callbacks)
+    val_logs = {'val_' + m: [] for m in model.metrics_names}
+    i_step = 0
+    sess = K.get_session()
+    for i_batch, batch in enumerate(batch_generator.val_batches):
+        model.reset_states()
+        batch.initialize(sess)
+
+        while True:
+            try:
+                out = func()
+            except tf.errors.OutOfRangeError:
+                break
