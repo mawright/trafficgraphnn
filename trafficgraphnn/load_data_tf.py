@@ -57,8 +57,10 @@ def make_datasets(filenames,
                                'A_neighbors'],
                   x_feature_subset=x_feature_subset_default,
                   y_feature_subset=y_feature_subset_default,
-                  y_on_green_mask_feats=on_green_feats_default,
-                  average_interval=None):
+                  num_parallel_calls=None):
+
+    if num_parallel_calls is None:
+        num_parallel_calls = os.cpu_count()
 
     dataset = tf.data.Dataset.from_tensor_slices(filenames)
     if shuffle:
@@ -97,7 +99,7 @@ def make_datasets(filenames,
                 dict(zip(x_feature_subset, X)),
                 dict(zip(y_feature_subset, Y)))
 
-    datasets = [ds.map(split_for_pad, 2) for ds in datasets]
+    datasets = [ds.map(split_for_pad, num_parallel_calls) for ds in datasets]
 
     xpad =  {x: pad_value_for_feature[x] for x in x_feature_subset}
     ypad =  {y: pad_value_for_feature[y] for y in y_feature_subset}
@@ -136,7 +138,8 @@ def make_datasets(filenames,
 
             return new_A, new_X, new_Y
         datasets = [ds.map(lambda A, X, Y:
-                           average_over_interval(A, X, Y, average_interval))
+                           average_over_interval(A, X, Y, average_interval),
+                           num_parallel_calls=num_parallel_calls)
                     for ds in datasets]
 
     datasets = [ds.padded_batch(
@@ -151,7 +154,8 @@ def make_datasets(filenames,
         Y_stacked = tf.stack([Y[y] for y in y_feature_subset], -1)
         return A, X_stacked, Y_stacked
 
-    datasets = [ds.map(stack_post_pad, 2) for ds in datasets]
+    datasets = [ds.map(stack_post_pad, num_parallel_calls=num_parallel_calls)
+                for ds in datasets]
 
     datasets = [ds.prefetch(1) for ds in datasets]
 
