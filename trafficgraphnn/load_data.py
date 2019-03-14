@@ -82,7 +82,7 @@ class Batch(object):
 
     def iterate(self, try_broadcast_A=False):
         for output in self.readers:
-            yield pad_and_stack_batch(output,
+            yield pad_and_stack_batch(output[:3],
                                       self.pad_scalars,
                                       try_broadcast_A=try_broadcast_A)
 
@@ -278,8 +278,10 @@ def windowed_unpadded_batch_of_generators(
     fill_A = np.zeros((0, 0, 0, 0)) # time x depth x lanes x lanes
     fill_X = np.zeros((0, 0, len(x_feature_subset))) # time x lane x channel
     fill_Y = np.zeros((0, 0, len(y_feature_subset))) # time x lane x channel
+    fill_t = np.zeros((0)) # time
+    fill_lane = [] # lane
 
-    default_val = (fill_A, fill_X, fill_Y)
+    default_val = (fill_A, fill_X, fill_Y, fill_t, fill_lane)
 
     if not prefetch_all:
         raise NotImplementedError('Non-prefetching not supported currently.')
@@ -349,7 +351,6 @@ def read_from_file(
     t = time.time() - t0
     _logger.debug('Loading data from disk took %s s', t)
 
-    num_lanes = len(lane_list)
     len_x = len(x_feature_subset)
     len_y = len(y_feature_subset)
 
@@ -388,43 +389,56 @@ def generator_prefetch_all_from_file(
                                    per_cycle_features,
                                    True)
     try:
-        slice_begin = 0
-        slice_end = chunk_size - 1
+        t_begin = 0
+        t_end = chunk_size - 1
         num_lanes = A.shape[-1]
 
         if X_df.index.names[0] == 'lane':
             def get_slice(df, time_start, time_end):
                 subdf = df.loc[pd.IndexSlice[:, time_start:time_end], :]
-                num_timesteps = len(subdf.index.get_level_values(1).unique())
+                lanes = subdf.index.get_level_values(0).unique()
+                timesteps = subdf.index.get_level_values(1).unique()
+                num_timesteps = len(timesteps)
                 num_feats = subdf.shape[-1]
                 return (subdf.values
                              .reshape((num_lanes, num_timesteps, num_feats))
-                             .transpose((1, 0, 2)))
+                             .transpose((1, 0, 2)),
+                        timesteps,
+                        lanes)
         elif X_df.index.names[1] == 'lane':
             def get_slice(df, time_start, time_end):
                 subdf = df.loc[pd.IndexSlice[:, time_start:time_end], :]
-                num_timesteps = len(subdf.index.get_level_values(0).unique())
+                lanes = subdf.index.get_level_values(1).unique()
+                timesteps = subdf.index.get_level_values(0).unique()
+                num_timesteps = len(timesteps)
                 num_feats = subdf.shape[-1]
-                return subdf.values.reshape((num_timesteps, num_lanes,
-                                             num_feats))
+                return (subdf.values.reshape((num_timesteps, num_lanes,
+                                             num_feats)),
+                        timesteps,
+                        lanes)
 
         while True:
-            X_slice = get_slice(X_df, slice_begin, slice_end)
-            Y_slice = get_slice(Y_df, slice_begin, slice_end)
+            X_slice, X_timesteps, X_lanes = get_slice(X_df, t_begin, t_end)
+            Y_slice, Y_timesteps, Y_lanes = get_slice(Y_df, t_begin, t_end)
+
+            assert (X_timesteps == Y_timesteps).all()
+            assert (X_lanes == Y_lanes).all()
+            timesteps = X_timesteps
+            lanes = X_lanes
 
             if X_slice.size == 0:
                 assert Y_slice.size == 0
                 return
 
             if repeat_A_over_time:
-                A_slice = A[slice_begin:slice_begin+chunk_size]
+                A_slice = A[t_begin:t_begin+chunk_size]
             else:
                 A_slice = A
 
-            yield A_slice, X_slice, Y_slice
+            yield A_slice, X_slice, Y_slice, timesteps, lanes
 
-            slice_begin += chunk_size
-            slice_end += chunk_size
+            t_begin += chunk_size
+            t_end += chunk_size
     except TypeError:
         return
 

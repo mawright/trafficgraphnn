@@ -78,20 +78,23 @@ def make_dataset(filename_ph,
 
     gen_op = lambda filename: tf.data.Dataset.from_generator(
         windowed_batch_func,
-        output_types=(tf.bool, tf.float32, tf.float32),
+        output_types=(tf.bool, tf.float32, tf.float32, tf.float32, tf.string),
         output_shapes=((None, None, None, None),
                        (None, None, len(x_feature_subset)),
-                       (None, None, len(y_feature_subset))),
+                       (None, None, len(y_feature_subset)),
+                       None,
+                       None),
         args=(filename,))
 
     dataset = dataset.flat_map(gen_op)
 
-    def split_for_pad(A, X, Y):
+    def split_for_pad(A, X, Y, t, lanes):
         X = tf.unstack(X, axis=-1)
         Y = tf.unstack(Y, axis=-1)
         return (A,
                 dict(zip(x_feature_subset, X)),
-                dict(zip(y_feature_subset, Y)))
+                dict(zip(y_feature_subset, Y)),
+                t, lanes)
 
     dataset = dataset.map(split_for_pad, num_parallel_calls)
 
@@ -99,7 +102,7 @@ def make_dataset(filename_ph,
     ypad =  {y: pad_value_for_feature[y] for y in y_feature_subset}
 
     if average_interval is not None and average_interval > 1:
-        def average_over_interval(A, X, Y, average_interval):
+        def average_over_interval(A, X, Y, average_interval, t, lanes):
             shape = tf.shape(X[x_feature_subset[0]])
             num_timesteps = shape[0]
             divided = num_timesteps / average_interval
@@ -127,24 +130,28 @@ def make_dataset(filename_ph,
             new_X = pad_reshape_average(X)
             new_Y = pad_reshape_average(Y)
 
-            get_As = tf.range(0, num_timesteps, average_interval)
-            new_A = tf.gather(A, get_As)
+            get_slice = tf.range(0, num_timesteps, average_interval)
+            new_A = tf.gather(A, get_slice)
+            new_t = tf.gather(t, get_slice)
+            new_lanes = tf.gather(lanes, get_slice)
 
-            return new_A, new_X, new_Y
-        dataset = dataset.map(lambda A, X, Y:
-                              average_over_interval(A, X, Y, average_interval),
-                              num_parallel_calls=num_parallel_calls)
+            return new_A, new_X, new_Y, new_t, new_lanes
+        dataset = dataset.map(
+            lambda A, X, Y, t, lanes:
+            average_over_interval(A, X, Y, average_interval, t, lanes),
+            num_parallel_calls=num_parallel_calls)
 
     dataset = dataset.padded_batch(
         batch_size,
         ((-1, -1, -1, -1), {x: (-1, -1) for x in x_feature_subset},
-                           {y: (-1, -1) for y in y_feature_subset}),
-        (False, xpad, ypad))
+                           {y: (-1, -1) for y in y_feature_subset},
+                           (-1,), (-1,)),
+        (False, xpad, ypad, 0., ''))
 
-    def stack_post_pad(A, X, Y):
+    def stack_post_pad(A, X, Y, t, lanes):
         X_stacked = tf.stack([X[x] for x in x_feature_subset], -1)
         Y_stacked = tf.stack([Y[y] for y in y_feature_subset], -1)
-        return A, X_stacked, Y_stacked
+        return A, X_stacked, Y_stacked, t, lanes
 
     dataset = dataset.map(stack_post_pad, num_parallel_calls=num_parallel_calls)
 
@@ -247,12 +254,10 @@ class TFBatcher(object):
         self.A = tf.identity(self.tensor[0], name='A')
         self.X = tf.identity(self.tensor[1], name='X')
         self.Y = tf.identity(self.tensor[2], name='Y')
+        self.t = tf.identity(self.tensor[3], name='t')
+        self.lanes = tf.identity(self.tensor[4], name='lanes')
 
         self.Y_slices = tf.unstack(self.Y, axis=-1)
-
-    def make_per_dataset_iterators_and_handles(self, datasets, session):
-        batches = [TFHandleBatch(ds, session, self) for ds in datasets]
-        return batches
 
     @property
     def num_train_batches(self):
