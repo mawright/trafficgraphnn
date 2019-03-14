@@ -1,16 +1,22 @@
 import datetime
+import json
 import logging
 import os
+import re
 import time
+import warnings
+from collections import namedtuple
 
 import numpy as np
+import pandas as pd
+import tables
 import tensorflow as tf
 
 import keras.backend as K
 from keras.callbacks import (BaseLogger, CallbackList, CSVLogger, History,
                              ModelCheckpoint, ProgbarLogger, ReduceLROnPlateau,
                              TensorBoard, TerminateOnNaN)
-from trafficgraphnn.utils import iterfy
+from trafficgraphnn.utils import _col_dtype_key, iterfy
 
 _logger = logging.getLogger(__name__)
 
@@ -180,8 +186,22 @@ def fit_loop_train_one_epoch_tf(model, callbacks, batch_generator, epoch,
 
 
 class PredictEvalFunction(object):
-    def __init__(self, model):
+    def __init__(self, model, extra_outputs=None):
 
+        self.model = model
+        if extra_outputs is None:
+            extra_outputs = []
+
+        # out holding class defs
+        self.Input = namedtuple('Input',
+                                map(_clean_str, self.model.input_names))
+        self.Output = namedtuple('Output',
+                                 map(_clean_str, self.model.output_names))
+        self.Metrics = namedtuple('Metrics',
+                                  map(_clean_str, self.model.metrics_names))
+        self.Extras = namedtuple('Extras',
+                                 map(_clean_str,
+                                     [out.name for out in extra_outputs]))
         # construction
         inputs = (model._feed_inputs
                   + model._feed_targets
@@ -193,7 +213,8 @@ class PredictEvalFunction(object):
                    + model.targets
                    + model.outputs
                    + [model.total_loss]
-                   + model.metrics_tensors)
+                   + model.metrics_tensors
+                   + extra_outputs)
         # Gets network outputs. Does not update weights.
         # Does update the network states.
         kwargs = getattr(model, '_function_kwargs', {})
@@ -203,7 +224,7 @@ class PredictEvalFunction(object):
             updates=model.state_updates + model.metrics_updates,
             name='predict_eval_function',
             **kwargs)
-        model.predict_eval_function = predict_eval_function
+        model.predict_eval_function = self
 
         self.outputs = outputs
         self.func = predict_eval_function
@@ -212,39 +233,107 @@ class PredictEvalFunction(object):
         self.len_inputs = len(model.inputs)
         self.len_targets = len(model.targets)
         self.len_outputs = len(model.outputs)
-        self.len_loss = len([model.total_loss])
-        self.len_metrics = len(model.metrics_tensors)
+        self.len_metrics = len(model.metrics_tensors) + 1 # plus loss
+        self.len_extra_outputs = len(extra_outputs)
 
     def call(self, inputs=None):
         inputs = iterfy(inputs)
         func_output = self.func(inputs)
-        inputs, targets, outputs, loss, metrics =  self._unpack(func_output)
-        return dict(inputs=inputs, targets=targets, outputs=outputs,
-                    loss=loss, metrics=metrics)
+        (inputs, targets, outputs, metrics, extra_outputs
+         ) = self._unpack(func_output)
+
+        return dict(inputs=self.Input(*inputs),
+                    targets=self.Output(*targets),
+                    outputs=self.Output(*outputs),
+                    metrics=self.Metrics(*metrics),
+                    extra_outputs=self.Extras(*extra_outputs))
 
     def _unpack(self, output):
         i = 0
         for sublist_len in [self.len_inputs, self.len_targets,
-                            self.len_outputs, self.len_loss, self.len_metrics]:
+                            self.len_outputs,
+                            self.len_metrics, self.len_extra_outputs]:
             yield output[i:i+sublist_len]
             i += sublist_len
 
 
 def predict_eval_tf(model, callbacks, batch_generator):
     if not hasattr(model, 'predict_eval_function'):
-        func = PredictEvalFunction(model)
+        func = PredictEvalFunction(model,
+                                   [batch_generator.t, batch_generator.lanes])
     else:
         func = model.predict_eval_function
     model_write_dir = get_logging_dir(callbacks)
-    val_logs = {'val_' + m: [] for m in model.metrics_names}
-    i_step = 0
-    sess = K.get_session()
-    for i_batch, batch in enumerate(batch_generator.val_batches):
-        model.reset_states()
-        batch.initialize(sess)
+    result_file = os.path.join(model_write_dir, 'results.hdf')
 
-        while True:
-            try:
-                out = func()
-            except tf.errors.OutOfRangeError:
-                break
+    i_step = 0
+    val_logs = {'val_' + m: [] for m in model.metrics_names}
+
+    with pd.HDFStore(result_file, 'w') as result_store:
+        for batch in batch_generator.val_batches:
+            filenames = [os.path.basename(f) for f in batch.filenames]
+            model.reset_states()
+            batch.initialize()
+
+            while True:
+                try:
+                    out = func.call()
+                    __append_results(result_store, filenames, out,
+                                     batch_generator.x_feature_subset,
+                                     batch_generator.y_feature_subset)
+                    metrics = out['metrics']
+
+                    logs = val_named_logs(model, metrics)
+                    logs['step'] = i_step
+                    for k, v in val_logs.items():
+                        v.append(logs[k])
+
+                except tf.errors.OutOfRangeError:
+                    __sort_store_dfs(result_store, filenames)
+                    break
+
+    mean_metrics = {k: np.mean(v) for k, v in val_logs.items()}
+    with open(os.path.join(model_write_dir, 'metrics.json'), 'w') as f:
+        json.dump(mean_metrics, f)
+
+
+def _df(data, lane_list, timestep_list, colnames):
+    reshaped = np.reshape(data, (len(lane_list)*len(timestep_list), -1))
+    index = pd.MultiIndex.from_product([timestep_list, lane_list],
+                                        names=['begin', 'lane'])
+    dtypes = {col: _col_dtype_key[col] for col in colnames}
+    return pd.DataFrame(reshaped, index=index, columns=colnames, dtype=dtypes)
+
+
+def __append_results(store, filenames, func_out, x_colnames, y_colnames):
+    timesteps = func_out['extra_outputs'][0]
+    lanes = func_out['extra_outputs'][1]
+    X = func_out['inputs'].X
+    Y = np.stack(func_out['targets'], -1)
+    Yhat = np.stack(func_out['outputs'], -1)
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', tables.NaturalNameWarning)
+        for i, filename in enumerate(filenames):
+            t_i = timesteps[i]
+            lanes_i = list(map(__maybe_decode, lanes[i]))
+            store.append(filename + '/X', _df(X[i], lanes_i, t_i, x_colnames))
+            store.append(filename + '/Y', _df(Y[i], lanes_i, t_i, y_colnames))
+            store.append(filename + '/Yhat',
+                         _df(Yhat[i], lanes_i, t_i, y_colnames))
+
+
+def __sort_store_dfs(store, filenames):
+    for f in filenames:
+        for table in [f + t for t in ['/X', '/Y', '/Yhat']]:
+            store[table] = store[table].sort_index(level=[0,1])
+
+
+def __maybe_decode(item):
+    try:
+        return item.decode()
+    except AttributeError:
+        return item
+
+
+def _clean_str(s):
+    return re.sub('[^0-9a-zA-Z_]', '_', s)
