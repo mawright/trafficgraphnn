@@ -41,7 +41,6 @@ x_feature_subset_default = ['e1_0/occupancy',
                             'green']
 
 y_feature_subset_default = ['e2_0/nVehSeen',
-                            'e2_0/maxJamLengthInMeters',
                             'e2_0/maxJamLengthInVehicles']
 
 All_A_name_list = ['A_downstream', 'A_upstream', 'A_neighbors',
