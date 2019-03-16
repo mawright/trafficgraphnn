@@ -72,7 +72,7 @@ def distribute_io_estimate_deficit_for_edge(lane_estimate_dfs_for_edge):
 
     is_io_estimate = df.loc[:, (slice(None), 'method')] == __INPUT_OUTPUT
     io_estimates = (df.loc[:, (slice(None), 'estimate')]
-                    * is_io_estimate.values)
+                      .where(is_io_estimate.values))
 
     deficit_assigned = distribute_deficit_loop(io_estimates)
     df.update(deficit_assigned)
@@ -95,9 +95,11 @@ def distribute_deficit_one_iter(df):
     num_pos = positives.count(axis=1)
 
     to_add = sum_negs / num_pos
+    df[negatives] = 0
     added = positives.add(to_add, axis=0)
+    df.update(added)
 
-    return added
+    return df
 
 
 def _split_lanes_by_edges(sn, results):
@@ -184,7 +186,7 @@ def liu_for_lane(output_data_hdf_filename, lane_id, inter_detector_distance,
         else:
             estimates_list.append(estimate)
 
-        residual_queue_estimate = max(estimates_list[-1][1], 0)
+        residual_queue_estimate = estimates_list[-1][1]
 
     # return pandas df of the time that a liu estimate is made
     # and the estimate itself
@@ -248,7 +250,7 @@ def breakpoint_A_for_period(binary_occupancy):
 def breakpoint_B_for_period(binary_occupancy, bkpt_A):
     """Find breakpoint B.
 
-    Breakpoint B is the first timestep after breakpoint B that the detector
+    Breakpoint B is the first timestep after breakpoint A that the detector
     is not continuously occupied. This means it is the timestep that the
     discharge wave has reached the advance detector"""
     if bkpt_A is None:
@@ -318,6 +320,7 @@ def input_output_method(stopbar_df, advance_df, prev_phase_queue_estimate,
     queue_estimate = prev_phase_queue_estimate + net_flow
     assert stopbar_df.index[-1] == advance_df.index[-1]
     t_queue_estimate = stopbar_df.index[-1]
+    # print([t_queue_estimate, queue_estimate])
     return t_queue_estimate, queue_estimate
 
 
