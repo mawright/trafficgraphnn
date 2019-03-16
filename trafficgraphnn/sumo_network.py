@@ -113,7 +113,7 @@ class SumoNetwork(object):
         self.other_addl_files = []
 
     def get_sumo_command(self, with_bin_file=True, queue_output_file=None,
-                         seed=None, **kwargs):
+                         seed=None, extra_args=None):
         if self.routefile is None:
             raise ValueError('Route file not set.')
         sumo_args = [
@@ -125,12 +125,9 @@ class SumoNetwork(object):
             '--device.rerouting.probability', '.5', # give cars the ability to reroute themselves so queues won't grow unboundedly
             '--device.rerouting.period', '60',
         ]
-        if kwargs:
-            for key, value in kwargs.items():
-                if value is not True:
-                    sumo_args.extend([f'--{key}', f'{value}'])
-                else:
-                    sumo_args.extend([f'--{key}'])
+        if extra_args is not None:
+            for arg in extra_args:
+                sumo_args.extend(iterfy(arg))
 
         if len(self.additional_files) > 0:
             sumo_args.extend(
@@ -159,8 +156,9 @@ class SumoNetwork(object):
     def start(self):
         traci.start(self.get_sumo_command())
 
-    def run(self, return_output=False, **kwargs):
-        out = subprocess.check_output(self.get_sumo_command(**kwargs))
+    def run(self, return_output=False, extra_args=None, **kwargs):
+        out = subprocess.check_output(
+            self.get_sumo_command(extra_args=extra_args, **kwargs))
         if out is not None and len(out) > 0:
             _logger.info('sumo returned: %s', out)
         elif len(out) == 0:
