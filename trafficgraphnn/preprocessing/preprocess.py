@@ -14,14 +14,16 @@ import networkx as nx
 import pandas as pd
 import six
 
-from trafficgraphnn.load_data import (pad_value_for_feature,
-                                      x_feature_subset_default,
-                                      y_feature_subset_default)
+from trafficgraphnn.load_data import pad_value_for_feature
 from trafficgraphnn.preprocessing.io import (get_preprocessed_filenames,
                                              light_switch_out_files_for_sumo_network,
                                              light_timing_xml_to_phase_df,
                                              write_hdf_for_sumo_network)
 from trafficgraphnn.preprocessing.liumethod_new import liu_method_for_net
+
+raw_xml_x_feature_defaults=['occupancy', 'speed', 'green', 'liu_estimated_veh']
+raw_xml_y_feature_defaults=['nVehSeen', 'maxJamLengthInVehicles']
+
 
 _logger = logging.getLogger(__name__)
 
@@ -46,8 +48,8 @@ def run_preprocessing(sumo_network, output_filename=None):
 def write_per_lane_tables(output_filename,
                           sumo_network,
                           raw_xml_filename=None,
-                          X_features=x_feature_subset_default,
-                          Y_features=y_feature_subset_default,
+                          X_features=raw_xml_x_feature_defaults,
+                          Y_features=raw_xml_y_feature_defaults,
                           complib='blosc:lz4', complevel=5):
     """Write an hdf file with per-lane X and Y data arrays"""
 
@@ -103,8 +105,8 @@ def build_A_tables_for_lanes(sumo_network, lanes=None):
 def build_X_Y_tables_for_lanes(sumo_network,
                                lane_subset=None,
                                raw_xml_filename=None,
-                               X_features=x_feature_subset_default,
-                               Y_features=y_feature_subset_default,
+                               X_features=raw_xml_x_feature_defaults,
+                               Y_features=raw_xml_y_feature_defaults,
                                num_workers=None,
                                clip_ending_pad_timesteps=True):
     """Return per-lane dataframe for X and Y with specified feature sets"""
@@ -140,9 +142,9 @@ def build_X_Y_tables_for_lanes(sumo_network,
                  for lane in lane_subset],
                 repeat(X_features),
                 repeat(Y_features),
-                [green_serieses[lane] if lane in lane_subset else None
+                [green_serieses[lane] if lane in green_serieses else None
                  for lane in lane_subset],
-                [liu_serieses[lane] if lane in lane_subset else None
+                [liu_serieses[lane] if lane in liu_serieses else None
                  for lane in lane_subset])
         )
         X_dfs, Y_dfs = zip(*dfs)
