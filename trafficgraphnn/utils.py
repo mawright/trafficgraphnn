@@ -166,7 +166,11 @@ _col_dtype_key = {
     'programID': str,
     'duration': float,
     'fromLane': str,
-    'toLane': str
+    'toLane': str,
+    # derived
+    'green': bool,
+    'liu_estimated_veh': float,
+    'liu_estimated_m': float,
 }
 
 
