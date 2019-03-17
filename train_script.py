@@ -85,7 +85,7 @@ def main(
 
     # X dimensions: timesteps x lanes x feature dim
     X_in = Input(batch_shape=(None, None, num_lanes, len(x_feature_subset)),
-                name='X', tensor=Xtens)
+                 name='X', tensor=Xtens)
     # A dimensions: timesteps x lanes x lanes
     A_in = Input(batch_shape=(None, None, len(A_name_list),
                               num_lanes, num_lanes),
@@ -142,7 +142,12 @@ def main(
     with open(os.path.join(logdir, 'params.json'), 'w') as f:
         json.dump(hyperparams,f)
 
-    steps = batch_gen.num_train_batches * math.ceil(2000 / time_window)
+    # Guess at the number of steps per simulation. This only affects Keras's
+    # progress bar per training epoch so it can be wrong.
+    timesteps_per_simulation = 3600
+    steps = batch_gen.num_train_batches * math.ceil(timesteps_per_simulation
+                                                    / time_window)
+
     set_callback_params(callback_list, epochs, batch_size, verbose,
                         do_validation, model, steps)
 
