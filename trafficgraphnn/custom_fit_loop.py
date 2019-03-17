@@ -16,7 +16,7 @@ import keras.backend as K
 from keras.callbacks import (BaseLogger, CallbackList, CSVLogger, History,
                              ModelCheckpoint, ProgbarLogger, ReduceLROnPlateau,
                              TensorBoard, TerminateOnNaN)
-from trafficgraphnn.utils import _col_dtype_key, iterfy
+from trafficgraphnn.utils import col_type, iterfy
 
 _logger = logging.getLogger(__name__)
 
@@ -59,6 +59,8 @@ def get_logging_dir(callback_list):
     for callback in callback_list:
         if isinstance(callback, CSVLogger):
             return os.path.dirname(callback.filename)
+        elif isinstance(callback, ModelCheckpoint):
+            return os.path.dirname(callback.filepath)
 
 
 def set_callback_params(callbacks,
@@ -304,7 +306,7 @@ def _df(data, lane_list, timestep_list, colnames):
     reshaped = np.reshape(data, (len(lane_list)*len(timestep_list), -1))
     index = pd.MultiIndex.from_product([timestep_list, lane_list],
                                         names=['begin', 'lane'])
-    dtypes = {col: _col_dtype_key[col] for col in colnames}
+    dtypes = {col: col_type(col) for col in colnames}
     return pd.DataFrame(reshaped, index=index, columns=colnames, dtype=dtypes)
 
 

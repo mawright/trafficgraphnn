@@ -11,7 +11,7 @@ import tables
 
 from trafficgraphnn.utils import (E1IterParseWrapper, E2IterParseWrapper,
                                   TLSSwitchIterParseWrapper, _col_dtype_key,
-                                  pairwise_iterate)
+                                  col_type, pairwise_iterate)
 
 _logger = logging.getLogger(__name__)
 
@@ -200,7 +200,7 @@ def light_timing_xml_to_phase_df(xml_file):
     parser = TLSSwitchIterParseWrapper(xml_file, True)
     data = [dict(e.attrib) for e in parser.iterate_until(np.inf)]
     df = pd.DataFrame(data)
-    df = df.astype({col: _col_dtype_key[col] for col in df.columns})
+    df = df.astype({col: col_type(col) for col in df.columns})
 
     max_time = df.end.max()
     out_df = pd.DataFrame(index=pd.Index(np.arange(0, max_time), name='begin'))

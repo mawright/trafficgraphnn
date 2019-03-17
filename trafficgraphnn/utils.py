@@ -1,8 +1,9 @@
 import collections
 import logging
 import os
+import re
 import sys
-from itertools import zip_longest, chain, repeat, tee
+from itertools import chain, repeat, tee, zip_longest
 
 import pandas as pd
 import six
@@ -308,3 +309,18 @@ def broadcast_lists(iterables):
             iterables[i] = list(iterables[i]) * len0
 
     return iterables
+
+
+def col_type(colname):
+    try:
+        dtype = _col_dtype_key[colname]
+        return dtype
+    except KeyError:
+        pass
+
+    try:
+        string = re.search(r'(?<=e\d_\d/)\S*', colname).group()
+        dtype = _col_dtype_key[string]
+        return dtype
+    except (AttributeError, KeyError):
+        raise ValueError('Could not parse variable name {}'.format(colname))
