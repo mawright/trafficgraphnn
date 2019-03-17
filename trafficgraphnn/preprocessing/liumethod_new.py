@@ -95,7 +95,7 @@ def distribute_deficit_one_iter(df):
     num_pos = positives.count(axis=1)
 
     to_add = sum_negs / num_pos
-    df[negatives] = 0
+    df[df < 0] = 0
     added = positives.add(to_add, axis=0)
     df.update(added)
 
