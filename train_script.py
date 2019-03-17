@@ -68,20 +68,20 @@ def main(
     write_dir = os.path.join(net_dir, 'models')
     if not os.path.isdir(write_dir):
         os.makedirs(write_dir)
+    with tf.device('/cpu:0'):
+        batch_gen = TFBatcher(data_dir,
+                              batch_size,
+                              time_window,
+                              average_interval=average_interval,
+                              val_proportion=val_split_proportion,
+                              shuffle=True,
+                              A_name_list=A_name_list,
+                              x_feature_subset=x_feature_subset,
+                              y_feature_subset=y_feature_subset,
+                              )
 
-    batch_gen = TFBatcher(data_dir,
-                          batch_size,
-                          time_window,
-                          average_interval=average_interval,
-                          val_proportion=val_split_proportion,
-                          shuffle=True,
-                          A_name_list=A_name_list,
-                          x_feature_subset=x_feature_subset,
-                          y_feature_subset=y_feature_subset,
-                          )
-
-    Xtens = batch_gen.X
-    Atens = tf.cast(batch_gen.A, tf.float32)
+        Xtens = batch_gen.X
+        Atens = tf.cast(batch_gen.A, tf.float32)
 
     # X dimensions: timesteps x lanes x feature dim
     X_in = Input(batch_shape=(None, None, num_lanes, len(x_feature_subset)),
@@ -154,7 +154,7 @@ def main(
         fit_loop_tf(model, callback_list, batch_gen, epochs)
 
         if hasattr(model, 'history'):
-            print(model.history)
+            print(model.history) #pylint: disable=no-member
 
         predict_eval_tf(model, callback_list, batch_gen)
 
