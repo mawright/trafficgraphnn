@@ -13,6 +13,7 @@ from keras.models import Model
 from trafficgraphnn import SumoNetwork
 from trafficgraphnn.custom_fit_loop import (fit_loop_init, fit_loop_tf,
                                             get_logging_dir, make_callbacks,
+                                            predict_eval_tf,
                                             set_callback_params)
 from trafficgraphnn.layers import ReshapeFoldInLanes, ReshapeUnfoldLanes
 from trafficgraphnn.load_data_tf import TFBatcher
@@ -154,6 +155,8 @@ def main(
 
         if hasattr(model, 'history'):
             print(model.history)
+
+        predict_eval_tf(model, callback_list, batch_gen)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

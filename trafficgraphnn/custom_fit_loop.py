@@ -116,9 +116,12 @@ def fit_loop_tf(model, callbacks, batch_generator, num_epochs, feed_dict=None):
 def fit_loop_train_one_epoch_tf(model, callbacks, batch_generator, epoch,
                                 feed_dict=None):
     callbacks.on_epoch_begin(epoch)
+    batch_generator.init_epoch()
 
     # set up bookkeeping
     batch_size = batch_generator.batch_size * batch_generator.window_size
+    if batch_generator.average_interval is not None:
+        batch_size = batch_size // batch_generator.average_interval
     i_step = 0
     sess = K.get_session()
     for i_batch, batch in enumerate(batch_generator.train_batches):
