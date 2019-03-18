@@ -130,12 +130,15 @@ def make_dataset(filename_ph,
             new_X = pad_reshape_average(X)
             new_Y = pad_reshape_average(Y)
 
-            get_slice = tf.range(0, num_timesteps, average_interval)
+            get_slice = tf.range(
+                0,
+                tf.cast(num_intervals * average_interval, tf.int32),
+                average_interval, dtype=tf.int32)
+
             new_A = tf.gather(A, get_slice)
             new_t = tf.gather(t, get_slice)
-            new_lanes = tf.gather(lanes, get_slice)
 
-            return new_A, new_X, new_Y, new_t, new_lanes
+            return new_A, new_X, new_Y, new_t, lanes
         dataset = dataset.map(
             lambda A, X, Y, t, lanes:
             average_over_interval(A, X, Y, average_interval, t, lanes),
