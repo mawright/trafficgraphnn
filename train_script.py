@@ -43,6 +43,7 @@ def main(
     dropout_rate=.3,
     attn_dropout=0.,
     seed=123,
+    per_step_metrics=False,
 ):
 
     tf.set_random_seed(seed)
@@ -144,9 +145,12 @@ def main(
 
     # Guess at the number of steps per simulation. This only affects Keras's
     # progress bar per training epoch so it can be wrong.
-    timesteps_per_simulation = 3600
-    steps = batch_gen.num_train_batches * math.ceil(timesteps_per_simulation
-                                                    / time_window)
+    if per_step_metrics:
+        timesteps_per_simulation = 3600
+        steps = batch_gen.num_train_batches * math.ceil(timesteps_per_simulation
+                                                        / time_window)
+    else:
+        steps = batch_gen.num_train_batches
 
     set_callback_params(callback_list, epochs, batch_size, verbose,
                         do_validation, model, steps)
@@ -156,7 +160,8 @@ def main(
     with K.get_session().as_default():
         # sess.graph.finalize()
 
-        fit_loop_tf(model, callback_list, batch_gen, epochs)
+        fit_loop_tf(model, callback_list, batch_gen, epochs,
+                    per_step_metrics=per_step_metrics)
 
         if hasattr(model, 'history'):
             return model.history #pylint: disable=no-member
@@ -198,6 +203,9 @@ if __name__ == '__main__':
                         help='Probability of dropout on attention weights')
     parser.add_argument('--seed', '-s', type=int, help='Random seed',
                         default=123)
+    parser.add_argument('--per_step_metrics', action='store_true',
+                        help='Set to record metrics per gradient step '
+                             'instead of averaged over each simulation batch.')
     args = parser.parse_args()
 
     A_name_list = []
@@ -222,4 +230,5 @@ if __name__ == '__main__':
          dropout_rate=args.dropout_rate,
          attn_dropout=args.attn_dropout,
          seed=args.seed,
+         per_step_metrics=args.per_step_metrics,
          )

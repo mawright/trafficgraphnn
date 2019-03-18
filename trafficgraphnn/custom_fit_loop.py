@@ -5,7 +5,7 @@ import os
 import re
 import time
 import warnings
-from collections import namedtuple
+from collections import namedtuple, Iterable
 
 import numpy as np
 import pandas as pd
@@ -30,7 +30,8 @@ def make_callbacks(model, model_save_dir, do_validation=False):
                                                 timestamp, 'log.csv')))
     callback_list.append(
         TensorBoard(log_dir=os.path.join(
-            model_save_dir, 'logs', timestamp), update_freq=1000))
+            model_save_dir, 'logs', timestamp), update_freq=10
+            ))
     history = History()
     callback_list.append(history)
     model.history = history
@@ -109,15 +110,28 @@ def val_named_logs(model, logs):
     return result
 
 
-def fit_loop_tf(model, callbacks, batch_generator, num_epochs, feed_dict=None):
+def mean_logs(model, logs):
+    result = {}
+    if hasattr(logs, 'keys'):
+        for metric in model.metrics_names:
+            result[metric] = np.mean(logs[metric])
+    elif isinstance(logs, Iterable):
+        for metric, l in zip(model.metrics_names, logs):
+            result[metric] = l
+    return result
+
+
+def fit_loop_tf(model, callbacks, batch_generator, num_epochs, feed_dict=None,
+                per_step_metrics=False):
     callbacks.on_train_begin()
 
     for epoch in range(num_epochs):
-        fit_loop_train_one_epoch_tf(model, callbacks, batch_generator, epoch,
-                                    feed_dict=feed_dict)
+        fit_loop_train_one_epoch_tf(
+            model, callbacks, batch_generator, epoch,
+            feed_dict=feed_dict, per_step_metrics=per_step_metrics)
 
 def fit_loop_train_one_epoch_tf(model, callbacks, batch_generator, epoch,
-                                feed_dict=None):
+                                feed_dict=None, per_step_metrics=False):
     callbacks.on_epoch_begin(epoch)
     batch_generator.init_epoch()
 
@@ -131,12 +145,15 @@ def fit_loop_train_one_epoch_tf(model, callbacks, batch_generator, epoch,
         t0 = time.time()
         model.reset_states()
         batch.initialize(sess)
+        if not per_step_metrics:
+            callbacks.on_batch_begin(i_batch)
 
         while True:
             try:
                 tstep = time.time()
 
-                callbacks.on_batch_begin(i_step)
+                if per_step_metrics:
+                    callbacks.on_batch_begin(i_step)
 
                 logs = model.train_on_batch(x=None, y=None)
                 train_step_time = time.time() - tstep
@@ -146,10 +163,17 @@ def fit_loop_train_one_epoch_tf(model, callbacks, batch_generator, epoch,
                 logs['batch'] = i_step
                 logs['time'] = train_step_time
 
-                callbacks.on_batch_end(i_step, logs)
+                if per_step_metrics:
+                    callbacks.on_batch_end(i_step, logs)
                 i_step += 1
             except tf.errors.OutOfRangeError:
                 # this batch of timeseries is over
+                if not per_step_metrics:
+                    logs['batch'] = i_batch
+                    logs['time'] = np.sum(logs['time'])
+                    logs['size'] = np.sum(logs['size'])
+                    logs.update(mean_logs(model, logs))
+                    callbacks.on_batch_end(i_batch, logs)
                 break
             finally:
                 if model.stop_training:
