@@ -43,12 +43,13 @@ def make_callbacks(model, model_save_dir, do_validation=False):
 
     filename = 'weights_epoch{epoch:02d}-'
 
-    for metric in display_metrics:
-        add_str = '{%s:.4f}' % metric
-        filename = filename + add_str
+    add_str = '{val_loss:.4f}'
+    filename = filename + add_str
     filename = filename + '.hdf5'
     callback_list.append(ModelCheckpoint(os.path.join(model_save_dir,
-                                                      timestamp, filename)))
+                                                      timestamp, filename),
+                                         save_best_only=True,
+                                         mode='min'))
     callback_list.append(ReduceLROnPlateau(verbose=1))
 
     callback_list.set_model(model)
