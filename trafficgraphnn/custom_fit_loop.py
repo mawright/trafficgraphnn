@@ -297,7 +297,10 @@ def predict_eval_tf(model, callbacks, batch_generator):
                     __sort_store_dfs(result_store, filenames)
                     break
 
-    mean_metrics = {k: np.mean(v) for k, v in val_logs.items()}
+    mean_metrics = {k: np.mean(v).tolist() for k, v in val_logs.items()}
+    log_str = 'Metrics on validation set:' + ('\n{}: {}'.format(k, v)
+                                              for k, v in mean_metrics.items())
+    _logger.info(log_str)
     with open(os.path.join(model_write_dir, 'metrics.json'), 'w') as f:
         json.dump(mean_metrics, f)
 
@@ -307,7 +310,8 @@ def _df(data, lane_list, timestep_list, colnames):
     index = pd.MultiIndex.from_product([timestep_list, lane_list],
                                         names=['begin', 'lane'])
     dtypes = {col: col_type(col) for col in colnames}
-    return pd.DataFrame(reshaped, index=index, columns=colnames, dtype=dtypes)
+    df = pd.DataFrame(reshaped, index=index, columns=colnames)
+    return df.astype(dtypes)
 
 
 def __append_results(store, filenames, func_out, x_colnames, y_colnames):

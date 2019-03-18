@@ -159,7 +159,7 @@ def main(
         fit_loop_tf(model, callback_list, batch_gen, epochs)
 
         if hasattr(model, 'history'):
-            print(model.history) #pylint: disable=no-member
+            return model.history #pylint: disable=no-member
 
         predict_eval_tf(model, callback_list, batch_gen)
 
