@@ -22,6 +22,7 @@ def main(
 
     if os.path.exists(net_filename):
         sn = SumoNetwork.from_preexisting_directory(net_dir)
+        print('Using pre-existing Sumo network with name {}.'.format(net_name))
     else:
         config = ConfigGenerator(net_name=net_name)
 
