@@ -52,11 +52,12 @@ class BestWeightRestorer(Callback):
 
         if self.monitor_op(current, self.best):
             self.best = current
-            self.wait = 0
+            self.stopped_epoch = epoch
             self.best_weights = self.model.get_weights()
 
     def on_train_end(self, logs=None):
-        _logger.info('Best weights on epoch %05d.', self.best + 1)
+        _logger.info('Best weights on epoch %05d. Restoring.',
+                     self.stopped_epoch + 1)
         self.model.set_weights(self.best_weights)
 
     def get_monitor_value(self, logs):
@@ -70,12 +71,15 @@ class BestWeightRestorer(Callback):
         return monitor_value
 
 
-class MakeLRSetOpCallback(Callback):
-    """Hack to prevent callbacks that set the learning rate during training
+class MakeSetOpsCallback(Callback):
+    """Hack to prevent callbacks that set tensor values during training
     from making an assignment op during training."""
     def on_train_begin(self, logs):
         lr = K.get_value(self.model.optimizer.lr)
         K.set_value(self.model.optimizer.lr, lr)
+
+        weights = self.model.get_weights()
+        self.model.set_weights(weights)
 
 
 def make_callbacks(model, model_save_dir, do_validation=False):
@@ -112,7 +116,7 @@ def make_callbacks(model, model_save_dir, do_validation=False):
     callback_list.append(ReduceLROnPlateau(verbose=1))
 
     # prevent this op from being created during training
-    callback_list.append(MakeLRSetOpCallback())
+    callback_list.append(MakeSetOpsCallback())
 
     callback_list.set_model(model)
     return callback_list
