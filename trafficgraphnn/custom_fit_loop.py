@@ -5,7 +5,7 @@ import os
 import re
 import time
 import warnings
-from collections import namedtuple, Iterable
+from collections import Iterable, namedtuple, defaultdict
 
 import numpy as np
 import pandas as pd
@@ -147,6 +147,7 @@ def fit_loop_train_one_epoch_tf(model, callbacks, batch_generator, epoch,
         batch.initialize(sess)
         if not per_step_metrics:
             callbacks.on_batch_begin(i_batch)
+            logs = defaultdict(list)
 
         while True:
             try:
@@ -155,16 +156,19 @@ def fit_loop_train_one_epoch_tf(model, callbacks, batch_generator, epoch,
                 if per_step_metrics:
                     callbacks.on_batch_begin(i_step)
 
-                logs = model.train_on_batch(x=None, y=None)
+                step_logs = model.train_on_batch(x=None, y=None)
                 train_step_time = time.time() - tstep
 
-                logs = named_logs(model, logs)
-                logs['size'] = batch_size
-                logs['batch'] = i_step
-                logs['time'] = train_step_time
+                step_logs = named_logs(model, step_logs)
+                step_logs['size'] = batch_size
+                step_logs['batch'] = i_step
+                step_logs['time'] = train_step_time
 
                 if per_step_metrics:
-                    callbacks.on_batch_end(i_step, logs)
+                    callbacks.on_batch_end(i_step, step_logs)
+                else:
+                    for k, v in step_logs.items():
+                        logs[k].append(v)
                 i_step += 1
             except tf.errors.OutOfRangeError:
                 # this batch of timeseries is over
