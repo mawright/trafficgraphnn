@@ -17,7 +17,8 @@ from trafficgraphnn.custom_fit_loop import (fit_loop_init, fit_loop_tf,
                                             set_callback_params)
 from trafficgraphnn.layers import ReshapeFoldInLanes, ReshapeUnfoldLanes
 from trafficgraphnn.load_data_tf import TFBatcher
-from trafficgraphnn.losses import (negative_masked_mae, negative_masked_mape,
+from trafficgraphnn.losses import (huber, negative_masked_huber,
+                                   negative_masked_mae, negative_masked_mape,
                                    negative_masked_mse)
 from trafficgraphnn.nn_modules import (gat_encoder, output_tensor_slices,
                                        rnn_attn_decode, rnn_encode)
@@ -31,6 +32,7 @@ def main(
                  'A_upstream',
                  'A_neighbors'],
     val_split_proportion=.2,
+    loss_function='mse',
     batch_size=4,
     time_window=150,
     average_interval=None,
@@ -118,21 +120,38 @@ def main(
 
     Ytens = batch_gen.Y_slices
 
+    if loss_function.lower() == 'mse':
+        losses = ['mse', negative_masked_mse]
+        metrics = [negative_masked_mae, negative_masked_huber,
+                   negative_masked_mape]
+    elif loss_function.lower() == 'mae':
+        losses = ['mae', negative_masked_mae]
+        metrics = [negative_masked_mse, negative_masked_huber,
+                   negative_masked_mape]
+    elif loss_function.lower() == 'huber':
+        losses = [huber, negative_masked_huber]
+        metrics = [negative_masked_mse, negative_masked_mae,
+                   negative_masked_mape]
+
     model.compile(optimizer='Adam',
-                  loss=['mse', negative_masked_mse],
-                  metrics=[negative_masked_mae, negative_masked_mape],
+                  loss=losses,
+                  metrics=metrics,
                   target_tensors=Ytens,
                   )
 
     verbose = 1
-    do_validation = True
+    if val_split_proportion > 0:
+        do_validation = True
+    else:
+        do_validation = False
 
     callback_list = make_callbacks(model, write_dir, do_validation)
 
     # record hyperparameters
     hyperparams = dict(
         net_name=net_name, A_name_list=A_name_list,
-        val_split_proportion=val_split_proportion, batch_size=batch_size,
+        val_split_proportion=val_split_proportion,
+        loss_function=loss_function, batch_size=batch_size,
         time_window=time_window, average_interval=average_interval,
         epochs=epochs, attn_dim=attn_dim, attn_depth=attn_depth,
         rnn_dim=rnn_dim, dense_dim=dense_dim, dropout_rate=dropout_rate,
@@ -179,6 +198,9 @@ if __name__ == '__main__':
                         help='Use the neighboring-lane adjacency matrix.')
     parser.add_argument('--val_split', '-v', type=float, default=.2,
                         help='Data proportion to use for validation')
+    parser.add_argument('--loss_function', '-l', type=str, default='mse',
+                        help='Training loss function. '
+                             'Valid: "mse", "mae", "huber". Default: mse')
     parser.add_argument('--batch_size', '-b', type=int, default=4,
                         help='Training batch size')
     parser.add_argument('--time_window', '-tw', type=int, default=150,
@@ -219,6 +241,7 @@ if __name__ == '__main__':
     main(args.net_name,
          A_name_list,
          val_split_proportion=args.val_split,
+         loss_function=args.loss_function,
          batch_size=args.batch_size,
          time_window=args.time_window,
          average_interval=args.average_interval,

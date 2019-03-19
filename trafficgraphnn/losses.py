@@ -1,5 +1,30 @@
 from keras import backend as K
-from keras.losses import mean_absolute_error, mean_squared_error
+
+
+def huber(y_true, y_pred, delta=1):
+    abs_error = K.abs(y_true - y_pred)
+    loss = _huber_helper(abs_error, delta)
+    return K.sum(loss, axis=-1)
+
+
+def _masked_huber(y_true, y_pred, to_mask, delta=1):
+    mask_weight = 1 - K.cast(to_mask, K.floatx())
+    abs_error = K.abs(y_true - y_pred)
+    loss = _huber_helper(abs_error, delta)
+    return _apply_mask(loss, mask_weight)
+
+
+def negative_masked_huber(y_true, y_pred, delta=1):
+    is_neg = K.less(y_true, 0.)
+    return _masked_huber(y_true, y_pred, is_neg, delta=delta)
+
+
+def _huber_helper(abs_error, delta):
+    quadratic = K.minimum(abs_error, delta)
+    linear = abs_error - quadratic
+    loss = .5 * K.square(quadratic) + linear * delta
+    return loss
+
 
 def nan_masked_mse(y_true, y_pred):
     import tensorflow as tf
@@ -23,33 +48,9 @@ def _masked_mse(y_true, y_pred, to_mask):
     return _apply_mask(sq_error, mask_weight)
 
 
-def mean_square_error_veh(y_true, y_pred):
-    return mean_squared_error(y_true[...,0], y_pred[...,0])
-
-
-def negative_masked_mse_queue_length_m(y_true, y_pred):
-    return negative_masked_mse(y_true[...,1], y_pred[...,1])
-
-
-def scaled_two_feature_mse_constructor(scaling_weight=10):
-    def scaled_two_feature_mse(y_true, y_pred):
-        loss_1 = mean_square_error_veh(y_true, y_pred)
-        loss_2 = negative_masked_mse_queue_length_m(y_true, y_pred)
-        return scaling_weight * loss_1 + loss_2
-    return scaled_two_feature_mse
-
-
 def negative_masked_mae(y_true, y_pred):
     is_neg = K.less(y_true, 0.)
     return _masked_mae(y_true, y_pred, is_neg)
-
-
-def mean_absolute_error_veh(y_true, y_pred):
-    return mean_absolute_error(y_true[...,0], y_pred[...,0])
-
-
-def negative_masked_mae_queue_length(y_true, y_pred):
-    return negative_masked_mae(y_true[...,1], y_pred[...,1])
 
 
 def _masked_mae(y_true, y_pred, to_mask):
