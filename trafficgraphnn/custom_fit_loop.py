@@ -5,7 +5,7 @@ import os
 import re
 import time
 import warnings
-from collections import Iterable, namedtuple, defaultdict
+from collections import Iterable, defaultdict, namedtuple
 
 import numpy as np
 import pandas as pd
@@ -13,12 +13,69 @@ import tables
 import tensorflow as tf
 
 import keras.backend as K
-from keras.callbacks import (BaseLogger, CallbackList, CSVLogger, History,
-                             ModelCheckpoint, ProgbarLogger, ReduceLROnPlateau,
-                             TensorBoard, TerminateOnNaN)
+from keras.callbacks import (BaseLogger, Callback, CallbackList, CSVLogger,
+                             History, ModelCheckpoint, ProgbarLogger,
+                             ReduceLROnPlateau, TensorBoard, TerminateOnNaN)
 from trafficgraphnn.utils import col_type, iterfy
 
 _logger = logging.getLogger(__name__)
+
+class BestWeightRestorer(Callback):
+    def __init__(self,
+                 monitor='val_loss',
+                 mode='auto'):
+        self.monitor = monitor
+        if mode not in ['auto', 'min', 'max']:
+            warnings.warn('BestWeightRestorer mode %s is unknown, '
+                          'fallback to auto mode.' % mode,
+                          RuntimeWarning)
+            mode = 'auto'
+
+        if mode == 'min':
+            self.monitor_op = np.less
+        elif mode == 'max':
+            self.monitor_op = np.greater
+        else:
+            if 'acc' in self.monitor:
+                self.monitor_op = np.greater
+            else:
+                self.monitor_op = np.less
+
+    def on_train_begin(self, logs=None):
+        # Allow instances to be re-used
+        self.best = np.Inf if self.monitor_op == np.less else -np.Inf
+
+    def on_epoch_end(self, epoch, logs=None):
+        current = self.get_monitor_value(logs)
+        if current is None:
+            return
+
+        if self.monitor_op(current, self.best):
+            self.best = current
+            self.wait = 0
+            self.best_weights = self.model.get_weights()
+
+    def on_train_end(self, logs=None):
+        _logger.info('Best weights on epoch %05d.', self.best + 1)
+        self.model.set_weights(self.best_weights)
+
+    def get_monitor_value(self, logs):
+        monitor_value = logs.get(self.monitor)
+        if monitor_value is None:
+            warnings.warn(
+                'Best weight saving conditioned on metric `%s` '
+                'which is not available. Available metrics are: %s' %
+                (self.monitor, ','.join(list(logs.keys()))), RuntimeWarning
+            )
+        return monitor_value
+
+
+class MakeLRSetOpCallback(Callback):
+    """Hack to prevent callbacks that set the learning rate during training
+    from making an assignment op during training."""
+    def on_train_begin(self, logs):
+        lr = K.get_value(self.model.optimizer.lr)
+        K.set_value(self.model.optimizer.lr, lr)
 
 
 def make_callbacks(model, model_save_dir, do_validation=False):
@@ -28,6 +85,7 @@ def make_callbacks(model, model_save_dir, do_validation=False):
     callback_list.append(TerminateOnNaN())
     callback_list.append(CSVLogger(os.path.join(model_save_dir,
                                                 timestamp, 'log.csv')))
+    callback_list.append(BestWeightRestorer())
     callback_list.append(
         TensorBoard(log_dir=os.path.join(
             model_save_dir, 'logs', timestamp), update_freq=10
@@ -52,6 +110,9 @@ def make_callbacks(model, model_save_dir, do_validation=False):
                                          save_best_only=True,
                                          mode='min'))
     callback_list.append(ReduceLROnPlateau(verbose=1))
+
+    # prevent this op from being created during training
+    callback_list.append(MakeLRSetOpCallback())
 
     callback_list.set_model(model)
     return callback_list
@@ -129,6 +190,8 @@ def fit_loop_tf(model, callbacks, batch_generator, num_epochs, feed_dict=None,
         fit_loop_train_one_epoch_tf(
             model, callbacks, batch_generator, epoch,
             feed_dict=feed_dict, per_step_metrics=per_step_metrics)
+
+    callbacks.on_train_end()
 
 def fit_loop_train_one_epoch_tf(model, callbacks, batch_generator, epoch,
                                 feed_dict=None, per_step_metrics=False):
