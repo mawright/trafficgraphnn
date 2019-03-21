@@ -182,10 +182,10 @@ def main(
         fit_loop_tf(model, callback_list, batch_gen, epochs,
                     per_step_metrics=per_step_metrics)
 
+        predict_eval_tf(model, callback_list, batch_gen)
+
         if hasattr(model, 'history'):
             return model.history #pylint: disable=no-member
-
-        predict_eval_tf(model, callback_list, batch_gen)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

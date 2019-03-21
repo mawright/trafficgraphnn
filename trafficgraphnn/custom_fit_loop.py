@@ -153,12 +153,23 @@ def set_callback_params(callbacks,
     callbacks.set_params(params_dict)
 
 
-def fit_loop_init(model, callbacks):
+def fit_loop_init(model, callbacks, batch_gen=None):
     callbacks.on_train_begin()
     model.reset_states()
     model._make_train_function()
     model._make_test_function()
     model.stop_training = False
+    if batch_gen is not None:
+        prep_predict_eval(model, batch_gen)
+
+
+def prep_predict_eval(model, batch_gen):
+    extras = []
+    if hasattr(batch_gen, 't'):
+        extras.append(batch_gen.t)
+    if hasattr(batch_gen, 'lanes'):
+        extras.append(batch_gen.lanes)
+    PredictEvalFunction(model, extras)
 
 
 def named_logs(model, logs):
@@ -367,35 +378,34 @@ def predict_eval_tf(model, callbacks, batch_generator):
     model_write_dir = get_logging_dir(callbacks)
     result_file = os.path.join(model_write_dir, 'results.hdf')
 
-    i_step = 0
-    val_logs = {'val_' + m: [] for m in model.metrics_names}
+    val_logs = defaultdict(list)
 
     with pd.HDFStore(result_file, 'w') as result_store:
         for batch in batch_generator.val_batches:
             filenames = [os.path.basename(f) for f in batch.filenames]
+            filenums = [os.path.splitext(f)[0] for f in filenames]
             model.reset_states()
             batch.initialize()
 
             while True:
                 try:
                     out = func.call()
-                    __append_results(result_store, filenames, out,
+                    __append_results(result_store, filenums, out,
                                      batch_generator.x_feature_subset,
                                      batch_generator.y_feature_subset)
                     metrics = out['metrics']
 
                     logs = val_named_logs(model, metrics)
-                    logs['step'] = i_step
-                    for k, v in val_logs.items():
-                        v.append(logs[k])
+                    for k, v in logs.items():
+                        val_logs[k].append(v)
 
                 except tf.errors.OutOfRangeError:
-                    __sort_store_dfs(result_store, filenames)
+                    __sort_store_dfs(result_store, filenums)
                     break
 
     mean_metrics = {k: np.mean(v).tolist() for k, v in val_logs.items()}
-    log_str = 'Metrics on validation set:' + ('\n{}: {}'.format(k, v)
-                                              for k, v in mean_metrics.items())
+    log_str = 'Metrics on validation set:' + '\n'.join(
+        '{}: {}'.format(k, v) for k, v in mean_metrics.items())
     _logger.info(log_str)
     with open(os.path.join(model_write_dir, 'metrics.json'), 'w') as f:
         json.dump(mean_metrics, f)
@@ -410,7 +420,7 @@ def _df(data, lane_list, timestep_list, colnames):
     return df.astype(dtypes)
 
 
-def __append_results(store, filenames, func_out, x_colnames, y_colnames):
+def __append_results(store, table_prefixes, func_out, x_colnames, y_colnames):
     timesteps = func_out['extra_outputs'][0]
     lanes = func_out['extra_outputs'][1]
     X = func_out['inputs'].X
@@ -418,17 +428,17 @@ def __append_results(store, filenames, func_out, x_colnames, y_colnames):
     Yhat = np.stack(func_out['outputs'], -1)
     with warnings.catch_warnings():
         warnings.simplefilter('ignore', tables.NaturalNameWarning)
-        for i, filename in enumerate(filenames):
+        for i, prefix in enumerate(table_prefixes):
             t_i = timesteps[i]
             lanes_i = list(map(__maybe_decode, lanes[i]))
-            store.append(filename + '/X', _df(X[i], lanes_i, t_i, x_colnames))
-            store.append(filename + '/Y', _df(Y[i], lanes_i, t_i, y_colnames))
-            store.append(filename + '/Yhat',
+            store.append(prefix + '/X', _df(X[i], lanes_i, t_i, x_colnames))
+            store.append(prefix + '/Y', _df(Y[i], lanes_i, t_i, y_colnames))
+            store.append(prefix + '/Yhat',
                          _df(Yhat[i], lanes_i, t_i, y_colnames))
 
 
-def __sort_store_dfs(store, filenames):
-    for f in filenames:
+def __sort_store_dfs(store, prefixes):
+    for f in prefixes:
         for table in [f + t for t in ['/X', '/Y', '/Yhat']]:
             store[table] = store[table].sort_index(level=[0,1])
 
