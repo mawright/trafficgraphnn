@@ -404,7 +404,7 @@ def predict_eval_tf(model, callbacks, batch_generator):
                     break
 
     mean_metrics = {k: np.mean(v).tolist() for k, v in val_logs.items()}
-    log_str = 'Metrics on validation set:' + '\n'.join(
+    log_str = 'Metrics on validation set:\n' + '\n'.join(
         '{}: {}'.format(k, v) for k, v in mean_metrics.items())
     _logger.info(log_str)
     with open(os.path.join(model_write_dir, 'metrics.json'), 'w') as f:
