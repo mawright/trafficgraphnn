@@ -439,8 +439,11 @@ def __append_results(store, table_prefixes, func_out, x_colnames, y_colnames):
 
 def __sort_store_dfs(store, prefixes):
     for f in prefixes:
-        for table in [f + t for t in ['/X', '/Y', '/Yhat']]:
-            store[table] = store[table].sort_index(level=[0,1])
+        for key in [f + t for t in ['/X', '/Y', '/Yhat']]:
+            df = store[key]
+            df = df[~df.index.duplicated(keep='first')] # deduplicate
+            df = df.sort_index(level=[0,1])
+            store[key] = df
 
 
 def __maybe_decode(item):
