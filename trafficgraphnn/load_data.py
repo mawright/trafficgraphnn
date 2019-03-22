@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import six
 
-from trafficgraphnn.preprocessing.io import get_preprocessed_filenames
+from trafficgraphnn.preprocessing.io import get_preprocessed_filenames, queueing_intervals_from_lane_light_df
 from trafficgraphnn.utils import flatten, iterfy, string_list_decode
 
 _logger = logging.getLogger(__name__)
@@ -312,11 +312,16 @@ def read_from_file(
     x_feature_subset=x_feature_subset_default,
     y_feature_subset=y_feature_subset_default,
     per_cycle_features=per_cycle_features_default,
+    when_per_cycle='end', # begin = on green, # end = on red
     return_X_Y_as_dfs=False):
 
     # Input handling if we came from TF
     if isinstance(filename, six.binary_type):
         filename = filename.decode()
+
+    if len(per_cycle_features) > 0 and when_per_cycle not in ['end', 'begin']:
+        raise ValueError(
+            'Argument `when_per_cycle` must be one of `end`, `begin`')
 
     A_name_list, x_feature_subset, y_feature_subset = map(
         string_list_decode,
@@ -338,14 +343,27 @@ def read_from_file(
         Y_df = store['Y'].loc[:,y_feature_subset]
         Y_df = Y_df.fillna(pad_value_for_feature).astype(np.float32)
 
-        # masking out Y features to be predicted only at green cycle start
+        # masking out Y features only predicted per cycle
         if 'green' in X_df and len(per_cycle_features) > 0:
+            if when_per_cycle == 'end':
+                index = 1
+            elif when_per_cycle == 'begin':
+                index = 0
+            cycle_intervals = [item for _, series
+                               in X_df['green'].groupby('lane') for item in
+                               queueing_intervals_from_lane_light_df(series)]
+
             feats_to_mask = [feat for feat in per_cycle_features
                              if feat in Y_df]
-            green_starts = X_df['green'].astype('uint8').shift(-1).diff() == 1
-            Y_df[feats_to_mask] = (Y_df[feats_to_mask]
-                                   .where(green_starts)
-                                   .fillna(pad_value_for_feature))
+
+            for feat in feats_to_mask:
+                series = Y_df[feat]
+                keys = [cycle[index] for cycle in cycle_intervals]
+                values = [series.loc[cycle[0]:cycle[1]].max()
+                          for cycle in cycle_intervals]
+                # return keys, values
+                Y_df[feat] = get_pad_value_for_feature(feat)
+                Y_df.loc[keys, feat] = values
 
 
     t = time.time() - t0
