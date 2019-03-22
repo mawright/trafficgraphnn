@@ -405,7 +405,7 @@ def generator_prefetch_all_from_file(
                                    x_feature_subset,
                                    y_feature_subset,
                                    per_cycle_features,
-                                   True)
+                                   return_X_Y_as_dfs=True)
     try:
         t_begin = 0
         t_end = chunk_size - 1
