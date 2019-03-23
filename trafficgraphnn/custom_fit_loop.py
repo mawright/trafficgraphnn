@@ -14,8 +14,9 @@ import tensorflow as tf
 
 import keras.backend as K
 from keras.callbacks import (BaseLogger, Callback, CallbackList, CSVLogger,
-                             History, ModelCheckpoint, ProgbarLogger,
-                             ReduceLROnPlateau, TensorBoard, TerminateOnNaN)
+                             EarlyStopping, History, ModelCheckpoint,
+                             ProgbarLogger, ReduceLROnPlateau, TensorBoard,
+                             TerminateOnNaN)
 from trafficgraphnn.utils import col_type, iterfy
 
 _logger = logging.getLogger(__name__)
@@ -82,14 +83,15 @@ class MakeSetOpsCallback(Callback):
         self.model.set_weights(weights)
 
 
-def make_callbacks(model, model_save_dir, do_validation=False):
+def make_callbacks(model, model_save_dir, do_validation=False,
+                   base_model=None):
     timestamp = '{:%Y-%m-%d_%H:%M:%S}'.format(datetime.datetime.now())
     callback_list = CallbackList()
     callback_list.append(BaseLogger())
     callback_list.append(TerminateOnNaN())
     callback_list.append(CSVLogger(os.path.join(model_save_dir,
                                                 timestamp, 'log.csv')))
-    callback_list.append(BestWeightRestorer())
+    callback_list.append(EarlyStopping(patience=20, restore_best_weights=True))
     callback_list.append(
         TensorBoard(log_dir=os.path.join(
             model_save_dir, 'logs', timestamp), update_freq=10
@@ -119,6 +121,11 @@ def make_callbacks(model, model_save_dir, do_validation=False):
     callback_list.append(MakeSetOpsCallback())
 
     callback_list.set_model(model)
+    if base_model is not None:
+        for cbk in callback_list:
+            if isinstance(cbk, ModelCheckpoint):
+                cbk.set_model(base_model)
+
     return callback_list
 
 

@@ -36,7 +36,7 @@ def gat_single_A_encoder(X_tensor, A_tensor, attn_depth, attn_dims, num_heads,
 
 def gat_encoder(X_tensor, A_tensor, attn_dims, num_heads,
                 dropout_rate, attn_dropout_rate, attn_reduction='concat',
-                gat_activation='relu'):
+                gat_activation='relu', residual_connection=False):
     attn_dims, num_heads, dropout_rate, attn_dropout_rate, attn_reduction = map(
         iterfy, [attn_dims, num_heads, dropout_rate, attn_dropout_rate,
                  attn_reduction])
@@ -51,13 +51,17 @@ def gat_encoder(X_tensor, A_tensor, attn_dims, num_heads,
                                                  dropout_rate,
                                                  attn_dropout_rate,
                                                  attn_reduction):
-        X = TimeDistributed(Dropout(drop))(X)
-        X = TimeDistributedMultiInput(
+        out = TimeDistributed(Dropout(drop))(X)
+        out = TimeDistributedMultiInput(
             BatchMultigraphAttention(dim,
                                      attn_heads=head,
                                      attn_heads_reduction=reduct,
                                      attn_dropout=attndrop,
                                      activation=gat_activation))([X, A_tensor])
+        if residual_connection: # in transformer, res connection done here (eg on concatted heads)
+            X = X + out
+        else:
+            X = out
     return X
 
 

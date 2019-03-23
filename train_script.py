@@ -10,6 +10,7 @@ import tensorflow as tf
 from keras import backend as K
 from keras.layers import Dense, Dropout, Input, TimeDistributed
 from keras.models import Model
+from keras.utils.multi_gpu_utils import multi_gpu_model
 from trafficgraphnn import SumoNetwork
 from trafficgraphnn.custom_fit_loop import (fit_loop_init, fit_loop_tf,
                                             get_logging_dir, make_callbacks,
@@ -40,12 +41,14 @@ def main(
     attn_dim=64,
     attn_heads=4,
     attn_depth=2,
+    attn_residual_connection=False,
     rnn_dim=64,
     dense_dim=64,
     dropout_rate=.3,
     attn_dropout=0.,
     seed=123,
     per_step_metrics=False,
+    num_gpus=1,
 ):
 
     tf.set_random_seed(seed)
@@ -97,26 +100,37 @@ def main(
     attn_dim = iterfy(attn_dim) * attn_depth
     attn_heads = iterfy(attn_heads) * attn_depth
 
-    X = gat_encoder(X_in, A_in, attn_dim, attn_heads,
-                    dropout_rate, attn_dropout, gat_activation='relu')
+    def make_model(X_in, A_in):
+        X = gat_encoder(X_in, A_in, attn_dim, attn_heads,
+                        dropout_rate, attn_dropout, gat_activation='relu',
+                        residual_connection=attn_residual_connection)
 
-    predense = TimeDistributed(Dropout(dropout_rate))(X)
+        predense = TimeDistributed(Dropout(dropout_rate))(X)
 
-    dense1 = TimeDistributed(Dense(dense_dim, activation='relu'))(predense)
+        dense1 = TimeDistributed(Dense(dense_dim, activation='relu'))(predense)
 
-    reshaped_1 = ReshapeFoldInLanes(batch_size=batch_size)(dense1)
+        reshaped_1 = ReshapeFoldInLanes(batch_size=batch_size)(dense1)
 
-    encoded = rnn_encode(reshaped_1, [rnn_dim], 'GRU', True)
+        encoded = rnn_encode(reshaped_1, [rnn_dim], 'GRU', True)
 
-    decoded = rnn_attn_decode('GRU', rnn_dim, encoded, True)
+        decoded = rnn_attn_decode('GRU', rnn_dim, encoded, True)
 
-    reshaped_decoded = ReshapeUnfoldLanes(num_lanes)(decoded)
-    output = TimeDistributed(
-        Dense(len(y_feature_subset), activation='relu'))(reshaped_decoded)
+        reshaped_decoded = ReshapeUnfoldLanes(num_lanes)(decoded)
+        output = TimeDistributed(
+            Dense(len(y_feature_subset), activation='relu'))(reshaped_decoded)
 
-    outputs = output_tensor_slices(output, y_feature_subset)
+        outputs = output_tensor_slices(output, y_feature_subset)
 
-    model = Model([X_in, A_in], outputs)
+        model = Model([X_in, A_in], outputs)
+        return model
+
+    if num_gpus > 1:
+        with tf.device('/cpu:0'):
+            base_model = make_model(X_in, A_in)
+            model = multi_gpu_model(base_model, num_gpus)
+    else:
+        base_model = make_model(X_in, A_in)
+        model = base_model
 
     Ytens = batch_gen.Y_slices
 
@@ -145,7 +159,7 @@ def main(
     else:
         do_validation = False
 
-    callback_list = make_callbacks(model, write_dir, do_validation)
+    callback_list = make_callbacks(model, write_dir, do_validation, base_model)
 
     # record hyperparameters
     hyperparams = dict(
@@ -154,8 +168,9 @@ def main(
         loss_function=loss_function, batch_size=batch_size,
         time_window=time_window, average_interval=average_interval,
         epochs=epochs, attn_dim=attn_dim, attn_depth=attn_depth,
+        attn_residual_connection=attn_residual_connection,
         rnn_dim=rnn_dim, dense_dim=dense_dim, dropout_rate=dropout_rate,
-        attn_dropout=attn_dropout, seed=seed)
+        attn_dropout=attn_dropout, seed=seed, num_gpus=num_gpus)
     logdir = get_logging_dir(callback_list)
     if not os.path.exists(logdir):
         os.makedirs(logdir)
@@ -174,10 +189,10 @@ def main(
     set_callback_params(callback_list, epochs, batch_size, verbose,
                         do_validation, model, steps)
 
-    fit_loop_init(model, callback_list)
+    fit_loop_init(model, callback_list, batch_gen)
 
-    with K.get_session().as_default():
-        # sess.graph.finalize()
+    with K.get_session().as_default() as sess:
+        sess.graph.finalize()
 
         fit_loop_tf(model, callback_list, batch_gen, epochs,
                     per_step_metrics=per_step_metrics)
@@ -215,6 +230,8 @@ if __name__ == '__main__':
                         help='Number of attention heads per layer')
     parser.add_argument('--attn_depth', type=int, default=2,
                         help='Number of stacked attentional layers')
+    parser.add_argument('--attn_residual_connection', action='store_true',
+                        help='Use residual connections in the attenion encoders.')
     parser.add_argument('--dense_dim', type=int, default=64,
                         help='Dimensionality of FC layers after attention ones')
     parser.add_argument('--rnn_dim', type=int, default=64,
@@ -228,6 +245,8 @@ if __name__ == '__main__':
     parser.add_argument('--per_step_metrics', action='store_true',
                         help='Set to record metrics per gradient step '
                              'instead of averaged over each simulation batch.')
+    parser.add_argument('--num_gpus', '-g', type=int, default=1,
+                        help='Number of GPUs to use.')
     args = parser.parse_args()
 
     A_name_list = []
@@ -249,9 +268,11 @@ if __name__ == '__main__':
          attn_dim=args.attn_dim,
          attn_heads=args.attn_heads,
          attn_depth=args.attn_depth,
+         attn_residual_connection=args.attn_residual_connection,
          dense_dim=args.dense_dim,
          dropout_rate=args.dropout_rate,
          attn_dropout=args.attn_dropout,
          seed=args.seed,
          per_step_metrics=args.per_step_metrics,
+         num_gpus=args.num_gpus,
          )
