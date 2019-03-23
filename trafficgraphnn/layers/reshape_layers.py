@@ -22,10 +22,10 @@ class ReshapeFoldInLanes(Layer):
         shape = K.shape(x_permuted)
         int_shape = K.int_shape(x_permuted)
 
-        if int_shape[0] is not None:
-            shape1 = -1 # can be inferred
-        elif self.batch_size is not None and int_shape[1] is not None:
+        if self.batch_size is not None and int_shape[1] is not None:
             shape1 = self.batch_size * int_shape[1] # needs to be specified
+        else:
+            shape1 = -1 # try inferring
 
         if int_shape[2] is not None:
             shape2 = int_shape[2]

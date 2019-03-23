@@ -43,6 +43,7 @@ def main(
     attn_depth=2,
     attn_residual_connection=False,
     rnn_dim=64,
+    stateful_rnn=False,
     dense_dim=64,
     dropout_rate=.3,
     attn_dropout=0.,
@@ -109,11 +110,17 @@ def main(
 
         dense1 = TimeDistributed(Dense(dense_dim, activation='relu'))(predense)
 
-        reshaped_1 = ReshapeFoldInLanes(batch_size=batch_size)(dense1)
+        if stateful_rnn:
+            reshape_batch_size = batch_size
+        else:
+            reshape_batch_size = None
+        reshaped_1 = ReshapeFoldInLanes(batch_size=reshape_batch_size)(dense1)
 
-        encoded = rnn_encode(reshaped_1, [rnn_dim], 'GRU', True)
+        encoded = rnn_encode(reshaped_1, [rnn_dim], 'GRU',
+                             stateful=stateful_rnn)
 
-        decoded = rnn_attn_decode('GRU', rnn_dim, encoded, True)
+        decoded = rnn_attn_decode('GRU', rnn_dim, encoded,
+                                  stateful=stateful_rnn)
 
         reshaped_decoded = ReshapeUnfoldLanes(num_lanes)(decoded)
         output = TimeDistributed(
@@ -236,6 +243,8 @@ if __name__ == '__main__':
                         help='Dimensionality of FC layers after attention ones')
     parser.add_argument('--rnn_dim', type=int, default=64,
                         help='Dimensionality of per-lane RNN embedding')
+    parser.add_argument('--stateful_rnn', action='store_true',
+                        help='Set to use stateful RNNs.')
     parser.add_argument('--dropout_rate', type=float, default=.3,
                         help='Inter-layer dropout probability')
     parser.add_argument('--attn_dropout', type=float, default=0.,
@@ -270,6 +279,8 @@ if __name__ == '__main__':
          attn_depth=args.attn_depth,
          attn_residual_connection=args.attn_residual_connection,
          dense_dim=args.dense_dim,
+         rnn_dim=args.rnn_dim,
+         stateful_rnn=args.stateful_rnn,
          dropout_rate=args.dropout_rate,
          attn_dropout=args.attn_dropout,
          seed=args.seed,
