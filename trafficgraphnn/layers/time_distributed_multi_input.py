@@ -140,32 +140,5 @@ class TimeDistributedMultiInput(TimeDistributed):
         return y
 
     def compute_mask(self, inputs, mask=None):
-        """Computes an output mask tensor for Embedding layer
-        based on the inputs, mask, and the inner layer.
-
-        If batch size is specified:
-        Simply return the input `mask`. (An rnn-based implementation with
-        more than one rnn inputs is required but not supported in Keras yet.)
-
-        Otherwise we call `compute_mask` of the inner layer at each time step.
-        If the output mask at each time step is not `None`:
-        (E.g., inner layer is Masking or RNN)
-        Concatenate all of them and return the concatenation.
-        If the output mask at each time step is `None` and
-        the input mask is not `None`:
-        (E.g., inner layer is Dense)
-        Reduce the input_mask to 2 dimensions and return it.
-        Otherwise (both the output mask and the input mask are `None`):
-        (E.g., `mask` is not used at all)
-        Return `None`.
-
-        # Arguments
-            inputs: Tensor or list of tensors
-            mask: Tensor or list of tensors
-        # Returns
-            None or a list of tensors
-        """
-        if not isinstance(inputs, list):
-            return super(TimeDistributedMultiInput, self).compute_mask(inputs, mask)
-
-        return [super(TimeDistributedMultiInput, self).compute_mask(i, m) for i,m in zip(inputs, mask)]
+        """Masks not supported for this layer (yet)."""
+        return None
