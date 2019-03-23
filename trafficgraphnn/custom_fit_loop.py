@@ -115,7 +115,7 @@ def make_callbacks(model, model_save_dir, do_validation=False,
                                                       timestamp, filename),
                                          save_best_only=True,
                                          mode='min'))
-    callback_list.append(ReduceLROnPlateau(verbose=1))
+    callback_list.append(ReduceLROnPlateau(verbose=1, cooldown=25))
 
     # prevent this op from being created during training
     callback_list.append(MakeSetOpsCallback())
