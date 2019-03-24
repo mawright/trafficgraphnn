@@ -184,6 +184,7 @@ def main(
         os.makedirs(logdir)
     with open(os.path.join(logdir, 'params.json'), 'w') as f:
         json.dump(hyperparams,f)
+    _logger.info('Run dir: %s', logdir)
 
     # Guess at the number of steps per simulation. This only affects Keras's
     # progress bar per training epoch so it can be wrong.
@@ -199,7 +200,7 @@ def main(
 
     fit_loop_init(model, callback_list, batch_gen)
 
-    with K.get_session().as_default() as sess:
+    with K.get_session().as_default():
 
         fit_loop_tf(model, callback_list, batch_gen, epochs,
                     per_step_metrics=per_step_metrics)
