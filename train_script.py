@@ -176,7 +176,8 @@ def main(
         time_window=time_window, average_interval=average_interval,
         epochs=epochs, attn_dim=attn_dim, attn_depth=attn_depth,
         attn_residual_connection=attn_residual_connection,
-        rnn_dim=rnn_dim, dense_dim=dense_dim, dropout_rate=dropout_rate,
+        rnn_dim=rnn_dim, stateful_rnn=stateful_rnn,
+        dense_dim=dense_dim, dropout_rate=dropout_rate,
         attn_dropout=attn_dropout, seed=seed, num_gpus=num_gpus)
     logdir = get_logging_dir(callback_list)
     if not os.path.exists(logdir):
@@ -199,7 +200,6 @@ def main(
     fit_loop_init(model, callback_list, batch_gen)
 
     with K.get_session().as_default() as sess:
-        sess.graph.finalize()
 
         fit_loop_tf(model, callback_list, batch_gen, epochs,
                     per_step_metrics=per_step_metrics)
