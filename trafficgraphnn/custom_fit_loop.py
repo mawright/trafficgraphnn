@@ -212,6 +212,8 @@ def fit_loop_tf(model, callbacks, batch_generator, num_epochs, feed_dict=None,
         fit_loop_train_one_epoch_tf(
             model, callbacks, batch_generator, epoch,
             feed_dict=feed_dict, per_step_metrics=per_step_metrics)
+        if model.stop_training:
+            break
 
     callbacks.on_train_end()
 
@@ -266,7 +268,7 @@ def fit_loop_train_one_epoch_tf(model, callbacks, batch_generator, epoch,
                 break
             finally:
                 if model.stop_training:
-                    raise RuntimeError
+                    break
         _logger.debug('Training on batch %s took %s s',
                       i_batch, time.time() - t0)
 
@@ -295,6 +297,9 @@ def fit_loop_train_one_epoch_tf(model, callbacks, batch_generator, epoch,
                 i_step += 1
             except tf.errors.OutOfRangeError:
                 break
+            finally:
+                if model.stop_training:
+                    break
         _logger.debug('Evaluating on batch %s took %f s',
                       i_batch, time.time() - t0)
 
