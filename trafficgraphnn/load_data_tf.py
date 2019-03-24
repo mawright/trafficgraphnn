@@ -204,7 +204,6 @@ class TFBatcher(object):
 
         self.filename_ph = tf.placeholder(tf.string, [None], 'filenames')
 
-        t0 = time.time()
         self._tf_dataset = make_dataset(self.filename_ph,
                                         batch_size,
                                         window_size,
@@ -213,9 +212,6 @@ class TFBatcher(object):
                                         y_feature_subset,
                                         per_cycle_features,
                                         average_interval)
-
-        t = time.time() - t0
-        _logger.debug('Made TFBatcher object in %s s', t)
 
         self.init_initializable_iterator()
         self.val_batches = [TFBatch(files, self.filename_ph, self.init_op)

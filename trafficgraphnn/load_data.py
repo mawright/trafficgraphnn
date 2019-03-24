@@ -328,7 +328,6 @@ def read_from_file(
         [A_name_list, x_feature_subset, y_feature_subset])
     assert all([A_name in All_A_name_list for A_name in A_name_list])
 
-    t0 = time.time()
     with pd.HDFStore(filename, 'r') as store:
         A_df = store['A']
         lane_list = A_df.index
@@ -364,10 +363,6 @@ def read_from_file(
                 # return keys, values
                 Y_df[feat] = get_pad_value_for_feature(feat)
                 Y_df.loc[keys, feat] = values
-
-
-    t = time.time() - t0
-    _logger.debug('Loading data from disk took %s s', t)
 
     len_x = len(x_feature_subset)
     len_y = len(y_feature_subset)
