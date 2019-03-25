@@ -162,7 +162,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     main(args.net_name,
-         args.model_name,
+         args.model_dir,
          val_split_proportion=args.val_split,
          seed=args.seed,
          )
