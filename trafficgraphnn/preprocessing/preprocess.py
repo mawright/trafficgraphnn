@@ -21,7 +21,9 @@ from trafficgraphnn.preprocessing.io import (get_preprocessed_filenames,
                                              write_hdf_for_sumo_network)
 from trafficgraphnn.preprocessing.liumethod_new import liu_method_for_net
 
-raw_xml_x_feature_defaults=['occupancy', 'speed', 'green', 'liu_estimated_veh']
+raw_xml_x_feature_defaults=[
+    'occupancy', 'speed', 'green', 'liu_estimated_veh', 'nVehContrib',
+    'nVehEntered']
 raw_xml_y_feature_defaults=['nVehSeen', 'maxJamLengthInVehicles']
 
 
