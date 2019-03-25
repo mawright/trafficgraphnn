@@ -96,14 +96,14 @@ def _plot_for_lane(store_filename, output_dir, prefix, lane_id):
                                     .loc[:, 'e2_0/nVehSeen']
                                     .xs(lane_id, level='lane'))
 
-    fig, ax = lane_queue_liu_vs_nn(liu_series, max_jam_series,
+    fig, _ = lane_queue_liu_vs_nn(liu_series, max_jam_series,
                                     predicted_max_jamseries)
     fig.savefig(os.path.join(output_dir, 'queue_estimate', prefix,
                              '{}.eps'.format(lane_id)),
                 bbox_inches='tight')
     plt.close(fig)
 
-    fig, ax = lane_nvehseen_plot(green_series, vehseen_series,
+    fig, _ = lane_nvehseen_plot(green_series, vehseen_series,
                                  predicted_vehseen_series)
     fig.savefig(os.path.join(output_dir, 'vehseen_estimate', prefix,
                              '{}.eps'.format(lane_id)),
