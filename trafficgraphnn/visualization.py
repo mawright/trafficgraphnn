@@ -30,7 +30,45 @@ def plot_results_for_file(filename):
             lanes = store[prefix + '/X'].index.get_level_values('lane').unique()
 
             for lane in lanes:
-                _plot_for_lane(filename ,fig_dir, prefix, lane)
+                _plot_for_lane(filename, fig_dir, prefix, lane)
+
+
+def shared_prefixes_in_stores(stores):
+    per_store_prefixes = [prefixes_in_store(store) for store in stores]
+    shared_prefixes = set.intersection(*map(set, per_store_prefixes))
+    return shared_prefixes
+
+
+def multi_file_queue_estimate_for_lane(stores, prefix, lane_id):
+    fig, ax = plt.subplots()
+    liu_series = (stores[0][prefix + '/X'].loc[:, 'liu_estimated_veh']
+                                          .xs(lane_id, level='lane'))
+    max_jam_series = (stores[0][prefix + '/Y']
+                      .loc[:, 'e2_0/maxJamLengthInVehicles']
+                      .xs(lane_id, level='lane'))
+
+    non_pad_timesteps = (max_jam_series
+                         != pad_value_for_feature['maxJamLengthInVehicles'])
+
+    ax.plot(max_jam_series.loc[non_pad_timesteps]
+                          .reset_index(drop=True, name='cycle'),
+                          'k', label='True cycle queue')
+
+    ax.plot(liu_series.loc[non_pad_timesteps]
+                      .reset_index(drop=True, name='cycle'),
+            'b--', label='Physics-based estimate')
+
+    for store in stores:
+        predicted = (store[prefix + '/Yhat']
+                     .loc[:, 'e2_0/maxJamLengthInVehicles']
+                     .xs(lane_id, level='lane'))
+        ax.plot(predicted.loc[non_pad_timesteps]
+                         .reset_index(drop=True, name='cycle'))
+
+    ax.set_xlabel('Cycle')
+    ax.set_ylabel('Queue (vehicles)')
+
+    return fig, ax
 
 
 def prefixes_in_store(store):
