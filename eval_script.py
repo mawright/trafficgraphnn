@@ -25,6 +25,7 @@ _logger = logging.getLogger(__name__)
 def main(
     net_name,
     model_dir,
+    batch_size=None,
     val_split_proportion=.2,
     seed=123,
 ):
@@ -46,14 +47,15 @@ def main(
 
     A_name_list = hparams['A_name_list']
     attn_dim = hparams['attn_dim']
-    attn_heads = hparams.get('attn_heads', [8, 8, 8])
     dropout_rate = hparams['dropout_rate']
     attn_dropout = hparams['attn_dropout']
     attn_residual_connection = hparams.get('attn_residual_connection', False)
     dense_dim = hparams['dense_dim']
     stateful_rnn = hparams.get('stateful_rnn', True)
     rnn_dim = hparams['rnn_dim']
-    batch_size = hparams['batch_size']
+    attn_heads = hparams.get('attn_heads', [dense_dim // attn_dim[0]]*3)
+    if batch_size is None:
+        batch_size = hparams['batch_size']
     loss_function = hparams['loss_function']
     x_feature_subset = hparams.get('x_feature_subset', ['e1_0/occupancy',
                                                         'e1_0/speed',
@@ -66,10 +68,10 @@ def main(
 
     with tf.device('/cpu:0'):
         batch_gen = TFBatcher(data_dir,
-                              hparams['batch_size'],
+                              batch_size,
                               hparams['time_window'],
                               average_interval=hparams['average_interval'],
-                              val_proportion=hparams['val_split_proportion'],
+                              val_proportion=val_split_proportion,
                               shuffle=False,
                               A_name_list=hparams['A_name_list'],
                               x_feature_subset=x_feature_subset,
@@ -155,6 +157,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('net_name', type=str, help='Name of Sumo Network')
     parser.add_argument('model_dir', type=str, help='Directory to saved model')
+    parser.add_argument('--batch_size', '-b', type=int,
+                        help='Evaluation batch size')
     parser.add_argument('--val_split', '-v', type=float, default=.2,
                         help='Data proportion to use for validation')
     parser.add_argument('--seed', '-s', type=int, help='Random seed',
@@ -163,6 +167,7 @@ if __name__ == '__main__':
 
     main(args.net_name,
          args.model_dir,
+         batch_size=args.batch_size,
          val_split_proportion=args.val_split,
          seed=args.seed,
          )
