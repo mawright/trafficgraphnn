@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Fri Jul 20 14:58:02 2018
-
-@author: simon
+Code for extracting light timing info (deprecated)
 """
 
 
