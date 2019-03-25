@@ -25,6 +25,7 @@ class BatchMultigraphAttention(Layer):
                  kernel_constraint=None,
                  bias_constraint=None,
                  attn_kernel_constraint=None,
+                 num_edge_types=None,
                  **kwargs):
         if attn_heads_reduction not in {'concat', 'average'}:
             raise ValueError('Possible reduction methods: concat, average')
@@ -208,7 +209,6 @@ class BatchMultigraphAttention(Layer):
         config = {
             'F_': self.F_,
             'attn_heads': self.attn_heads,
-            'num_edge_types': self.num_edge_types,
             'attn_heads_reduction': self.attn_heads_reduction,
             'attn_dropout': self.attn_dropout,
             'feature_dropout': self.feature_dropout,
