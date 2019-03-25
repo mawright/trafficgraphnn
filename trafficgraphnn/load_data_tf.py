@@ -1,6 +1,5 @@
 import logging
 import os
-import time
 
 import tensorflow as tf
 import numpy as np
@@ -185,6 +184,7 @@ class TFBatcher(object):
                 filenames.append(entry)
             elif os.path.isdir(entry):
                 filenames.extend(get_preprocessed_filenames(entry))
+        filenames.sort()
         self.batch_size = batch_size
         self.window_size = window_size
         self.average_interval = average_interval
