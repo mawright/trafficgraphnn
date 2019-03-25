@@ -381,14 +381,13 @@ class PredictEvalFunction(object):
             i += sublist_len
 
 
-def predict_eval_tf(model, callbacks, batch_generator):
+def predict_eval_tf(model, write_dir, batch_generator):
     if not hasattr(model, 'predict_eval_function'):
         func = PredictEvalFunction(model,
                                    [batch_generator.t, batch_generator.lanes])
     else:
         func = model.predict_eval_function
-    model_write_dir = get_logging_dir(callbacks)
-    result_file = os.path.join(model_write_dir, 'results.hdf')
+    result_file = os.path.join(write_dir, 'results.hdf')
 
     val_logs = defaultdict(list)
 
@@ -419,7 +418,7 @@ def predict_eval_tf(model, callbacks, batch_generator):
     log_str = 'Metrics on validation set:\n' + '\n'.join(
         '{}: {}'.format(k, v) for k, v in mean_metrics.items())
     _logger.info(log_str)
-    with open(os.path.join(model_write_dir, 'metrics.json'), 'w') as f:
+    with open(os.path.join(write_dir, 'metrics.json'), 'w') as f:
         json.dump(mean_metrics, f)
 
 

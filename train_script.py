@@ -171,12 +171,13 @@ def main(
     # record hyperparameters
     hyperparams = dict(
         net_name=net_name, A_name_list=A_name_list,
+        x_feature_subset=x_feature_subset, y_feature_subset=y_feature_subset,
         val_split_proportion=val_split_proportion,
         loss_function=loss_function, batch_size=batch_size,
         time_window=time_window, average_interval=average_interval,
         epochs=epochs, attn_dim=attn_dim, attn_depth=attn_depth,
         attn_residual_connection=attn_residual_connection,
-        rnn_dim=rnn_dim, stateful_rnn=stateful_rnn,
+        attn_heads=attn_heads, rnn_dim=rnn_dim, stateful_rnn=stateful_rnn,
         dense_dim=dense_dim, dropout_rate=dropout_rate,
         attn_dropout=attn_dropout, seed=seed, num_gpus=num_gpus)
     logdir = get_logging_dir(callback_list)
@@ -205,7 +206,7 @@ def main(
         fit_loop_tf(model, callback_list, batch_gen, epochs,
                     per_step_metrics=per_step_metrics)
 
-        predict_eval_tf(model, callback_list, batch_gen)
+        predict_eval_tf(model, write_dir, batch_gen)
 
         if hasattr(model, 'history'):
             return model.history #pylint: disable=no-member
