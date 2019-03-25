@@ -17,6 +17,7 @@ from keras.callbacks import (BaseLogger, Callback, CallbackList, CSVLogger,
                              EarlyStopping, History, ModelCheckpoint,
                              ProgbarLogger, ReduceLROnPlateau, TensorBoard,
                              TerminateOnNaN)
+from trafficgraphnn.visualization import plot_results_for_file
 from trafficgraphnn.utils import col_type, iterfy
 
 _logger = logging.getLogger(__name__)
@@ -381,7 +382,7 @@ class PredictEvalFunction(object):
             i += sublist_len
 
 
-def predict_eval_tf(model, write_dir, batch_generator):
+def predict_eval_tf(model, write_dir, batch_generator, plot_results=True):
     if not hasattr(model, 'predict_eval_function'):
         func = PredictEvalFunction(model,
                                    [batch_generator.t, batch_generator.lanes])
@@ -420,6 +421,9 @@ def predict_eval_tf(model, write_dir, batch_generator):
     _logger.info(log_str)
     with open(os.path.join(write_dir, 'metrics.json'), 'w') as f:
         json.dump(mean_metrics, f)
+
+    if plot_results:
+        plot_results_for_file(result_file)
 
 
 def _df(data, lane_list, timestep_list, colnames):

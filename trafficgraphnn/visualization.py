@@ -3,8 +3,6 @@ Code for visualizations.
 """
 import os
 import re
-import multiprocessing
-from itertools import repeat
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -25,12 +23,14 @@ def plot_results_for_file(filename):
         prefixes = prefixes_in_store(store)
 
         for prefix in prefixes:
+            os.makedirs(os.path.join(fig_dir, 'queue_estimate', prefix),
+                        exist_ok=True)
+            os.makedirs(os.path.join(fig_dir, 'vehseen_estimate', prefix),
+                        exist_ok=True)
             lanes = store[prefix + '/X'].index.get_level_values('lane').unique()
 
-    with multiprocessing.Pool() as pool:
-        pool.starmap(_plot_for_lane,
-                        zip(repeat(filename), repeat(fig_dir), repeat(prefix),
-                            lanes))
+            for lane in lanes:
+                _plot_for_lane(filename ,fig_dir, prefix, lane)
 
 
 def prefixes_in_store(store):
@@ -60,15 +60,17 @@ def _plot_for_lane(store_filename, output_dir, prefix, lane_id):
 
     fig, ax = lane_queue_liu_vs_nn(liu_series, max_jam_series,
                                     predicted_max_jamseries)
-    fig.savefig(os.path.join(output_dir, 'queue_estimate',
+    fig.savefig(os.path.join(output_dir, 'queue_estimate', prefix,
                              '{}.eps'.format(lane_id)),
                 bbox_inches='tight')
+    plt.close(fig)
 
     fig, ax = lane_nvehseen_plot(green_series, vehseen_series,
                                  predicted_vehseen_series)
-    fig.savefig(os.path.join(output_dir, 'vehseen_estimate',
+    fig.savefig(os.path.join(output_dir, 'vehseen_estimate', prefix,
                              '{}.eps'.format(lane_id)),
                 bbox_inches='tight')
+    plt.close(fig)
 
 
 def lane_queue_liu_vs_nn(liu_series, max_jam_series, predicted_series):
@@ -97,11 +99,14 @@ def lane_nvehseen_plot(true_series, predicted_series, green_series=None):
 
     # color green and red lights
     if green_series is not None:
-        ax.axvspan(green_series.index[0], green_series.index[-1],
-                alpha=0.5, color='red') # red background
-        green_phases = green_phase_start_ends_from_lane_light_df(green_series)
-        for phase in green_phases:
-            ax.axvspan(phase[0], phase[1], alpha=0.5, color='green')
+        try:
+            green_phases = green_phase_start_ends_from_lane_light_df(green_series)
+            ax.axvspan(green_series.index[0], green_series.index[-1],
+                    alpha=0.5, color='red') # red background
+            for phase in green_phases:
+                ax.axvspan(phase[0], phase[1], alpha=0.5, color='green')
+        except IndexError: # the light never changes
+            pass
 
     ax.plot(true_series, label='True')
     ax.plot(predicted_series, label='Prediction')
