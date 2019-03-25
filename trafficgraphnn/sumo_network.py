@@ -54,6 +54,10 @@ class SumoNetwork(object):
 
         self.reset_graph()
 
+    @property
+    def net_dir(self):
+        return os.path.dirname(self.netfile)
+
     @classmethod
     def from_gen_config(
         cls, config_gen, lanewise=True, undirected_graph=False,
