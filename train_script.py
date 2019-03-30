@@ -32,7 +32,9 @@ def main(
     A_name_list=['A_downstream',
                  'A_upstream',
                  'A_neighbors'],
-    val_split_proportion=.2,
+    run_name=None,
+    val_split_proportion=.1,
+    test_split_proportion=.1,
     loss_function='mse',
     batch_size=4,
     time_window=150,
@@ -166,7 +168,8 @@ def main(
     else:
         do_validation = False
 
-    callback_list = make_callbacks(model, write_dir, do_validation, base_model)
+    callback_list = make_callbacks(model, write_dir, do_validation, run_name,
+                                   base_model)
 
     # record hyperparameters
     hyperparams = dict(
@@ -214,14 +217,17 @@ def main(
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('net_name', type=str, help='Name of Sumo Network')
+    parser.add_argument('run_name', type=str, help='Name for this training run.')
     parser.add_argument('--A_downstream', '-Adown', action='store_true',
                         help='Use the downstream-lane adjacency matrix.')
     parser.add_argument('--A_upstream', '-Aup', action='store_true',
                         help='Use the downstream-lane adjacency matrix.')
     parser.add_argument('--A_neighbors', '-Aneigh', action='store_true',
                         help='Use the neighboring-lane adjacency matrix.')
-    parser.add_argument('--val_split', '-v', type=float, default=.2,
+    parser.add_argument('--val_split', '-v', type=float, default=.1,
                         help='Data proportion to use for validation')
+    parser.add_argument('--test_split', '-t', type=float, default=.1,
+                        help='Data proportion to use for test holdout set')
     parser.add_argument('--loss_function', '-l', type=str, default='mse',
                         help='Training loss function. '
                              'Valid: "mse", "mae", "huber". Default: mse')
@@ -270,7 +276,9 @@ if __name__ == '__main__':
 
     main(args.net_name,
          A_name_list,
+         run_name=args.run_name,
          val_split_proportion=args.val_split,
+         test_split_proportion=args.test_split,
          loss_function=args.loss_function,
          batch_size=args.batch_size,
          time_window=args.time_window,

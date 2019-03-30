@@ -85,17 +85,18 @@ class MakeSetOpsCallback(Callback):
 
 
 def make_callbacks(model, model_save_dir, do_validation=False,
-                   base_model=None):
-    timestamp = '{:%Y-%m-%d_%H:%M:%S}'.format(datetime.datetime.now())
+                   run_name=None, base_model=None):
+    if run_name is None:
+        run_name = '{:%Y-%m-%d_%H:%M:%S}'.format(datetime.datetime.now())
     callback_list = CallbackList()
     callback_list.append(BaseLogger())
     callback_list.append(TerminateOnNaN())
     callback_list.append(CSVLogger(os.path.join(model_save_dir,
-                                                timestamp, 'log.csv')))
+                                                run_name, 'log.csv')))
     callback_list.append(EarlyStopping(patience=20, restore_best_weights=True))
     callback_list.append(
         TensorBoard(log_dir=os.path.join(
-            model_save_dir, 'logs', timestamp), update_freq=10
+            model_save_dir, 'logs', run_name), update_freq=10
             ))
     history = History()
     callback_list.append(history)
@@ -113,7 +114,7 @@ def make_callbacks(model, model_save_dir, do_validation=False,
     filename = filename + add_str
     filename = filename + '.hdf5'
     callback_list.append(ModelCheckpoint(os.path.join(model_save_dir,
-                                                      timestamp, filename),
+                                                      run_name, filename),
                                          save_best_only=True,
                                          mode='min'))
     callback_list.append(ReduceLROnPlateau(verbose=1, cooldown=25))
@@ -393,7 +394,7 @@ def predict_eval_tf(model, write_dir, batch_generator, plot_results=True):
     val_logs = defaultdict(list)
 
     with pd.HDFStore(result_file, 'w') as result_store:
-        for batch in batch_generator.val_batches:
+        for batch in batch_generator.test_batches:
             filenames = [os.path.basename(f) for f in batch.filenames]
             filenums = [os.path.splitext(f)[0] for f in filenames]
             model.reset_states()

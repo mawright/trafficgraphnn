@@ -168,7 +168,8 @@ class TFBatcher(object):
                  batch_size,
                  window_size,
                  average_interval=None,
-                 val_proportion=.2,
+                 val_proportion=.1,
+                 test_proportion=.1,
                  shuffle=True,
                  A_name_list=['A_downstream',
                               'A_upstream',
@@ -195,12 +196,15 @@ class TFBatcher(object):
         self.y_feature_subset = y_feature_subset
         self.per_cycle_features = per_cycle_features
 
-        num_training = int(len(filenames) * val_proportion)
+        num_validation = int(len(filenames) * val_proportion)
+        num_test = int(len(filenames) * test_proportion)
 
-        self.train_files = filenames[:-num_training]
+        self.train_files = filenames[:-(num_validation+num_test)]
         self.train_file_batches = self._split_batches(self.train_files)
-        self.val_files = filenames[-num_training:]
-        self.val_file_batches = self._split_batches(self.val_files)
+        val_files = filenames[-(num_validation+num_test):-num_test]
+        self.val_file_batches = self._split_batches(val_files)
+        test_files = filenames[-num_test:]
+        self.test_file_batches = self._split_batches(test_files)
 
         self.filename_ph = tf.placeholder(tf.string, [None], 'filenames')
 
@@ -216,6 +220,8 @@ class TFBatcher(object):
         self.init_initializable_iterator()
         self.val_batches = [TFBatch(files, self.filename_ph, self.init_op)
                             for files in self.val_file_batches]
+        self.test_batches = [TFBatch(files, self.filename_ph, self.init_op)
+                             for files in self.test_file_batches]
 
     def _split_batches(self, filename_list):
         return [filename_list[i:i+self.batch_size] for i
