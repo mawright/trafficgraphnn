@@ -5,4 +5,3 @@ from .reshape_layers import (ReshapeFoldInLanes, ReshapeForLSTM,
 from .time_distributed_multi_input import TimeDistributedMultiInput
 
 from .modified_thirdparty.causal_attention_decoder import DenseCausalAttention
-from .modified_thirdparty.attention_decoder import AttentionDecoder
