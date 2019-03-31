@@ -399,6 +399,11 @@ def predict_eval_tf(model, write_dir, batch_generator, plot_results=True):
     result_file = os.path.join(write_dir, 'results.hdf')
 
     test_logs = defaultdict(list)
+    if 'liu_estimated_veh' in batch_generator.x_feature_subset:
+        eval_liu = True
+        liu_index = batch_generator.x_feature_subset.index('liu_estimated_veh')
+        maxjam_index = batch_generator.y_feature_subset.index(
+            'e2_0/maxJamLengthInVehicles')
 
     with pd.HDFStore(result_file, 'w') as result_store:
         for batch in batch_generator.test_batches:
@@ -418,6 +423,16 @@ def predict_eval_tf(model, write_dir, batch_generator, plot_results=True):
                     logs = test_named_logs(model, metrics)
                     for k, v in logs.items():
                         test_logs[k].append(v)
+                    if eval_liu:
+                        liu = out['inputs'].X[...,liu_index]
+                        predicted = out['targets'][maxjam_index]
+                        print(liu.shape)
+                        print(predicted.shape)
+                        nonpad = predicted > 0
+                        if nonpad.sum() > 0:
+                            liu_mae = np.mean(np.abs(predicted[nonpad]
+                                                     - liu[nonpad]))
+                            test_logs['test_liu_mae'].append(liu_mae)
 
                 except tf.errors.OutOfRangeError:
                     __sort_store_dfs(result_store, filenums)
