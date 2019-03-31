@@ -26,7 +26,7 @@ def main(
     net_name,
     model_dir,
     batch_size=None,
-    val_split_proportion=.2,
+    test_split_proportion=.1,
     seed=123,
 ):
 
@@ -71,7 +71,8 @@ def main(
                               batch_size,
                               hparams['time_window'],
                               average_interval=hparams['average_interval'],
-                              val_proportion=val_split_proportion,
+                              val_proportion=hparams['val_split_proportion'],
+                              test_proportion=test_split_proportion,
                               shuffle=False,
                               A_name_list=hparams['A_name_list'],
                               x_feature_subset=x_feature_subset,
@@ -159,8 +160,8 @@ if __name__ == '__main__':
     parser.add_argument('model_dir', type=str, help='Directory to saved model')
     parser.add_argument('--batch_size', '-b', type=int,
                         help='Evaluation batch size')
-    parser.add_argument('--val_split', '-v', type=float, default=.2,
-                        help='Data proportion to use for validation')
+    parser.add_argument('--test_split', '-t', type=float, default=.1,
+                        help='Data proportion to use for testing')
     parser.add_argument('--seed', '-s', type=int, help='Random seed',
                         default=123)
     args = parser.parse_args()
@@ -168,6 +169,6 @@ if __name__ == '__main__':
     main(args.net_name,
          args.model_dir,
          batch_size=args.batch_size,
-         val_split_proportion=args.val_split,
+         test_split_proportion=args.test_split,
          seed=args.seed,
          )

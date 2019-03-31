@@ -177,6 +177,7 @@ def main(
         net_name=net_name, A_name_list=A_name_list,
         x_feature_subset=x_feature_subset, y_feature_subset=y_feature_subset,
         val_split_proportion=val_split_proportion,
+        test_split_proportion=test_split_proportion,
         loss_function=loss_function, batch_size=batch_size,
         time_window=time_window, average_interval=average_interval,
         epochs=epochs, attn_dim=attn_dim, attn_depth=attn_depth,
