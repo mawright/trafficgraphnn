@@ -195,6 +195,13 @@ def val_named_logs(model, logs):
     return result
 
 
+def test_named_logs(model, logs):
+    result = {}
+    for metric, l in zip(model.metrics_names, logs):
+        result['test_' + metric] = l
+    return result
+
+
 def mean_logs(model, logs):
     result = {}
     if hasattr(logs, 'keys'):
@@ -391,7 +398,7 @@ def predict_eval_tf(model, write_dir, batch_generator, plot_results=True):
         func = model.predict_eval_function
     result_file = os.path.join(write_dir, 'results.hdf')
 
-    val_logs = defaultdict(list)
+    test_logs = defaultdict(list)
 
     with pd.HDFStore(result_file, 'w') as result_store:
         for batch in batch_generator.test_batches:
@@ -408,16 +415,16 @@ def predict_eval_tf(model, write_dir, batch_generator, plot_results=True):
                                      batch_generator.y_feature_subset)
                     metrics = out['metrics']
 
-                    logs = val_named_logs(model, metrics)
+                    logs = test_named_logs(model, metrics)
                     for k, v in logs.items():
-                        val_logs[k].append(v)
+                        test_logs[k].append(v)
 
                 except tf.errors.OutOfRangeError:
                     __sort_store_dfs(result_store, filenums)
                     break
 
-    mean_metrics = {k: np.mean(v).tolist() for k, v in val_logs.items()}
-    log_str = 'Metrics on validation set:\n' + '\n'.join(
+    mean_metrics = {k: np.mean(v).tolist() for k, v in test_logs.items()}
+    log_str = 'Metrics on test set:\n' + '\n'.join(
         '{}: {}'.format(k, v) for k, v in mean_metrics.items())
     _logger.info(log_str)
     with open(os.path.join(write_dir, 'metrics.json'), 'w') as f:
