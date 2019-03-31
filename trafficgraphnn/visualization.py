@@ -20,7 +20,7 @@ def get_figure_dir(results_filename):
 
 def plot_results_for_file(filename):
     fig_dir = get_figure_dir(filename)
-    queue = multiprocessing.Queue()
+    queue = multiprocessing.Queue(2*os.cpu_count())
     pool = multiprocessing.Pool(initializer=_figwriter_proc, initargs=(queue,))
     with pd.HDFStore(filename, 'r') as store:
         prefixes = prefixes_in_store(store)
