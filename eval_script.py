@@ -94,15 +94,15 @@ def main(
     if loss_function.lower() == 'mse':
         losses = ['mse', negative_masked_mse]
         metrics = [negative_masked_mae, negative_masked_huber,
-                negative_masked_mape]
+                   negative_masked_mape]
     elif loss_function.lower() == 'mae':
         losses = ['mae', negative_masked_mae]
         metrics = [negative_masked_mse, negative_masked_huber,
-                negative_masked_mape]
+                   negative_masked_mape]
     elif loss_function.lower() == 'huber':
         losses = [huber, negative_masked_huber]
         metrics = [negative_masked_mse, negative_masked_mae,
-                negative_masked_mape]
+                   negative_masked_mape]
 
     # X dimensions: timesteps x lanes x feature dim
     X_in = Input(batch_shape=(None, None, num_lanes, len(x_feature_subset)),
