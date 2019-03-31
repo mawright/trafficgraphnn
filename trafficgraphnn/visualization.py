@@ -3,6 +3,7 @@ Code for visualizations.
 """
 import os
 import re
+import multiprocessing
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -19,6 +20,8 @@ def get_figure_dir(results_filename):
 
 def plot_results_for_file(filename):
     fig_dir = get_figure_dir(filename)
+    queue = multiprocessing.Queue()
+    pool = multiprocessing.Pool(initializer=_figwriter_proc, initargs=(queue,))
     with pd.HDFStore(filename, 'r') as store:
         prefixes = prefixes_in_store(store)
 
@@ -30,7 +33,14 @@ def plot_results_for_file(filename):
             lanes = store[prefix + '/X'].index.get_level_values('lane').unique()
 
             for lane in lanes:
-                _plot_for_lane(filename, fig_dir, prefix, lane)
+                data = _read_for_lane(store, prefix, lane)
+                data = list(data) + [fig_dir, prefix, lane]
+                queue.put(tuple(data))
+
+    for _ in range(pool._processes):
+        queue.put('DONE')
+    pool.close()
+    pool.join()
 
 
 def shared_prefixes_in_stores(stores):
@@ -77,25 +87,39 @@ def prefixes_in_store(store):
     return sorted(list(set(prefixes)))
 
 
-def _plot_for_lane(store_filename, output_dir, prefix, lane_id):
-    with pd.HDFStore(store_filename, 'r') as store:
-        liu_series = (store[prefix + '/X'].loc[:, 'liu_estimated_veh']
-                                          .xs(lane_id, level='lane'))
-        max_jam_series = (store[prefix + '/Y']
-                          .loc[:, 'e2_0/maxJamLengthInVehicles']
-                          .xs(lane_id, level='lane'))
-        predicted_max_jamseries = (store[prefix + '/Yhat']
-                                  .loc[:, 'e2_0/maxJamLengthInVehicles']
-                                  .xs(lane_id, level='lane'))
+def _read_for_lane(store, prefix, lane_id):
+    liu_series = (store[prefix + '/X'].loc[:, 'liu_estimated_veh']
+                                        .xs(lane_id, level='lane'))
+    max_jam_series = (store[prefix + '/Y']
+                        .loc[:, 'e2_0/maxJamLengthInVehicles']
+                        .xs(lane_id, level='lane'))
+    predicted_max_jamseries = (store[prefix + '/Yhat']
+                                .loc[:, 'e2_0/maxJamLengthInVehicles']
+                                .xs(lane_id, level='lane'))
 
-        green_series = (store[prefix + '/X'].loc[:, 'green']
+    green_series = (store[prefix + '/X'].loc[:, 'green']
+                                        .xs(lane_id, level='lane'))
+    vehseen_series = (store[prefix + '/Y'].loc[:, 'e2_0/nVehSeen']
                                             .xs(lane_id, level='lane'))
-        vehseen_series = (store[prefix + '/Y'].loc[:, 'e2_0/nVehSeen']
-                                              .xs(lane_id, level='lane'))
-        predicted_vehseen_series = (store[prefix + '/Yhat']
-                                    .loc[:, 'e2_0/nVehSeen']
-                                    .xs(lane_id, level='lane'))
+    predicted_vehseen_series = (store[prefix + '/Yhat']
+                                .loc[:, 'e2_0/nVehSeen']
+                                .xs(lane_id, level='lane'))
 
+    return (liu_series, max_jam_series, predicted_max_jamseries, green_series,
+            vehseen_series, predicted_vehseen_series)
+
+
+def _figwriter_proc(queue):
+    while True:
+        data = queue.get()
+        if data == 'DONE':
+            return
+        _writefigs(*data)
+
+
+def _writefigs(liu_series, max_jam_series, predicted_max_jamseries,
+               green_series, vehseen_series, predicted_vehseen_series,
+               output_dir, prefix, lane_id):
     fig, _ = lane_queue_liu_vs_nn(liu_series, max_jam_series,
                                     predicted_max_jamseries)
     fig.savefig(os.path.join(output_dir, 'queue_estimate', prefix,
