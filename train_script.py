@@ -161,6 +161,7 @@ def main(
                   metrics=metrics,
                   target_tensors=Ytens,
                   )
+    model.summary(print_fn=_logger.info)
 
     verbose = 1
     if val_split_proportion > 0:
