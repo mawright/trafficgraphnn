@@ -40,6 +40,7 @@ def main(
     time_window=150,
     average_interval=None,
     epochs=50,
+    no_liu=False,
     attn_dim=64,
     attn_heads=4,
     attn_depth=2,
@@ -73,6 +74,8 @@ def main(
                         'green']
     y_feature_subset = ['e2_0/nVehSeen',
                         'e2_0/maxJamLengthInVehicles']
+    if no_liu:
+        x_feature_subset.remove('liu_estimated_veh')
 
     write_dir = os.path.join(net_dir, 'models')
     if not os.path.isdir(write_dir):
@@ -174,7 +177,7 @@ def main(
 
     # record hyperparameters
     hyperparams = dict(
-        net_name=net_name, A_name_list=A_name_list,
+        net_name=net_name, A_name_list=A_name_list, no_liu=no_liu,
         x_feature_subset=x_feature_subset, y_feature_subset=y_feature_subset,
         val_split_proportion=val_split_proportion,
         test_split_proportion=test_split_proportion,
@@ -241,6 +244,9 @@ if __name__ == '__main__':
                         help='Hard averaging downsampling interval (s)')
     parser.add_argument('--epochs', '-e', type=int, default=30,
                         help='Number of training epochs.')
+    parser.add_argument('--no_liu', '-nl', action='store_true',
+                        help='Set to not include the Liu estimate in the X '
+                        'features.')
     parser.add_argument('--attn_dim', type=int, default=64,
                         help='Dimensionality of attentional embeddings')
     parser.add_argument('--attn_heads', type=int, default=4,
@@ -286,6 +292,7 @@ if __name__ == '__main__':
          time_window=args.time_window,
          average_interval=args.average_interval,
          epochs=args.epochs,
+         no_liu=args.no_liu,
          attn_dim=args.attn_dim,
          attn_heads=args.attn_heads,
          attn_depth=args.attn_depth,
