@@ -88,8 +88,11 @@ def prefixes_in_store(store):
 
 
 def _read_for_lane(store, prefix, lane_id):
-    liu_series = (store[prefix + '/X'].loc[:, 'liu_estimated_veh']
-                                        .xs(lane_id, level='lane'))
+    try:
+        liu_series = (store[prefix + '/X'].loc[:, 'liu_estimated_veh']
+                                            .xs(lane_id, level='lane'))
+    except KeyError:
+        liu_series = None
     max_jam_series = (store[prefix + '/Y']
                         .loc[:, 'e2_0/maxJamLengthInVehicles']
                         .xs(lane_id, level='lane'))
@@ -99,11 +102,15 @@ def _read_for_lane(store, prefix, lane_id):
 
     green_series = (store[prefix + '/X'].loc[:, 'green']
                                         .xs(lane_id, level='lane'))
-    vehseen_series = (store[prefix + '/Y'].loc[:, 'e2_0/nVehSeen']
-                                            .xs(lane_id, level='lane'))
-    predicted_vehseen_series = (store[prefix + '/Yhat']
-                                .loc[:, 'e2_0/nVehSeen']
-                                .xs(lane_id, level='lane'))
+    try:
+        vehseen_series = (store[prefix + '/Y'].loc[:, 'e2_0/nVehSeen']
+                                                .xs(lane_id, level='lane'))
+        predicted_vehseen_series = (store[prefix + '/Yhat']
+                                    .loc[:, 'e2_0/nVehSeen']
+                                    .xs(lane_id, level='lane'))
+    except KeyError:
+        vehseen_series = None
+        predicted_vehseen_series = None
 
     return (liu_series, max_jam_series, predicted_max_jamseries, green_series,
             vehseen_series, predicted_vehseen_series)
@@ -127,8 +134,8 @@ def _writefigs(liu_series, max_jam_series, predicted_max_jamseries,
                 bbox_inches='tight')
     plt.close(fig)
 
-    fig, _ = lane_nvehseen_plot(green_series, vehseen_series,
-                                 predicted_vehseen_series)
+    fig, _ = lane_nvehseen_plot(vehseen_series, predicted_vehseen_series,
+                                green_series)
     fig.savefig(os.path.join(output_dir, 'vehseen_estimate', prefix,
                              '{}.eps'.format(lane_id)),
                 bbox_inches='tight')
@@ -144,9 +151,10 @@ def lane_queue_liu_vs_nn(liu_series, max_jam_series, predicted_series):
                           .reset_index(drop=True, name='cycle'),
                           'k', label='True cycle queue')
 
-    ax.plot(liu_series.loc[non_pad_timesteps]
-                      .reset_index(drop=True, name='cycle'),
-            'b--', label='Physics-based estimate')
+    if liu_series is not None:
+        ax.plot(liu_series.loc[non_pad_timesteps]
+                        .reset_index(drop=True, name='cycle'),
+                'b--', label='Physics-based estimate')
     ax.plot(predicted_series.loc[non_pad_timesteps]
                             .reset_index(drop=True, name='cycle'),
             'r:', label='Neural-net estimate')
