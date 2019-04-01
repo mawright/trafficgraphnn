@@ -404,6 +404,8 @@ def predict_eval_tf(model, write_dir, batch_generator, plot_results=True):
         liu_index = batch_generator.x_feature_subset.index('liu_estimated_veh')
         maxjam_index = batch_generator.y_feature_subset.index(
             'e2_0/maxJamLengthInVehicles')
+    else:
+        eval_liu = False
 
     with pd.HDFStore(result_file, 'w') as result_store:
         for batch in batch_generator.test_batches:
