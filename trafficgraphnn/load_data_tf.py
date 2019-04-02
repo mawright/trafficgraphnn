@@ -270,7 +270,7 @@ class TFBatcher(object):
             self._flatten_A()
 
     def _flatten_A(self):
-        self.A = tf.reduce_max(self.A, 2, keepdims=True, name='A_flat')
+        self.A = tf.reduce_any(self.A, 2, keepdims=True, name='A_flat')
 
     @property
     def num_train_batches(self):
