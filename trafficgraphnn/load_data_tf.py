@@ -176,7 +176,8 @@ class TFBatcher(object):
                               'A_neighbors'],
                  x_feature_subset=x_feature_subset_default,
                  y_feature_subset=y_feature_subset_default,
-                 per_cycle_features=per_cycle_features_default):
+                 per_cycle_features=per_cycle_features_default,
+                 flatten_A=False):
 
         filenames_or_dirs = iterfy(filenames_or_dirs)
         filenames = []
@@ -195,6 +196,7 @@ class TFBatcher(object):
         self.x_feature_subset = x_feature_subset
         self.y_feature_subset = y_feature_subset
         self.per_cycle_features = per_cycle_features
+        self.flat_A = flatten_A
 
         num_validation = int(len(filenames) * val_proportion)
         num_test = int(len(filenames) * test_proportion)
@@ -263,6 +265,12 @@ class TFBatcher(object):
         self.lanes = tf.identity(self.tensor[4], name='lanes')
 
         self.Y_slices = tf.unstack(self.Y, axis=-1)
+
+        if self.flat_A:
+            self._flatten_A()
+
+    def _flatten_A(self):
+        self.A = tf.reduce_max(self.A, 2, keepdims=True, name='A_flat')
 
     @property
     def num_train_batches(self):

@@ -33,6 +33,7 @@ def main(
                  'A_upstream',
                  'A_neighbors'],
     run_name=None,
+    flatten_A=False,
     val_split_proportion=.1,
     test_split_proportion=.1,
     loss_function='mse',
@@ -90,6 +91,7 @@ def main(
                               A_name_list=A_name_list,
                               x_feature_subset=x_feature_subset,
                               y_feature_subset=y_feature_subset,
+                              flatten_A=flatten_A,
                               )
 
         Xtens = batch_gen.X
@@ -98,8 +100,12 @@ def main(
     # X dimensions: timesteps x lanes x feature dim
     X_in = Input(batch_shape=(None, None, num_lanes, len(x_feature_subset)),
                  name='X', tensor=Xtens)
-    # A dimensions: timesteps x lanes x lanes
-    A_in = Input(batch_shape=(None, None, len(A_name_list),
+    # A dimensions: timesteps x num edge types x lanes x lanes
+    if not flatten_A:
+        num_edge_types = len(A_name_list)
+    else:
+        num_edge_types = 1
+    A_in = Input(batch_shape=(None, None, num_edge_types,
                               num_lanes, num_lanes),
                  name='A', tensor=Atens)
 
@@ -179,6 +185,7 @@ def main(
     hyperparams = dict(
         net_name=net_name, A_name_list=A_name_list, no_liu=no_liu,
         x_feature_subset=x_feature_subset, y_feature_subset=y_feature_subset,
+        flatten_A=flatten_A,
         val_split_proportion=val_split_proportion,
         test_split_proportion=test_split_proportion,
         loss_function=loss_function, batch_size=batch_size,
@@ -229,6 +236,10 @@ if __name__ == '__main__':
                         help='Use the downstream-lane adjacency matrix.')
     parser.add_argument('--A_neighbors', '-Aneigh', action='store_true',
                         help='Use the neighboring-lane adjacency matrix.')
+    parser.add_argument('--flatten_A', action='store_true',
+                        help='Whether to flatten the A tensor by taking the '
+                        'max over the edge type dimension (reducing to a non- '
+                        'multigraph.')
     parser.add_argument('--val_split', '-v', type=float, default=.1,
                         help='Data proportion to use for validation')
     parser.add_argument('--test_split', '-t', type=float, default=.1,
@@ -285,6 +296,7 @@ if __name__ == '__main__':
     main(args.net_name,
          A_name_list,
          run_name=args.run_name,
+         flatten_A=args.flatten_A,
          val_split_proportion=args.val_split,
          test_split_proportion=args.test_split,
          loss_function=args.loss_function,

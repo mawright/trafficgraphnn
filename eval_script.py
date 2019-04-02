@@ -52,6 +52,7 @@ def main(
     attn_residual_connection = hparams.get('attn_residual_connection', False)
     dense_dim = hparams['dense_dim']
     stateful_rnn = hparams.get('stateful_rnn', True)
+    flatten_A = hparams.get('flatten_A', False)
     rnn_dim = hparams['rnn_dim']
     attn_heads = hparams.get('attn_heads', [dense_dim // attn_dim[0]]*3)
     if batch_size is None:
@@ -77,6 +78,7 @@ def main(
                               A_name_list=hparams['A_name_list'],
                               x_feature_subset=x_feature_subset,
                               y_feature_subset=y_feature_subset,
+                              flatten_A=flatten_A,
                               )
 
         Xtens = batch_gen.X
@@ -107,8 +109,12 @@ def main(
     # X dimensions: timesteps x lanes x feature dim
     X_in = Input(batch_shape=(None, None, num_lanes, len(x_feature_subset)),
                  name='X', tensor=Xtens)
-    # A dimensions: timesteps x lanes x lanes
-    A_in = Input(batch_shape=(None, None, len(A_name_list),
+    # A dimensions: timesteps x num edge types x lanes x lanes
+    if not flatten_A:
+        num_edge_types = len(A_name_list)
+    else:
+        num_edge_types = 1
+    A_in = Input(batch_shape=(None, None, num_edge_types,
                               num_lanes, num_lanes),
                  name='A', tensor=Atens)
 
