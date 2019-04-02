@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from trafficgraphnn.load_data import pad_value_for_feature
+from trafficgraphnn.utils import get_num_cpus
 from trafficgraphnn.preprocessing.io import \
     green_phase_start_ends_from_lane_light_df
 
@@ -20,7 +21,7 @@ def get_figure_dir(results_filename):
 
 def plot_results_for_file(filename):
     fig_dir = get_figure_dir(filename)
-    queue = multiprocessing.Queue(2*os.cpu_count())
+    queue = multiprocessing.Queue(2*get_num_cpus())
     pool = multiprocessing.Pool(initializer=_figwriter_proc, initargs=(queue,))
     with pd.HDFStore(filename, 'r') as store:
         prefixes = prefixes_in_store(store)

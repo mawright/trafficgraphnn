@@ -34,6 +34,14 @@ def get_edge_neighbors(edge):
     return edge.getIncoming(), edge.getOutgoing()
 
 
+def get_num_cpus():
+    """Get number of cpus available, either if on slurm or not"""
+    try:
+        return os.environ['SLURM_JOB_CPUS_PER_NODE']
+    except KeyError:
+        return os.cpu_count()
+
+
 def get_net_name(netfile):
     return os.path.basename(
         os.path.splitext(os.path.splitext(netfile)[0])[0])

@@ -11,7 +11,7 @@ from trafficgraphnn.load_data import (per_cycle_features_default,
                                       x_feature_subset_default,
                                       y_feature_subset_default)
 from trafficgraphnn.preprocessing.io import get_preprocessed_filenames
-from trafficgraphnn.utils import iterfy
+from trafficgraphnn.utils import iterfy, get_num_cpus
 
 _logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ def make_dataset(filename_ph,
                  num_parallel_calls=None):
 
     if num_parallel_calls is None:
-        num_parallel_calls = os.cpu_count()
+        num_parallel_calls = get_num_cpus()
 
     dataset = tf.data.Dataset.from_tensors(filename_ph)
 
