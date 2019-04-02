@@ -428,8 +428,6 @@ def predict_eval_tf(model, write_dir, batch_generator, plot_results=True):
                     if eval_liu:
                         liu = out['inputs'].X[...,liu_index]
                         predicted = out['targets'][maxjam_index]
-                        print(liu.shape)
-                        print(predicted.shape)
                         nonpad = predicted > 0
                         if nonpad.sum() > 0:
                             liu_mae = np.mean(np.abs(predicted[nonpad]
