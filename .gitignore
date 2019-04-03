@@ -127,6 +127,9 @@ run sumo-gui with simulation
 logs/
 *.egg-info
 
+# slurm logs
+*.out
+
 log.out*
 *.IdeaPad
 keras-gat/
