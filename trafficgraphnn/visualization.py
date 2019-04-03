@@ -21,8 +21,10 @@ def get_figure_dir(results_filename):
 
 def plot_results_for_file(filename):
     fig_dir = get_figure_dir(filename)
-    queue = multiprocessing.Queue(2*get_num_cpus())
-    pool = multiprocessing.Pool(initializer=_figwriter_proc, initargs=(queue,))
+    num_procs = get_num_cpus()
+    queue = multiprocessing.Queue(num_procs)
+    pool = multiprocessing.Pool(num_procs, initializer=_figwriter_proc,
+                                initargs=(queue,))
     with pd.HDFStore(filename, 'r') as store:
         prefixes = prefixes_in_store(store)
 
