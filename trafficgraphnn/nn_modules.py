@@ -36,7 +36,8 @@ def gat_single_A_encoder(X_tensor, A_tensor, attn_depth, attn_dims, num_heads,
 
 def gat_encoder(X_tensor, A_tensor, attn_dims, num_heads,
                 dropout_rate, attn_dropout_rate, attn_reduction='concat',
-                gat_activation='relu', residual_connection=False):
+                gat_activation='relu', dense_dim=None,
+                residual_connection=False):
     attn_dims, num_heads, dropout_rate, attn_dropout_rate, attn_reduction = map(
         iterfy, [attn_dims, num_heads, dropout_rate, attn_dropout_rate,
                  attn_reduction])
@@ -62,6 +63,12 @@ def gat_encoder(X_tensor, A_tensor, attn_dims, num_heads,
             X = X + out
         else:
             X = out
+        if dense_dim is not None:
+            out = TimeDistributed(Dense(dense_dim, activation=gat_activation))(X)
+            if residual_connection:
+                X = X + out
+            else:
+                X = out
     return X
 
 

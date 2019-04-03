@@ -53,6 +53,7 @@ def main(
     attn_dropout=0.,
     seed=123,
     per_step_metrics=False,
+    old_model=False,
     num_gpus=1,
 ):
 
@@ -112,35 +113,63 @@ def main(
     attn_dim = iterfy(attn_dim) * attn_depth
     attn_heads = iterfy(attn_heads) * attn_depth
 
-    def make_model(X_in, A_in):
-        X = gat_encoder(X_in, A_in, attn_dim, attn_heads,
-                        dropout_rate, attn_dropout, gat_activation='relu',
-                        residual_connection=attn_residual_connection)
+    if not old_model:
+        def make_model(X_in, A_in):
+            X = gat_encoder(X_in, A_in, attn_dim, attn_heads,
+                            dropout_rate, attn_dropout, gat_activation='relu',
+                            dense_dim=dense_dim,
+                            residual_connection=attn_residual_connection)
 
-        predense = TimeDistributed(Dropout(dropout_rate))(X)
+            if stateful_rnn:
+                reshape_batch_size = batch_size
+            else:
+                reshape_batch_size = None
+            reshaped_1 = ReshapeFoldInLanes(batch_size=reshape_batch_size)(X)
 
-        dense1 = TimeDistributed(Dense(dense_dim, activation='relu'))(predense)
+            encoded = rnn_encode(reshaped_1, [rnn_dim], 'GRU',
+                                stateful=stateful_rnn)
 
-        if stateful_rnn:
-            reshape_batch_size = batch_size
-        else:
-            reshape_batch_size = None
-        reshaped_1 = ReshapeFoldInLanes(batch_size=reshape_batch_size)(dense1)
+            decoded = rnn_attn_decode('GRU', rnn_dim, encoded,
+                                    stateful=stateful_rnn)
 
-        encoded = rnn_encode(reshaped_1, [rnn_dim], 'GRU',
-                             stateful=stateful_rnn)
+            reshaped_decoded = ReshapeUnfoldLanes(num_lanes)(decoded)
+            output = TimeDistributed(
+                Dense(len(y_feature_subset), activation='relu'))(reshaped_decoded)
 
-        decoded = rnn_attn_decode('GRU', rnn_dim, encoded,
-                                  stateful=stateful_rnn)
+            outputs = output_tensor_slices(output, y_feature_subset)
 
-        reshaped_decoded = ReshapeUnfoldLanes(num_lanes)(decoded)
-        output = TimeDistributed(
-            Dense(len(y_feature_subset), activation='relu'))(reshaped_decoded)
+            model = Model([X_in, A_in], outputs)
+            return model
+    else:
+        def make_model(X_in, A_in):
+            X = gat_encoder(X_in, A_in, attn_dim, attn_heads,
+                            dropout_rate, attn_dropout, gat_activation='relu',
+                            residual_connection=attn_residual_connection)
 
-        outputs = output_tensor_slices(output, y_feature_subset)
+            predense = TimeDistributed(Dropout(dropout_rate))(X)
 
-        model = Model([X_in, A_in], outputs)
-        return model
+            dense1 = TimeDistributed(Dense(dense_dim, activation='relu'))(predense)
+
+            if stateful_rnn:
+                reshape_batch_size = batch_size
+            else:
+                reshape_batch_size = None
+            reshaped_1 = ReshapeFoldInLanes(batch_size=reshape_batch_size)(dense1)
+
+            encoded = rnn_encode(reshaped_1, [rnn_dim], 'GRU',
+                                stateful=stateful_rnn)
+
+            decoded = rnn_attn_decode('GRU', rnn_dim, encoded,
+                                    stateful=stateful_rnn)
+
+            reshaped_decoded = ReshapeUnfoldLanes(num_lanes)(decoded)
+            output = TimeDistributed(
+                Dense(len(y_feature_subset), activation='relu'))(reshaped_decoded)
+
+            outputs = output_tensor_slices(output, y_feature_subset)
+
+            model = Model([X_in, A_in], outputs)
+            return model
 
     if num_gpus > 1:
         with tf.device('/cpu:0'):
@@ -281,6 +310,8 @@ if __name__ == '__main__':
     parser.add_argument('--per_step_metrics', action='store_true',
                         help='Set to record metrics per gradient step '
                              'instead of averaged over each simulation batch.')
+    parser.add_argument('--old_model', action='store_true',
+                        help='Use the old model without inter-GAT FC layers')
     parser.add_argument('--num_gpus', '-g', type=int, default=1,
                         help='Number of GPUs to use.')
     args = parser.parse_args()
@@ -316,5 +347,6 @@ if __name__ == '__main__':
          attn_dropout=args.attn_dropout,
          seed=args.seed,
          per_step_metrics=args.per_step_metrics,
+         old_model=args.old_model,
          num_gpus=args.num_gpus,
          )
