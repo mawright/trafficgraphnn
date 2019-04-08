@@ -50,6 +50,7 @@ def main(
     dropout_rate = hparams['dropout_rate']
     attn_dropout = hparams['attn_dropout']
     attn_residual_connection = hparams.get('attn_residual_connection', False)
+    gat_highway_connection = hparams.get('gat_highway_connection', False)
     dense_dim = hparams['dense_dim']
     stateful_rnn = hparams.get('stateful_rnn', True)
     flatten_A = hparams.get('flatten_A', False)
@@ -121,6 +122,7 @@ def main(
     def make_model(X_in, A_in):
         X = gat_encoder(X_in, A_in, attn_dim, attn_heads,
                         dropout_rate, attn_dropout, gat_activation='relu',
+                        gat_highway_connection=gat_highway_connection,
                         residual_connection=attn_residual_connection)
 
         predense = TimeDistributed(Dropout(dropout_rate))(X)
