@@ -88,8 +88,12 @@ class BatchMultigraphAttention(Layer):
             for h in range(self.attn_heads)]
 
         if self.use_bias:
+            if self.highway_connection:
+                bias_size = (self.F_ * (self.num_edge_types + 1),)
+            else:
+                bias_size = (self.F_ * self.num_edge_types,)
             self.biases = [
-                self.add_weight(shape=(self.F_ * self.num_edge_types,), # same bias for every node
+                self.add_weight(shape=bias_size, # same bias for every node
                                 initializer=self.bias_initializer,
                                 regularizer=self.bias_regularizer,
                                 constraint=self.bias_constraint,
@@ -175,7 +179,7 @@ class BatchMultigraphAttention(Layer):
             node_features = K.permute_dimensions(node_features, [0, 2, 1, 3])
             if self.highway_connection:
                 node_features = K.concatenate(
-                    [node_features, K.expand_dims(features, -2)], -1)
+                    [node_features, K.expand_dims(features, -2)], -2)
 
             shape = K.shape(node_features)
             node_features = K.reshape(node_features,
@@ -204,6 +208,8 @@ class BatchMultigraphAttention(Layer):
         assert len(input_shape) == 2
         X_shape = input_shape[0]
         num_edge_types = input_shape[1][1]
+        if self.highway_connection:
+            num_edge_types += 1
         assert input_shape[-1] is not None
         output_shape = list(X_shape)
         output_shape[-1] = self.output_dim * num_edge_types
@@ -216,6 +222,7 @@ class BatchMultigraphAttention(Layer):
         config = {
             'F_': self.F_,
             'attn_heads': self.attn_heads,
+            'highway_connection': self.highway_connection,
             'attn_heads_reduction': self.attn_heads_reduction,
             'attn_dropout': self.attn_dropout,
             'feature_dropout': self.feature_dropout,
