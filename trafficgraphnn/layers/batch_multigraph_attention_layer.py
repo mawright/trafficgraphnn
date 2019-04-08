@@ -165,16 +165,18 @@ class BatchMultigraphAttention(Layer):
 
             dropout = K.in_train_phase(dropout_lambda, softmax)
 
-            features = K.expand_dims(features, 1)
-            features = K.repeat_elements(features, self.num_edge_types, 1)
+            features_expanded = K.expand_dims(features, 1)
+            features_expanded = K.repeat_elements(features_expanded,
+                                                  self.num_edge_types, 1)
 
             # Linear combination with neighbors' features
-            node_features = batch_matmul(dropout, features) # (batch x E x N x F')
+            node_features = batch_matmul(dropout, features_expanded) # (batch x E x N x F')
 
             node_features = K.permute_dimensions(node_features, [0, 2, 1, 3])
             if self.highway_connection:
                 node_features = K.concatenate(
-                    [node_features, K.expand_dims(features, -1)], -1)
+                    [node_features, K.expand_dims(features, -2)], -1)
+
             shape = K.shape(node_features)
             node_features = K.reshape(node_features,
                                       K.concatenate([shape[:2],
