@@ -43,7 +43,7 @@ y_feature_subset_default = ['e2_0/nVehSeen',
                             'e2_0/maxJamLengthInVehicles']
 
 All_A_name_list = ['A_downstream', 'A_upstream', 'A_neighbors',
-                   'A_turn_movements', 'A_through_movements']
+                   'A_turn_movements', 'A_through_movements', 'A_eye']
 
 per_cycle_features_default = ['maxJamLengthInMeters',
                               'maxJamLengthInVehicles',
@@ -331,9 +331,16 @@ def read_from_file(
         A_df = store['A']
         lane_list = A_df.index
         num_lanes = len(lane_list)
-        A = np.stack([A_df[A_name] if A_name in All_A_name_list
-                      else np.zeros((num_lanes, num_lanes), dtype='bool')
-                      for A_name in A_name_list])
+
+        A = []
+        for A_name in A_name_list:
+            if A_name == 'A_eye':
+                A.append(np.eye(num_lanes, dtype=bool))
+            elif A_name in A_df:
+                A.append(A_df[A_name])
+            else:
+                A.append(np.zeros((num_lanes, num_lanes), dtype='bool'))
+        A = np.stack(A)
 
         X_df = store['X'].loc[:,x_feature_subset]
         X_df = X_df.fillna(pad_value_for_feature).astype(np.float32)

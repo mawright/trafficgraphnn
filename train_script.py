@@ -31,7 +31,8 @@ def main(
     net_name,
     A_name_list=['A_downstream',
                  'A_upstream',
-                 'A_neighbors'],
+                 'A_neighbors',
+                 'A_eye'],
     run_name=None,
     flatten_A=False,
     val_split_proportion=.1,
@@ -265,6 +266,8 @@ if __name__ == '__main__':
                         help='Use the downstream-lane adjacency matrix.')
     parser.add_argument('--A_neighbors', '-Aneigh', action='store_true',
                         help='Use the neighboring-lane adjacency matrix.')
+    parser.add_argument('--A_eye', '-Aeye', action='store_true',
+                        help='Use an identity adjacency matrix')
     parser.add_argument('--flatten_A', action='store_true',
                         help='Whether to flatten the A tensor by taking the '
                         'max over the edge type dimension (reducing to a non- '
@@ -323,6 +326,8 @@ if __name__ == '__main__':
         A_name_list.append('A_upstream')
     if args.A_neighbors:
         A_name_list.append('A_neighbors')
+    if args.A_eye:
+        A_name_list.append('A_eye')
 
     main(args.net_name,
          A_name_list,
