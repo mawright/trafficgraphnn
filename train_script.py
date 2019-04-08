@@ -31,8 +31,7 @@ def main(
     net_name,
     A_name_list=['A_downstream',
                  'A_upstream',
-                 'A_neighbors',
-                 'A_eye'],
+                 'A_neighbors'],
     run_name=None,
     flatten_A=False,
     val_split_proportion=.1,
@@ -47,6 +46,7 @@ def main(
     attn_heads=4,
     attn_depth=2,
     attn_residual_connection=False,
+    gat_highway_connection=False,
     rnn_dim=64,
     stateful_rnn=False,
     dense_dim=64,
@@ -119,6 +119,7 @@ def main(
             X = gat_encoder(X_in, A_in, attn_dim, attn_heads,
                             dropout_rate, attn_dropout, gat_activation='relu',
                             dense_dim=dense_dim,
+                            gat_highway_connection=gat_highway_connection,
                             residual_connection=attn_residual_connection)
 
             if stateful_rnn:
@@ -222,6 +223,7 @@ def main(
         time_window=time_window, average_interval=average_interval,
         epochs=epochs, attn_dim=attn_dim, attn_depth=attn_depth,
         attn_residual_connection=attn_residual_connection,
+        gat_highway_connection=gat_highway_connection,
         attn_heads=attn_heads, rnn_dim=rnn_dim, stateful_rnn=stateful_rnn,
         dense_dim=dense_dim, dropout_rate=dropout_rate,
         attn_dropout=attn_dropout, seed=seed, num_gpus=num_gpus)
@@ -298,6 +300,9 @@ if __name__ == '__main__':
                         help='Number of stacked attentional layers')
     parser.add_argument('--attn_residual_connection', action='store_true',
                         help='Use residual connections in the attenion encoders.')
+    parser.add_argument('--gat_highway_connection', '-hw', action='store_true',
+                        help='Use highway connection (identity adjacency matrix) '
+                        'in graph attention layer')
     parser.add_argument('--dense_dim', type=int, default=64,
                         help='Dimensionality of FC layers after attention ones')
     parser.add_argument('--rnn_dim', type=int, default=64,
@@ -345,6 +350,7 @@ if __name__ == '__main__':
          attn_heads=args.attn_heads,
          attn_depth=args.attn_depth,
          attn_residual_connection=args.attn_residual_connection,
+         gat_highway_connection=args.gat_highway_connection,
          dense_dim=args.dense_dim,
          rnn_dim=args.rnn_dim,
          stateful_rnn=args.stateful_rnn,

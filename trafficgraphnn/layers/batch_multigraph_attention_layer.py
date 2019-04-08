@@ -10,6 +10,7 @@ class BatchMultigraphAttention(Layer):
     def __init__(self,
                  F_,
                  attn_heads=1,
+                 highway_connection=False,
                  attn_heads_reduction='concat',  # {'concat', 'average'}
                  attn_dropout=0.5,
                  feature_dropout=0., # unused
@@ -32,6 +33,7 @@ class BatchMultigraphAttention(Layer):
 
         self.F_ = F_  # Number of output features (F' in the paper)
         self.attn_heads = attn_heads  # Number of attention heads (K in the paper)
+        self.highway_connection = highway_connection # add an edge type that embeds in the identity adjacency matrix
         self.attn_heads_reduction = attn_heads_reduction  # 'concat' or 'average' (Eq 5 and 6 in the paper)
         self.attn_dropout = attn_dropout  # Internal dropout rate for attention coefficients
         self.feature_dropout = feature_dropout # Dropout rate for node features
@@ -170,6 +172,9 @@ class BatchMultigraphAttention(Layer):
             node_features = batch_matmul(dropout, features) # (batch x E x N x F')
 
             node_features = K.permute_dimensions(node_features, [0, 2, 1, 3])
+            if self.highway_connection:
+                node_features = K.concatenate(
+                    [node_features, K.expand_dims(features, -1)], -1)
             shape = K.shape(node_features)
             node_features = K.reshape(node_features,
                                       K.concatenate([shape[:2],
