@@ -28,6 +28,7 @@ def main(
     batch_size=None,
     test_split_proportion=.1,
     seed=123,
+    no_plots=False,
 ):
 
     tf.set_random_seed(seed)
@@ -156,7 +157,7 @@ def main(
 
     model.load_weights(weights_filename)
 
-    predict_eval_tf(model, model_dir, batch_gen)
+    predict_eval_tf(model, model_dir, batch_gen, plot_results=not(no_plots))
 
 
 if __name__ == '__main__':
@@ -169,6 +170,8 @@ if __name__ == '__main__':
                         help='Data proportion to use for testing')
     parser.add_argument('--seed', '-s', type=int, help='Random seed',
                         default=123)
+    parser.add_argument('--no_plots', action='store_true',
+                        help='Whether to skip drawing results plots.')
     args = parser.parse_args()
 
     main(args.net_name,
@@ -176,4 +179,5 @@ if __name__ == '__main__':
          batch_size=args.batch_size,
          test_split_proportion=args.test_split,
          seed=args.seed,
+         no_plots=args.no_plots
          )
