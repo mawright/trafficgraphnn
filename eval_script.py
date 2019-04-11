@@ -122,24 +122,21 @@ def main(
     def make_model(X_in, A_in):
         X = gat_encoder(X_in, A_in, attn_dim, attn_heads,
                         dropout_rate, attn_dropout, gat_activation='relu',
+                        dense_dim=dense_dim,
                         gat_highway_connection=gat_highway_connection,
                         residual_connection=attn_residual_connection)
-
-        predense = TimeDistributed(Dropout(dropout_rate))(X)
-
-        dense1 = TimeDistributed(Dense(dense_dim, activation='relu'))(predense)
 
         if stateful_rnn:
             reshape_batch_size = batch_size
         else:
             reshape_batch_size = None
-        reshaped_1 = ReshapeFoldInLanes(batch_size=reshape_batch_size)(dense1)
+        reshaped_1 = ReshapeFoldInLanes(batch_size=reshape_batch_size)(X)
 
         encoded = rnn_encode(reshaped_1, [rnn_dim], 'GRU',
-                             stateful=stateful_rnn)
+                            stateful=stateful_rnn)
 
         decoded = rnn_attn_decode('GRU', rnn_dim, encoded,
-                                  stateful=stateful_rnn)
+                                stateful=stateful_rnn)
 
         reshaped_decoded = ReshapeUnfoldLanes(num_lanes)(decoded)
         output = TimeDistributed(
