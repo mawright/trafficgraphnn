@@ -133,14 +133,14 @@ def _writefigs(liu_series, max_jam_series, predicted_max_jamseries,
     fig, _ = lane_queue_liu_vs_nn(liu_series, max_jam_series,
                                     predicted_max_jamseries)
     fig.savefig(os.path.join(output_dir, 'queue_estimate', prefix,
-                             '{}.eps'.format(lane_id)),
+                             '{}.pdf'.format(lane_id)),
                 bbox_inches='tight')
     plt.close(fig)
 
     fig, _ = lane_nvehseen_plot(vehseen_series, predicted_vehseen_series,
                                 green_series)
     fig.savefig(os.path.join(output_dir, 'vehseen_estimate', prefix,
-                             '{}.eps'.format(lane_id)),
+                             '{}.pdf'.format(lane_id)),
                 bbox_inches='tight')
     plt.close(fig)
 
