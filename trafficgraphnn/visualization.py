@@ -69,7 +69,7 @@ def multi_file_queue_estimate_for_lane(stores, prefix, lane_id):
 
     ax.plot(liu_series.loc[non_pad_timesteps]
                       .reset_index(drop=True, name='cycle'),
-            'b--', label='Physics-based estimate')
+            'b--', label='PDE-based estimate')
 
     for store in stores:
         predicted = (store[prefix + '/Yhat']
@@ -157,7 +157,7 @@ def lane_queue_liu_vs_nn(liu_series, max_jam_series, predicted_series):
     if liu_series is not None:
         ax.plot(liu_series.loc[non_pad_timesteps]
                         .reset_index(drop=True, name='cycle'),
-                'b--', label='Physics-based estimate')
+                'b--', label='PDE-based estimate')
     ax.plot(predicted_series.loc[non_pad_timesteps]
                             .reset_index(drop=True, name='cycle'),
             'r:', label='Neural-net estimate')
