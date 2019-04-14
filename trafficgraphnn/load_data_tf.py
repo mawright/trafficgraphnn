@@ -1,17 +1,18 @@
 import logging
 import os
 
-import tensorflow as tf
 import numpy as np
-from keras import backend as K
+import tensorflow as tf
 
-from trafficgraphnn.load_data import (per_cycle_features_default,
-                                      pad_value_for_feature,
+from keras import backend as K
+from trafficgraphnn.load_data import (pad_value_for_feature,
+                                      per_cycle_features_default,
+                                      read_from_file,
                                       windowed_unpadded_batch_of_generators,
                                       x_feature_subset_default,
                                       y_feature_subset_default)
 from trafficgraphnn.preprocessing.io import get_preprocessed_filenames
-from trafficgraphnn.utils import iterfy, get_num_cpus
+from trafficgraphnn.utils import get_num_cpus, iterfy
 
 _logger = logging.getLogger(__name__)
 
@@ -46,6 +47,81 @@ class TFHandleBatch(object):
 
     def set_self_as_active(self, feed_dict):
         feed_dict[self.parent.handle] = self.handle
+
+
+def make_dataset_fast(filename_ph,
+                      batch_size,
+                      window_size,
+                      A_name_list=['A_downstream',
+                                  'A_upstream',
+                                  'A_neighbors'],
+                      x_feature_subset=x_feature_subset_default,
+                      y_feature_subset=y_feature_subset_default,
+                      per_cycle_features=per_cycle_features_default,
+                      average_interval=None,
+                      num_parallel_calls=None,
+                      max_time=None,
+                      gpu_prefetch=True):
+
+    if num_parallel_calls is None:
+        num_parallel_calls = get_num_cpus()
+
+    dataset = tf.data.Dataset.from_tensors(filename_ph)
+
+    def _read(filename):
+        return read_from_file(filename,
+                              A_name_list=A_name_list,
+                              x_feature_subset=x_feature_subset,
+                              y_feature_subset=y_feature_subset,
+                              max_time=max_time,
+                              return_t_and_lanenames=True)
+
+    dataset = dataset.map(lambda filename: tf.py_func(
+        _read, [filename],
+        [tf.bool, tf.float32, tf.float32, tf.float32, tf.string]))
+
+    def split_for_pad(A, X, Y, t, lanes):
+        X = tf.unstack(X, len(x_feature_subset), axis=-1)
+        Y = tf.unstack(Y, len(y_feature_subset), axis=-1)
+        return (A,
+                dict(zip(x_feature_subset, X)),
+                dict(zip(y_feature_subset, Y)),
+                t, lanes)
+
+    dataset = dataset.map(split_for_pad, num_parallel_calls)
+
+    xpad =  {x: pad_value_for_feature[x] for x in x_feature_subset}
+    ypad =  {y: pad_value_for_feature[y] for y in y_feature_subset}
+
+    if average_interval is not None and average_interval > 1:
+        dataset = dataset.map(
+            lambda A, X, Y, t, lanes:
+            average_over_interval(A, X, Y, average_interval, t, lanes,
+                                  x_feature_subset=x_feature_subset,
+                                  y_feature_subset=y_feature_subset,
+                                  per_cycle_features=per_cycle_features),
+            num_parallel_calls=num_parallel_calls)
+
+    dataset = dataset.padded_batch(
+        batch_size,
+        ((-1, -1, -1, -1), {x: (-1, -1) for x in x_feature_subset},
+                           {y: (-1, -1) for y in y_feature_subset},
+                           (-1,), (-1,)),
+        (False, xpad, ypad, 0., ''))
+
+    def stack_post_pad(A, X, Y, t, lanes):
+        X_stacked = tf.stack([X[x] for x in x_feature_subset], -1)
+        Y_stacked = tf.stack([Y[y] for y in y_feature_subset], -1)
+        return A, X_stacked, Y_stacked, t, lanes
+
+    dataset = dataset.map(stack_post_pad, num_parallel_calls=num_parallel_calls)
+
+    dataset = dataset.prefetch(1)
+    if gpu_prefetch:
+        dataset = dataset.apply(tf.data.experimental.prefetch_to_device(
+                                '/GPU:0'))
+
+    return dataset
 
 
 def make_dataset(filename_ph,
@@ -87,60 +163,22 @@ def make_dataset(filename_ph,
 
     dataset = dataset.flat_map(gen_op)
 
-    def split_for_pad(A, X, Y, t, lanes):
-        X = tf.unstack(X, axis=-1)
-        Y = tf.unstack(Y, axis=-1)
-        return (A,
-                dict(zip(x_feature_subset, X)),
-                dict(zip(y_feature_subset, Y)),
-                t, lanes)
-
-    dataset = dataset.map(split_for_pad, num_parallel_calls)
+    dataset = dataset.map(
+        lambda A, X, Y, t, lanes: split_for_pad(
+            A, X, Y, t, lanes, x_feature_subset=x_feature_subset,
+            y_feature_subset=y_feature_subset),
+        num_parallel_calls)
 
     xpad =  {x: pad_value_for_feature[x] for x in x_feature_subset}
     ypad =  {y: pad_value_for_feature[y] for y in y_feature_subset}
 
     if average_interval is not None and average_interval > 1:
-        def average_over_interval(A, X, Y, average_interval, t, lanes):
-            shape = tf.shape(X[x_feature_subset[0]])
-            num_timesteps = shape[0]
-            divided = num_timesteps / average_interval
-            num_intervals = tf.ceil(divided)
-            deficit = tf.cast(num_intervals * average_interval, tf.int32) - num_timesteps
-            padding = [[0, deficit], [0, 0]]
-
-            def pad_reshape_average(tensor_dict):
-                outputs = {}
-                for feature, tensor in tensor_dict.items():
-                    PAD_VALUE = pad_value_for_feature[feature]
-                    padded = tf.pad(tensor, padding, constant_values=PAD_VALUE)
-
-                    reshaped = tf.reshape(
-                        padded, [num_intervals, average_interval, shape[-1]])
-
-                    if feature in per_cycle_features:
-                        averaged = tf.reduce_max(reshaped, 1)
-                    else:
-                        averaged = tf.reduce_mean(reshaped, 1)
-                    outputs[feature] = averaged
-
-                return outputs
-
-            new_X = pad_reshape_average(X)
-            new_Y = pad_reshape_average(Y)
-
-            get_slice = tf.range(
-                0,
-                tf.cast(num_intervals * average_interval, tf.int32),
-                average_interval, dtype=tf.int32)
-
-            new_A = tf.gather(A, get_slice)
-            new_t = tf.gather(t, get_slice)
-
-            return new_A, new_X, new_Y, new_t, lanes
         dataset = dataset.map(
             lambda A, X, Y, t, lanes:
-            average_over_interval(A, X, Y, average_interval, t, lanes),
+            average_over_interval(A, X, Y, average_interval, t, lanes,
+                                  x_feature_subset=x_feature_subset,
+                                  y_feature_subset=y_feature_subset,
+                                  per_cycle_features=per_cycle_features),
             num_parallel_calls=num_parallel_calls)
 
     dataset = dataset.padded_batch(
@@ -162,6 +200,55 @@ def make_dataset(filename_ph,
     return dataset
 
 
+def average_over_interval(A, X, Y, average_interval, t, lanes,
+                          x_feature_subset, y_feature_subset,
+                          per_cycle_features):
+    shape = tf.shape(X[x_feature_subset[0]])
+    num_timesteps = shape[0]
+    divided = num_timesteps / average_interval
+    num_intervals = tf.ceil(divided)
+    deficit = tf.cast(num_intervals * average_interval, tf.int32) - num_timesteps
+    padding = [[0, deficit], [0, 0]]
+
+    def pad_reshape_average(tensor_dict):
+        outputs = {}
+        for feature, tensor in tensor_dict.items():
+            PAD_VALUE = pad_value_for_feature[feature]
+            padded = tf.pad(tensor, padding, constant_values=PAD_VALUE)
+
+            reshaped = tf.reshape(
+                padded, [num_intervals, average_interval, shape[-1]])
+
+            if feature in per_cycle_features:
+                averaged = tf.reduce_max(reshaped, 1)
+            else:
+                averaged = tf.reduce_mean(reshaped, 1)
+            outputs[feature] = averaged
+
+        return outputs
+
+    new_X = pad_reshape_average(X)
+    new_Y = pad_reshape_average(Y)
+
+    get_slice = tf.range(
+        0,
+        tf.cast(num_intervals * average_interval, tf.int32),
+        average_interval, dtype=tf.int32)
+
+    new_A = tf.gather(A, get_slice)
+    new_t = tf.gather(t, get_slice)
+
+    return new_A, new_X, new_Y, new_t, lanes
+
+
+def split_for_pad(A, X, Y, t, lanes, x_feature_subset, y_feature_subset):
+    X = tf.unstack(X, len(x_feature_subset), axis=-1)
+    Y = tf.unstack(Y, len(y_feature_subset), axis=-1)
+    return (A,
+            dict(zip(x_feature_subset, X)),
+            dict(zip(y_feature_subset, Y)),
+            t, lanes)
+
 class TFBatcher(object):
     def __init__(self,
                  filenames_or_dirs,
@@ -170,6 +257,7 @@ class TFBatcher(object):
                  average_interval=None,
                  val_proportion=.1,
                  test_proportion=.1,
+                 sub_batching=False,
                  shuffle=True,
                  A_name_list=['A_downstream',
                               'A_upstream',
@@ -177,7 +265,9 @@ class TFBatcher(object):
                  x_feature_subset=x_feature_subset_default,
                  y_feature_subset=y_feature_subset_default,
                  per_cycle_features=per_cycle_features_default,
-                 flatten_A=False):
+                 flatten_A=False,
+                 max_time=None,
+                 gpu_prefetch=True):
 
         filenames_or_dirs = iterfy(filenames_or_dirs)
         filenames = []
@@ -191,6 +281,7 @@ class TFBatcher(object):
         self.window_size = window_size
         self.average_interval = average_interval
         self.val_proportion = val_proportion
+        self.sub_batching = sub_batching
         self.shuffle_on_epoch = shuffle
         self.A_name_list = A_name_list
         self.x_feature_subset = x_feature_subset
@@ -202,32 +293,51 @@ class TFBatcher(object):
         num_test = int(len(filenames) * test_proportion)
 
         self.train_files = filenames[:-(num_validation+num_test)]
-        self.train_file_batches = self._split_batches(self.train_files)
-        val_files = filenames[-(num_validation+num_test):-num_test]
-        self.val_file_batches = self._split_batches(val_files)
-        test_files = filenames[-num_test:]
-        self.test_file_batches = self._split_batches(test_files)
+        self.val_files = filenames[-(num_validation+num_test):-num_test]
+        self.test_files = filenames[-num_test:]
 
         self.filename_ph = tf.placeholder(tf.string, [None], 'filenames')
 
-        self._tf_dataset = make_dataset(self.filename_ph,
-                                        batch_size,
-                                        window_size,
-                                        A_name_list,
-                                        x_feature_subset,
-                                        y_feature_subset,
-                                        per_cycle_features,
-                                        average_interval)
+        if sub_batching:
+            self._tf_dataset = make_dataset(self.filename_ph,
+                                            batch_size,
+                                            window_size,
+                                            A_name_list,
+                                            x_feature_subset,
+                                            y_feature_subset,
+                                            per_cycle_features,
+                                            average_interval)
+        else:
+            self._tf_dataset = make_dataset_fast(self.filename_ph,
+                                                 batch_size,
+                                                 window_size,
+                                                 A_name_list,
+                                                 x_feature_subset,
+                                                 y_feature_subset,
+                                                 per_cycle_features,
+                                                 average_interval,
+                                                 max_time=max_time,
+                                                 gpu_prefetch=gpu_prefetch)
 
+        self._make_batches()
         self.init_initializable_iterator()
+
+    def _make_batches(self):
+        self.train_file_batches = self._split_batches(self.train_files)
+        self.val_file_batches = self._split_batches(self.val_files)
+        self.test_file_batches = self._split_batches(self.test_files)
+
         self.val_batches = [TFBatch(files, self.filename_ph, self.init_op)
                             for files in self.val_file_batches]
         self.test_batches = [TFBatch(files, self.filename_ph, self.init_op)
-                             for files in self.test_file_batches]
+                                for files in self.test_file_batches]
 
     def _split_batches(self, filename_list):
-        return [filename_list[i:i+self.batch_size] for i
-                in range(0, len(filename_list), self.batch_size)]
+        if self.sub_batching:
+            return [filename_list[i:i+self.batch_size] for i
+                    in range(0, len(filename_list), self.batch_size)]
+        else:
+            return filename_list
 
     def shuffle(self):
         np.random.shuffle(self.train_files)

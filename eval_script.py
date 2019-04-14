@@ -54,6 +54,8 @@ def main(
     gat_highway_connection = hparams.get('gat_highway_connection', False)
     dense_dim = hparams['dense_dim']
     stateful_rnn = hparams.get('stateful_rnn', True)
+    max_time = hparams.get('max_time', None)
+    gpu_prefetch = hparams.get('gpu_prefetch', False)
     flatten_A = hparams.get('flatten_A', False)
     rnn_dim = hparams['rnn_dim']
     attn_heads = hparams.get('attn_heads', [dense_dim // attn_dim[0]]*3)
@@ -81,6 +83,8 @@ def main(
                               x_feature_subset=x_feature_subset,
                               y_feature_subset=y_feature_subset,
                               flatten_A=flatten_A,
+                              max_time=max_time,
+                              gpu_prefetch=gpu_prefetch
                               )
 
         Xtens = batch_gen.X

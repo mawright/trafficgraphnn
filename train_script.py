@@ -40,6 +40,7 @@ def main(
     batch_size=4,
     time_window=150,
     average_interval=None,
+    max_time=3599,
     epochs=50,
     no_liu=False,
     attn_dim=64,
@@ -94,6 +95,8 @@ def main(
                               x_feature_subset=x_feature_subset,
                               y_feature_subset=y_feature_subset,
                               flatten_A=flatten_A,
+                              max_time=max_time,
+                              gpu_prefetch=True
                               )
 
         Xtens = batch_gen.X
@@ -256,6 +259,8 @@ if __name__ == '__main__':
                         help='Subsequence time window (s)')
     parser.add_argument('--average_interval', '-a', type=int,
                         help='Hard averaging downsampling interval (s)')
+    parser.add_argument('--max_time', '-mt', type=int,
+                        help='Max sequence length in timesteps (s)')
     parser.add_argument('--epochs', '-e', type=int, default=30,
                         help='Number of training epochs.')
     parser.add_argument('--no_liu', '-nl', action='store_true',
@@ -313,6 +318,7 @@ if __name__ == '__main__':
          batch_size=args.batch_size,
          time_window=args.time_window,
          average_interval=args.average_interval,
+         max_time=args.max_time,
          epochs=args.epochs,
          no_liu=args.no_liu,
          attn_dim=args.attn_dim,

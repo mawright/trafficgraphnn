@@ -312,7 +312,9 @@ def read_from_file(
     y_feature_subset=y_feature_subset_default,
     per_cycle_features=per_cycle_features_default,
     when_per_cycle='end', # begin = on green, # end = on red
-    return_X_Y_as_dfs=False):
+    return_X_Y_as_dfs=False,
+    max_time=None,
+    return_t_and_lanenames=False):
 
     # Input handling if we came from TF
     if isinstance(filename, six.binary_type):
@@ -348,6 +350,12 @@ def read_from_file(
         Y_df = store['Y'].loc[:,y_feature_subset]
         Y_df = Y_df.fillna(pad_value_for_feature).astype(np.float32)
 
+        if max_time is not None:
+            X_df = X_df.loc[pd.IndexSlice[:, :max_time], :]
+            Y_df = Y_df.loc[pd.IndexSlice[:, :max_time], :]
+
+        timesteps = np.float32(X_df.index.get_level_values('begin').unique())
+
         # masking out Y features only predicted per cycle
         if 'green' in X_df and len(per_cycle_features) > 0:
             if when_per_cycle == 'end':
@@ -367,7 +375,7 @@ def read_from_file(
                 values = [series.loc[cycle[0]:cycle[1]].max()
                           for cycle in cycle_intervals]
                 # return keys, values
-                Y_df[feat] = get_pad_value_for_feature(feat)
+                Y_df[feat] = np.float32(get_pad_value_for_feature(feat))
                 Y_df.loc[keys, feat] = values
 
     len_x = len(x_feature_subset)
@@ -376,17 +384,18 @@ def read_from_file(
     if not return_X_Y_as_dfs:
         X = X_df.values.reshape(num_lanes, -1, len_x).transpose([1, 0, 2])
         Y = Y_df.values.reshape(num_lanes, -1, len_y).transpose([1, 0, 2])
-        num_timesteps = X.shape[0]
     else:
         X = X_df
         Y = Y_df
-        num_timesteps = len(X.index.get_level_values('begin').unique())
 
     A = np.expand_dims(A, 0)
     if repeat_A_over_time:
-        A = np.repeat(A, num_timesteps, axis=0)
+        A = np.repeat(A, len(timesteps), axis=0)
 
-    return A, X, Y
+    if return_t_and_lanenames:
+        return A, X, Y, timesteps, lane_list
+    else:
+        return A, X, Y
 
 
 def generator_prefetch_all_from_file(
