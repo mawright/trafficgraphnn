@@ -66,7 +66,7 @@ def make_dataset_fast(filename_ph,
     if num_parallel_calls is None:
         num_parallel_calls = get_num_cpus()
 
-    dataset = tf.data.Dataset.from_tensors(filename_ph)
+    dataset = tf.data.Dataset.from_tensor_slices(filename_ph)
 
     def _read(filename):
         return read_from_file(filename,
@@ -337,7 +337,7 @@ class TFBatcher(object):
             return [filename_list[i:i+self.batch_size] for i
                     in range(0, len(filename_list), self.batch_size)]
         else:
-            return filename_list
+            return [filename_list]
 
     def shuffle(self):
         np.random.shuffle(self.train_files)

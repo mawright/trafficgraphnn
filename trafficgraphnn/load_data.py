@@ -317,6 +317,10 @@ def read_from_file(
     return_t_and_lanenames=False):
 
     # Input handling if we came from TF
+    if isinstance(filename, np.ndarray):
+        if len(filename) > 1:
+            raise ValueError('Received more than one filename')
+        filename = filename[0]
     if isinstance(filename, six.binary_type):
         filename = filename.decode()
 
