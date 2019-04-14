@@ -319,8 +319,8 @@ class TFBatcher(object):
                                                  max_time=max_time,
                                                  gpu_prefetch=gpu_prefetch)
 
-        self._make_batches()
         self.init_initializable_iterator()
+        self._make_batches()
 
     def _make_batches(self):
         self.train_file_batches = self._split_batches(self.train_files)
