@@ -94,7 +94,8 @@ def make_callbacks(model, model_save_dir, do_validation=False,
     callback_list.append(TerminateOnNaN())
     callback_list.append(CSVLogger(os.path.join(model_save_dir,
                                                 run_name, 'log.csv')))
-    callback_list.append(EarlyStopping(patience=20, restore_best_weights=True))
+    callback_list.append(EarlyStopping(patience=20, verbose=1,
+                                       restore_best_weights=True))
     callback_list.append(
         TensorBoard(log_dir=os.path.join(
             model_save_dir, 'logs', run_name), update_freq=10
@@ -116,6 +117,7 @@ def make_callbacks(model, model_save_dir, do_validation=False,
     filename = filename + '.hdf5'
     callback_list.append(ModelCheckpoint(os.path.join(model_save_dir,
                                                       run_name, filename),
+                                         verbose=1,
                                          save_best_only=True,
                                          mode='min'))
     callback_list.append(ReduceLROnPlateau(verbose=1))
