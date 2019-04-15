@@ -336,3 +336,9 @@ def col_type(colname):
         return dtype
     except (AttributeError, KeyError):
         raise ValueError('Could not parse variable name {}'.format(colname))
+
+
+def prefixes_in_store(store):
+    keys = store.keys()
+    prefixes = [re.search('(?<=/).+(?=/X|/Y)', key).group() for key in keys]
+    return sorted(list(set(prefixes)))

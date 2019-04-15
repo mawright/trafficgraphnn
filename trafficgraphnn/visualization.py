@@ -2,14 +2,13 @@
 Code for visualizations.
 """
 import os
-import re
 import multiprocessing
 
 import matplotlib.pyplot as plt
 import pandas as pd
 
 from trafficgraphnn.load_data import pad_value_for_feature
-from trafficgraphnn.utils import get_num_cpus
+from trafficgraphnn.utils import get_num_cpus, prefixes_in_store
 from trafficgraphnn.preprocessing.io import \
     green_phase_start_ends_from_lane_light_df
 
@@ -82,12 +81,6 @@ def multi_file_queue_estimate_for_lane(stores, prefix, lane_id):
     ax.set_ylabel('Queue (vehicles)')
 
     return fig, ax
-
-
-def prefixes_in_store(store):
-    keys = store.keys()
-    prefixes = [re.search('(?<=/).+(?=/X|/Y)', key).group() for key in keys]
-    return sorted(list(set(prefixes)))
 
 
 def _read_for_lane(store, prefix, lane_id):

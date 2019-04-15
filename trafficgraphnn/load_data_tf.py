@@ -69,24 +69,25 @@ def make_dataset_fast(filename_ph,
     dataset = tf.data.Dataset.from_tensor_slices(filename_ph)
 
     def _read(filename):
-        return read_from_file(filename,
-                              A_name_list=A_name_list,
-                              x_feature_subset=x_feature_subset,
-                              y_feature_subset=y_feature_subset,
-                              max_time=max_time,
-                              return_t_and_lanenames=True)
+        out = read_from_file(filename,
+                             A_name_list=A_name_list,
+                             x_feature_subset=x_feature_subset,
+                             y_feature_subset=y_feature_subset,
+                             max_time=max_time,
+                             return_t_and_lanenames=True)
+        return (*out, filename)
 
     dataset = dataset.map(lambda filename: tf.py_func(
         _read, [filename],
-        [tf.bool, tf.float32, tf.float32, tf.float32, tf.string]))
+        [tf.bool, tf.float32, tf.float32, tf.float32, tf.string, tf.string]))
 
-    def split_for_pad(A, X, Y, t, lanes):
+    def split_for_pad(A, X, Y, t, lanes, filename):
         X = tf.unstack(X, len(x_feature_subset), axis=-1)
         Y = tf.unstack(Y, len(y_feature_subset), axis=-1)
         return (A,
                 dict(zip(x_feature_subset, X)),
                 dict(zip(y_feature_subset, Y)),
-                t, lanes)
+                t, lanes, filename)
 
     dataset = dataset.map(split_for_pad, num_parallel_calls)
 
@@ -95,8 +96,9 @@ def make_dataset_fast(filename_ph,
 
     if average_interval is not None and average_interval > 1:
         dataset = dataset.map(
-            lambda A, X, Y, t, lanes:
+            lambda A, X, Y, t, lanes, filenames:
             average_over_interval(A, X, Y, average_interval, t, lanes,
+                                  filenames,
                                   x_feature_subset=x_feature_subset,
                                   y_feature_subset=y_feature_subset,
                                   per_cycle_features=per_cycle_features),
@@ -106,15 +108,14 @@ def make_dataset_fast(filename_ph,
         batch_size,
         ((-1, -1, -1, -1), {x: (-1, -1) for x in x_feature_subset},
                            {y: (-1, -1) for y in y_feature_subset},
-                           (-1,), (-1,)),
-        (False, xpad, ypad, 0., ''))
+                           (-1,), (-1,), ()),
+        (False, xpad, ypad, 0., '', ''))
 
-    def stack_post_pad(A, X, Y, t, lanes):
-        X_stacked = tf.stack([X[x] for x in x_feature_subset], -1)
-        Y_stacked = tf.stack([Y[y] for y in y_feature_subset], -1)
-        return A, X_stacked, Y_stacked, t, lanes
+    stack = lambda A, X, Y, t, lanes, filenames: stack_post_pad(
+        A, X, Y, t, lanes, filenames,
+        x_feature_subset=x_feature_subset, y_feature_subset=y_feature_subset)
 
-    dataset = dataset.map(stack_post_pad, num_parallel_calls=num_parallel_calls)
+    dataset = dataset.map(stack, num_parallel_calls=num_parallel_calls)
 
     dataset = dataset.prefetch(1)
     if gpu_prefetch:
@@ -142,21 +143,29 @@ def make_dataset(filename_ph,
     dataset = tf.data.Dataset.from_tensors(filename_ph)
 
     def windowed_batch_func(files):
-        return windowed_unpadded_batch_of_generators(files,
-                                                     window_size,
-                                                     batch_size,
-                                                     A_name_list,
-                                                     x_feature_subset,
-                                                     y_feature_subset,
-                                                     per_cycle_features,
-                                                     prefetch_all=True)
+        batch = windowed_unpadded_batch_of_generators(files,
+                                                      window_size,
+                                                      batch_size,
+                                                      A_name_list,
+                                                      x_feature_subset,
+                                                      y_feature_subset,
+                                                      per_cycle_features,
+                                                      prefetch_all=True)
+        while True:
+            try:
+                out = next(batch)
+                yield (*out, files)
+            except StopIteration:
+                return
 
     gen_op = lambda filename: tf.data.Dataset.from_generator(
         windowed_batch_func,
-        output_types=(tf.bool, tf.float32, tf.float32, tf.float32, tf.string),
+        output_types=(tf.bool, tf.float32, tf.float32, tf.float32, tf.string,
+                      tf.string),
         output_shapes=((None, None, None, None),
                        (None, None, len(x_feature_subset)),
                        (None, None, len(y_feature_subset)),
+                       None,
                        None,
                        None),
         args=(filename,))
@@ -164,8 +173,9 @@ def make_dataset(filename_ph,
     dataset = dataset.flat_map(gen_op)
 
     dataset = dataset.map(
-        lambda A, X, Y, t, lanes: split_for_pad(
-            A, X, Y, t, lanes, x_feature_subset=x_feature_subset,
+        lambda A, X, Y, t, lanes, filenames: split_for_pad(
+            A, X, Y, t, lanes, filenames,
+            x_feature_subset=x_feature_subset,
             y_feature_subset=y_feature_subset),
         num_parallel_calls)
 
@@ -174,8 +184,9 @@ def make_dataset(filename_ph,
 
     if average_interval is not None and average_interval > 1:
         dataset = dataset.map(
-            lambda A, X, Y, t, lanes:
+            lambda A, X, Y, t, lanes, filenames:
             average_over_interval(A, X, Y, average_interval, t, lanes,
+                                  filenames,
                                   x_feature_subset=x_feature_subset,
                                   y_feature_subset=y_feature_subset,
                                   per_cycle_features=per_cycle_features),
@@ -185,22 +196,21 @@ def make_dataset(filename_ph,
         batch_size,
         ((-1, -1, -1, -1), {x: (-1, -1) for x in x_feature_subset},
                            {y: (-1, -1) for y in y_feature_subset},
-                           (-1,), (-1,)),
-        (False, xpad, ypad, 0., ''))
+                           (-1,), (-1,), (-1,)),
+        (False, xpad, ypad, 0., '', ''))
 
-    def stack_post_pad(A, X, Y, t, lanes):
-        X_stacked = tf.stack([X[x] for x in x_feature_subset], -1)
-        Y_stacked = tf.stack([Y[y] for y in y_feature_subset], -1)
-        return A, X_stacked, Y_stacked, t, lanes
+    stack = lambda A, X, Y, t, lanes, filenames: stack_post_pad(
+        A, X, Y, t, lanes, filenames,
+        x_feature_subset=x_feature_subset, y_feature_subset=y_feature_subset)
 
-    dataset = dataset.map(stack_post_pad, num_parallel_calls=num_parallel_calls)
+    dataset = dataset.map(stack, num_parallel_calls=num_parallel_calls)
 
     dataset = dataset.prefetch(1)
 
     return dataset
 
 
-def average_over_interval(A, X, Y, average_interval, t, lanes,
+def average_over_interval(A, X, Y, average_interval, t, lanes, filename,
                           x_feature_subset, y_feature_subset,
                           per_cycle_features):
     shape = tf.shape(X[x_feature_subset[0]])
@@ -238,16 +248,25 @@ def average_over_interval(A, X, Y, average_interval, t, lanes,
     new_A = tf.gather(A, get_slice)
     new_t = tf.gather(t, get_slice)
 
-    return new_A, new_X, new_Y, new_t, lanes
+    return new_A, new_X, new_Y, new_t, lanes, filename
 
 
-def split_for_pad(A, X, Y, t, lanes, x_feature_subset, y_feature_subset):
+def split_for_pad(A, X, Y, t, lanes, filenames,
+                  x_feature_subset, y_feature_subset):
     X = tf.unstack(X, len(x_feature_subset), axis=-1)
     Y = tf.unstack(Y, len(y_feature_subset), axis=-1)
     return (A,
             dict(zip(x_feature_subset, X)),
             dict(zip(y_feature_subset, Y)),
-            t, lanes)
+            t, lanes, filenames)
+
+
+def stack_post_pad(A, X, Y, t, lanes, filenames,
+                   x_feature_subset, y_feature_subset):
+    X_stacked = tf.stack([X[x] for x in x_feature_subset], -1)
+    Y_stacked = tf.stack([Y[y] for y in y_feature_subset], -1)
+    return A, X_stacked, Y_stacked, t, lanes, filenames
+
 
 class TFBatcher(object):
     def __init__(self,
@@ -373,6 +392,7 @@ class TFBatcher(object):
         self.Y = tf.identity(self.tensor[2], name='Y')
         self.t = tf.identity(self.tensor[3], name='t')
         self.lanes = tf.identity(self.tensor[4], name='lanes')
+        self.filename_tensor = tf.identity(self.tensor[5], name='filenames')
 
         self.Y_slices = tf.unstack(self.Y, axis=-1)
 

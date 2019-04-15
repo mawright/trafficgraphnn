@@ -9,6 +9,7 @@ from collections import Iterable, defaultdict, namedtuple
 
 import numpy as np
 import pandas as pd
+import six
 import tables
 import tensorflow as tf
 
@@ -17,8 +18,8 @@ from keras.callbacks import (BaseLogger, Callback, CallbackList, CSVLogger,
                              EarlyStopping, History, ModelCheckpoint,
                              ProgbarLogger, ReduceLROnPlateau, TensorBoard,
                              TerminateOnNaN)
+from trafficgraphnn.utils import col_type, iterfy, prefixes_in_store
 from trafficgraphnn.visualization import plot_results_for_file
-from trafficgraphnn.utils import col_type, iterfy
 
 _logger = logging.getLogger(__name__)
 
@@ -178,6 +179,8 @@ def prep_predict_eval(model, batch_gen):
         extras.append(batch_gen.t)
     if hasattr(batch_gen, 'lanes'):
         extras.append(batch_gen.lanes)
+    if hasattr(batch_gen, 'filename_tensor'):
+        extras.append(batch_gen.filename_tensor)
     PredictEvalFunction(model, extras)
 
 
@@ -393,7 +396,8 @@ class PredictEvalFunction(object):
 def predict_eval_tf(model, write_dir, batch_generator, plot_results=True):
     if not hasattr(model, 'predict_eval_function'):
         func = PredictEvalFunction(model,
-                                   [batch_generator.t, batch_generator.lanes])
+                                   [batch_generator.t, batch_generator.lanes,
+                                    batch_generator.filename_tensor])
     else:
         func = model.predict_eval_function
     result_file = os.path.join(write_dir, 'results.hdf')
@@ -409,15 +413,13 @@ def predict_eval_tf(model, write_dir, batch_generator, plot_results=True):
 
     with pd.HDFStore(result_file, 'w') as result_store:
         for batch in batch_generator.test_batches:
-            filenames = [os.path.basename(f) for f in batch.filenames]
-            filenums = [os.path.splitext(f)[0] for f in filenames]
             model.reset_states()
             batch.initialize()
 
             while True:
                 try:
                     out = func.call()
-                    __append_results(result_store, filenums, out,
+                    __append_results(result_store, out,
                                      batch_generator.x_feature_subset,
                                      batch_generator.y_feature_subset)
                     metrics = out['metrics']
@@ -435,8 +437,8 @@ def predict_eval_tf(model, write_dir, batch_generator, plot_results=True):
                             test_logs['test_liu_mae'].append(liu_mae)
 
                 except tf.errors.OutOfRangeError:
-                    __sort_store_dfs(result_store, filenums)
                     break
+        __sort_store_dfs(result_store)
 
     mean_metrics = {k: np.mean(v).tolist() for k, v in test_logs.items()}
     log_str = 'Metrics on test set:\n' + '\n'.join(
@@ -449,6 +451,13 @@ def predict_eval_tf(model, write_dir, batch_generator, plot_results=True):
         plot_results_for_file(result_file)
 
 
+def __sim_number_from_filename(filename):
+    if isinstance(filename, six.binary_type):
+        filename = filename.decode()
+    filename = os.path.basename(filename)
+    return os.path.splitext(filename)[0]
+
+
 def _df(data, lane_list, timestep_list, colnames):
     reshaped = np.reshape(data, (len(lane_list)*len(timestep_list), -1))
     index = pd.MultiIndex.from_product([timestep_list, lane_list],
@@ -458,9 +467,11 @@ def _df(data, lane_list, timestep_list, colnames):
     return df.astype(dtypes)
 
 
-def __append_results(store, table_prefixes, func_out, x_colnames, y_colnames):
+def __append_results(store, func_out, x_colnames, y_colnames):
     timesteps = func_out['extra_outputs'][0]
     lanes = func_out['extra_outputs'][1]
+    table_prefixes = [__sim_number_from_filename(f)
+                      for f in func_out['extra_outputs'][2]]
     X = func_out['inputs'].X
     Y = np.stack(func_out['targets'], -1)
     Yhat = np.stack(func_out['outputs'], -1)
@@ -475,7 +486,9 @@ def __append_results(store, table_prefixes, func_out, x_colnames, y_colnames):
                          _df(Yhat[i], lanes_i, t_i, y_colnames))
 
 
-def __sort_store_dfs(store, prefixes):
+def __sort_store_dfs(store, prefixes=None):
+    if prefixes is None:
+        prefixes = prefixes_in_store(store)
     for f in prefixes:
         for key in [f + t for t in ['/X', '/Y', '/Yhat']]:
             df = store[key]
