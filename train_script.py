@@ -193,6 +193,7 @@ def main(
         test_split_proportion=test_split_proportion,
         loss_function=loss_function, batch_size=batch_size,
         time_window=time_window, average_interval=average_interval,
+        max_time=max_time,
         epochs=epochs, attn_dim=attn_dim, attn_depth=attn_depth,
         attn_residual_connection=attn_residual_connection,
         gat_highway_connection=gat_highway_connection,

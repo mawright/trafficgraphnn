@@ -384,4 +384,7 @@ class TFBatcher(object):
 
     @property
     def num_train_batches(self):
-        return len(self.train_file_batches)
+        if self.sub_batching:
+            return len(self.train_file_batches)
+        else:
+            return np.ceil(len(self.train_file_batches[0]) / self.batch_size)
