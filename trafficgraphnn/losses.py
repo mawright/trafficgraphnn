@@ -4,7 +4,7 @@ from keras import backend as K
 def huber(y_true, y_pred, delta=1):
     abs_error = K.abs(y_true - y_pred)
     loss = _huber_helper(abs_error, delta)
-    return K.sum(loss, axis=-1)
+    return K.mean(loss, axis=-1)
 
 
 def _masked_huber(y_true, y_pred, to_mask, delta=1):
