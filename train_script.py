@@ -8,7 +8,7 @@ import numpy as np
 import tensorflow as tf
 
 from keras import backend as K
-from keras.layers import Dense, Dropout, Input, TimeDistributed
+from keras.layers import Dense, Input, TimeDistributed
 from keras.models import Model
 from keras.utils.multi_gpu_utils import multi_gpu_model
 from trafficgraphnn import SumoNetwork

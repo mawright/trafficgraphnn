@@ -7,7 +7,7 @@ import re
 import numpy as np
 import tensorflow as tf
 
-from keras.layers import Dense, Dropout, Input, TimeDistributed
+from keras.layers import Dense, Input, TimeDistributed
 from keras.models import Model
 from trafficgraphnn import SumoNetwork
 from trafficgraphnn.custom_fit_loop import predict_eval_tf
