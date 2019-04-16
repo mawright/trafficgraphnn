@@ -84,15 +84,9 @@ class LayerNormalization(Layer):
         mean = K.mean(inputs, norm_axes, keepdims=True)
         variance = K.var(inputs, norm_axes, keepdims=True)
 
-        inv_sqrt = 1 / K.sqrt(variance + self.epsilon)
-        normalized = (inputs - mean) * inv_sqrt
-
-        if self.gamma is not None:
-            normalized *= self.gamma
-        if self.beta is not None:
-            normalized += self.beta
-
-        return normalized
+        return tf.nn.batch_normalization(
+            inputs, mean, variance, self.beta, self.gamma,
+            variance_epsilon=self.epsilon)
 
     def get_config(self):
         config = {
