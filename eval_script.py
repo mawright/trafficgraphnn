@@ -57,6 +57,7 @@ def main(
     max_time = hparams.get('max_time', None)
     gpu_prefetch = hparams.get('gpu_prefetch', False)
     flatten_A = hparams.get('flatten_A', False)
+    layer_norm = hparams.get('layer_norm', False)
     rnn_dim = hparams['rnn_dim']
     attn_heads = hparams.get('attn_heads', [dense_dim // attn_dim[0]]*3)
     if batch_size is None:
@@ -128,6 +129,7 @@ def main(
         X = gat_encoder(X_in, A_in, attn_dim, attn_heads,
                         dropout_rate, attn_dropout, gat_activation='relu',
                         dense_dim=dense_dim,
+                        layer_norm=layer_norm,
                         gat_highway_connection=gat_highway_connection,
                         residual_connection=attn_residual_connection)
 
