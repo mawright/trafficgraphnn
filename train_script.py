@@ -58,6 +58,7 @@ def main(
     per_step_metrics=False,
     old_model=False,
     num_gpus=1,
+    no_plots=False,
 ):
 
     tf.set_random_seed(seed)
@@ -229,7 +230,8 @@ def main(
         fit_loop_tf(model, callback_list, batch_gen, epochs,
                     per_step_metrics=per_step_metrics)
 
-        predict_eval_tf(model, get_logging_dir(callback_list), batch_gen)
+        predict_eval_tf(model, get_logging_dir(callback_list), batch_gen,
+                        plot_results=not(no_plots))
 
         if hasattr(model, 'history'):
             return model.history #pylint: disable=no-member
@@ -302,6 +304,8 @@ if __name__ == '__main__':
                         help='Use the old model without inter-GAT FC layers')
     parser.add_argument('--num_gpus', '-g', type=int, default=1,
                         help='Number of GPUs to use.')
+    parser.add_argument('--no_plots', '-np', action='store_true',
+                        help='Skip writing the result plots.')
     args = parser.parse_args()
 
     A_name_list = []
@@ -342,4 +346,5 @@ if __name__ == '__main__':
          per_step_metrics=args.per_step_metrics,
          old_model=args.old_model,
          num_gpus=args.num_gpus,
+         no_plots=args.no_plots,
          )
