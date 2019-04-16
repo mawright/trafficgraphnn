@@ -464,9 +464,8 @@ def _df(data, lane_list, timestep_list, colnames):
     reshaped = np.reshape(data, (len(lane_list)*len(timestep_list), -1))
     index = pd.MultiIndex.from_product([timestep_list, lane_list],
                                         names=['begin', 'lane'])
-    dtypes = {col: col_type(col) for col in colnames}
     df = pd.DataFrame(reshaped, index=index, columns=colnames)
-    return df.astype(dtypes)
+    return df
 
 
 def __append_results(store, func_out, x_colnames, y_colnames):
