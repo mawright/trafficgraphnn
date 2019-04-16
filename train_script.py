@@ -48,6 +48,7 @@ def main(
     attn_depth=2,
     attn_residual_connection=False,
     gat_highway_connection=False,
+    layer_norm=False,
     rnn_dim=64,
     stateful_rnn=False,
     dense_dim=64,
@@ -122,6 +123,7 @@ def main(
                         dropout_rate, attn_dropout, gat_activation='relu',
                         dense_dim=dense_dim,
                         gat_highway_connection=gat_highway_connection,
+                        layer_norm=layer_norm,
                         residual_connection=attn_residual_connection)
 
         if stateful_rnn:
@@ -196,6 +198,7 @@ def main(
         max_time=max_time,
         epochs=epochs, attn_dim=attn_dim, attn_depth=attn_depth,
         attn_residual_connection=attn_residual_connection,
+        layer_norm=layer_norm,
         gat_highway_connection=gat_highway_connection,
         attn_heads=attn_heads, rnn_dim=rnn_dim, stateful_rnn=stateful_rnn,
         dense_dim=dense_dim, dropout_rate=dropout_rate,
@@ -275,6 +278,8 @@ if __name__ == '__main__':
                         help='Number of stacked attentional layers')
     parser.add_argument('--attn_residual_connection', action='store_true',
                         help='Use residual connections in the attenion encoders.')
+    parser.add_argument('--layer_norm', '-ln', action='store_true',
+                        help='Use layer norm layers in the attention encoders.')
     parser.add_argument('--gat_highway_connection', '-hw', action='store_true',
                         help='Use highway connection (identity adjacency matrix) '
                         'in graph attention layer')
@@ -327,6 +332,7 @@ if __name__ == '__main__':
          attn_depth=args.attn_depth,
          attn_residual_connection=args.attn_residual_connection,
          gat_highway_connection=args.gat_highway_connection,
+         layer_norm=args.layer_norm,
          dense_dim=args.dense_dim,
          rnn_dim=args.rnn_dim,
          stateful_rnn=args.stateful_rnn,

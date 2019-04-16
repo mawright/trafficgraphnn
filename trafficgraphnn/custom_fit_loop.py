@@ -94,7 +94,7 @@ def make_callbacks(model, model_save_dir, do_validation=False,
     callback_list.append(TerminateOnNaN())
     callback_list.append(CSVLogger(os.path.join(model_save_dir,
                                                 run_name, 'log.csv')))
-    callback_list.append(EarlyStopping(patience=20, verbose=1,
+    callback_list.append(EarlyStopping(patience=5, verbose=1,
                                        restore_best_weights=True))
     callback_list.append(
         TensorBoard(log_dir=os.path.join(

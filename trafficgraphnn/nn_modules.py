@@ -3,6 +3,7 @@ from keras.layers import (RNN, Dense, Dropout, GRUCell, InputSpec, LSTMCell,
                           TimeDistributed, Lambda)
 from trafficgraphnn.layers import (BatchGraphAttention,
                                    BatchMultigraphAttention,
+                                   LayerNormalization,
                                    DenseCausalAttention,
                                    TimeDistributedMultiInput)
 from trafficgraphnn.utils import broadcast_lists, iterfy
@@ -37,6 +38,7 @@ def gat_single_A_encoder(X_tensor, A_tensor, attn_depth, attn_dims, num_heads,
 def gat_encoder(X_tensor, A_tensor, attn_dims, num_heads,
                 dropout_rate, attn_dropout_rate, attn_reduction='concat',
                 gat_highway_connection=True,
+                layer_norm=False,
                 gat_activation='relu', dense_dim=None,
                 residual_connection=False):
     attn_dims, num_heads, dropout_rate, attn_dropout_rate, attn_reduction = map(
@@ -49,11 +51,12 @@ def gat_encoder(X_tensor, A_tensor, attn_dims, num_heads,
                            attn_dropout_rate, attn_reduction])
 
     X = X_tensor
-    for dim, head, drop, attndrop, reduct in zip(attn_dims, num_heads,
-                                                 dropout_rate,
-                                                 attn_dropout_rate,
-                                                 attn_reduction):
-        out = TimeDistributed(Dropout(drop))(X)
+    for i, (dim, head, drop, attndrop, reduct) in enumerate(
+        zip(attn_dims, num_heads,
+            dropout_rate,
+            attn_dropout_rate,
+            attn_reduction)):
+        out = TimeDistributed(Dropout(drop), name='dropout_{}'.format(i))(X)
         out = TimeDistributedMultiInput(
             BatchMultigraphAttention(dim,
                                      attn_heads=head,
@@ -61,17 +64,22 @@ def gat_encoder(X_tensor, A_tensor, attn_dims, num_heads,
                                      attn_dropout=attndrop,
                                      activation=gat_activation,
                                      highway_connection=gat_highway_connection
-                                     ))([X, A_tensor])
+                                     ), name='GAT_{}'.format(i))([X, A_tensor])
         if residual_connection: # in transformer, res connection done here (eg on concatted heads)
             X = X + out
         else:
             X = out
+        if layer_norm:
+            X = LayerNormalization(name='GAT_layernorm_{}'.format(i))(X)
         if dense_dim is not None:
-            out = TimeDistributed(Dense(dense_dim, activation=gat_activation))(X)
+            out = TimeDistributed(Dense(dense_dim, activation=gat_activation),
+                                  name='FC_{}'.format(i))(X)
             if residual_connection:
                 X = X + out
             else:
                 X = out
+            if layer_norm:
+                X = LayerNormalization(name='FC_layernorm_{}'.format(i))(X)
     return X
 
 
