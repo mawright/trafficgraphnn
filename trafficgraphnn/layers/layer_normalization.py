@@ -41,6 +41,8 @@ class LayerNormalization(Layer):
                              str(input_shape) + '.')
         if self.begin_norm_axis < 0:
             begin_norm_axis = len(input_shape) + begin_norm_axis
+        else:
+            begin_norm_axis = self.begin_norm_axis
         if (begin_norm_axis >= len(input_shape)
             or self.begin_params_axis >= len(input_shape)
         ):
