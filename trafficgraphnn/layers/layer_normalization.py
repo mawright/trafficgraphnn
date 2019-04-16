@@ -1,6 +1,7 @@
 from keras import backend as K
 from keras.layers import Layer, InputSpec
 from keras import constraints, initializers, regularizers
+import tensorflow as tf
 
 
 class LayerNormalization(Layer):
@@ -83,9 +84,15 @@ class LayerNormalization(Layer):
         mean = K.mean(inputs, norm_axes, keepdims=True)
         variance = K.var(inputs, norm_axes, keepdims=True)
 
-        return K.batch_normalization(
-            inputs, mean, variance, self.beta, self.gamma,
-            epsilon=self.epsilon)
+        inv_sqrt = 1 / K.sqrt(variance + self.epsilon)
+        normalized = (inputs - mean) * inv_sqrt
+
+        if self.gamma is not None:
+            normalized *= self.gamma
+        if self.beta is not None:
+            normalized += self.beta
+
+        return normalized
 
     def get_config(self):
         config = {
