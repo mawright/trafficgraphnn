@@ -191,7 +191,7 @@ def main(
     hyperparams = dict(
         net_name=net_name, A_name_list=A_name_list, no_liu=no_liu,
         x_feature_subset=x_feature_subset, y_feature_subset=y_feature_subset,
-        flatten_A=flatten_A,
+        flatten_A=flatten_A, param_count=model.count_params(),
         val_split_proportion=val_split_proportion,
         test_split_proportion=test_split_proportion,
         loss_function=loss_function, batch_size=batch_size,
