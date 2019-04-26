@@ -1,7 +1,6 @@
 from keras import backend as K
 from keras.layers import Layer, InputSpec
 from keras import constraints, initializers, regularizers
-import tensorflow as tf
 
 
 class LayerNormalization(Layer):
@@ -76,7 +75,7 @@ class LayerNormalization(Layer):
             self.beta = None
         self.built = True
 
-    def call(self, inputs, training=None):
+    def call(self, inputs):
         input_shape = K.int_shape(inputs)
         input_dims = len(input_shape)
         norm_axes = list(range(input_dims))[self.begin_norm_axis:]
