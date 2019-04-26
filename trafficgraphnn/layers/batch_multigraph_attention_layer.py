@@ -26,7 +26,6 @@ class BatchMultigraphAttention(Layer):
                  kernel_constraint=None,
                  bias_constraint=None,
                  attn_kernel_constraint=None,
-                 num_edge_types=None,
                  **kwargs):
         if attn_heads_reduction not in {'concat', 'average'}:
             raise ValueError('Possible reduction methods: concat, average')
@@ -122,7 +121,7 @@ class BatchMultigraphAttention(Layer):
 
         self.built = True
 
-    def call(self, inputs):
+    def call(self, inputs, training=None):
         X = inputs[0]  # Node features (batch x N x F)
         A = inputs[1]  # Adjacency matrices (batch x E x N x N)
 
@@ -167,7 +166,7 @@ class BatchMultigraphAttention(Layer):
 
             dropout_lambda = lambda: K.dropout(softmax, self.attn_dropout, noise_shape)  # (batch x E x N x N)
 
-            dropout = K.in_train_phase(dropout_lambda, softmax)
+            dropout = K.in_train_phase(dropout_lambda, softmax, training=training)
 
             features_expanded = K.expand_dims(features, 1)
             features_expanded = K.repeat_elements(features_expanded,

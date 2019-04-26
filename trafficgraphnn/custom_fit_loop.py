@@ -18,7 +18,7 @@ from keras.callbacks import (BaseLogger, Callback, CallbackList, CSVLogger,
                              EarlyStopping, History, ModelCheckpoint,
                              ProgbarLogger, ReduceLROnPlateau, TensorBoard,
                              TerminateOnNaN)
-from trafficgraphnn.utils import col_type, iterfy, prefixes_in_store
+from trafficgraphnn.utils import iterfy, prefixes_in_store
 from trafficgraphnn.visualization import plot_results_for_file
 
 _logger = logging.getLogger(__name__)
