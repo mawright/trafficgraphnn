@@ -40,7 +40,7 @@ class LayerNormalization(Layer):
                              'but the layer received an input with shape ' +
                              str(input_shape) + '.')
         if self.begin_norm_axis < 0:
-            begin_norm_axis = len(input_shape) + begin_norm_axis
+            begin_norm_axis = len(input_shape) + self.begin_norm_axis
         else:
             begin_norm_axis = self.begin_norm_axis
         if (begin_norm_axis >= len(input_shape)
