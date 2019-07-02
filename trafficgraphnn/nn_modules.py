@@ -53,7 +53,7 @@ def gcn_encoder(X_tensor, A_tensor, filter_type, filter_dims, dropout_rate,
             A = sparse.lil_matrix(A)
             A = A + A.T.multiply(A.T > A) - A.multiply(A.T > A) # symmetrize
             A = normalize_adj(A)
-            return [A.todense()]
+            return [A.todense().A.astype('float32')]
         support = 1
         return_type = [tf.float32]
         # G = [tf.py_func(gcn_preprocess, [A_tensor], tf.float32,
@@ -71,7 +71,8 @@ def gcn_encoder(X_tensor, A_tensor, filter_type, filter_dims, dropout_rate,
             A = A + A.T.multiply(A.T > A) - A.multiply(A.T > A) # symmetrize
             L = normalized_laplacian(A, SYM_NORM)
             L_scaled = rescale_laplacian(L)
-            return chebyshev_polynomial(L_scaled, cheb_polynomial_degree)
+            cheb = chebyshev_polynomial(L_scaled, cheb_polynomial_degree)
+            return [c.todense().A.astype('float32') for c in cheb]
         support = cheb_polynomial_degree + 1
         return_type = [tf.float32] * support
         output_shape = lambda x: [x] * support
