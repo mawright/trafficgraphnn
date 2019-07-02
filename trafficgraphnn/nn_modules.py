@@ -74,7 +74,7 @@ def gcn_encoder(X_tensor, A_tensor, filter_type, filter_dims, dropout_rate,
             return chebyshev_polynomial(L_scaled, MAX_DEGREE)
         support = MAX_DEGREE + 1
         return_type = [tf.float32] * support
-        output_shape = [K.int_shape(A_tensor)[1:]] * support
+        output_shape = lambda x: [x] * support
         # G = [tf.py_func(gcn_preprocess, [A_tensor], return_type,
         #                 stateful=False)]
     else:
@@ -86,7 +86,7 @@ def gcn_encoder(X_tensor, A_tensor, filter_type, filter_dims, dropout_rate,
                                      shape[2:]), axis=0))
         G = tf.map_fn(
             lambda a: tf.py_func(gcn_preprocess, [a], return_type,
-                                 stateful=False), A, dtype=[tf.float32])
+                                 stateful=False), A, dtype=return_type)
         G = [tf.reshape(g, shape) for g in G]
         return [tf.ensure_shape(g, A_tensor.shape) for g in G]
 

@@ -127,7 +127,7 @@ def main(
 
     def make_model(X_in, A_in):
         if use_gcn:
-            X = gcn_encoder(X_in, A_in, 'localpool', attn_dim,
+            X = gcn_encoder(X_in, A_in, gcn_filter_type, attn_dim,
                             dropout_rate, dense_dim, layer_norm=layer_norm)
         else:
             X = gat_encoder(X_in, A_in, attn_dim, attn_heads,
