@@ -62,7 +62,7 @@ def main(
     no_plots=False,
     use_gcn=False,
     gcn_filter_type='localpool',
-    gcn_chebyshev_order=2,
+    gcn_chebyshev_degree=2,
 ):
 
     if use_gcn:
@@ -128,7 +128,9 @@ def main(
     def make_model(X_in, A_in):
         if use_gcn:
             X = gcn_encoder(X_in, A_in, gcn_filter_type, attn_dim,
-                            dropout_rate, dense_dim, layer_norm=layer_norm)
+                            dropout_rate, dense_dim,
+                            cheb_polynomial_degree=gcn_chebyshev_degree,
+                            layer_norm=layer_norm)
         else:
             X = gat_encoder(X_in, A_in, attn_dim, attn_heads,
                             dropout_rate, attn_dropout,
@@ -216,7 +218,7 @@ def main(
         dense_dim=dense_dim, dropout_rate=dropout_rate,
         attn_dropout=attn_dropout, seed=seed, num_gpus=num_gpus,
         use_gcn=use_gcn, gcn_filter_type=gcn_filter_type,
-        gcn_chebyshev_order=gcn_chebyshev_order,
+        gcn_chebyshev_degree=gcn_chebyshev_degree,
         )
     logdir = get_logging_dir(callback_list)
     if not os.path.exists(logdir):
@@ -325,7 +327,7 @@ if __name__ == '__main__':
                         'Network" layers instead of attention ones.')
     parser.add_argument('--gcn_filter_type', type=str, default='localpool',
                         help="GCN filter type: 'localpool' or 'chebyshev'")
-    parser.add_argument('--gcn_chebyshev_order', type=int, default=3,
+    parser.add_argument('--gcn_chebyshev_degree', type=int, default=2,
                         help='Max order for GCN Chebyshev polynomials if chosen.')
     # parser.add_argument('--dcrnn', action='store_true',
     #                     help='Use Li et al.\'s "Diffusion Graph Convolutional '
@@ -373,5 +375,5 @@ if __name__ == '__main__':
          no_plots=args.no_plots,
          use_gcn=args.gcn,
          gcn_filter_type=args.gcn_filter_type,
-         gcn_chebyshev_order=args.gcn_chebyshev_order,
+         gcn_chebyshev_degree=args.gcn_chebyshev_degree,
          )

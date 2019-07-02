@@ -36,7 +36,8 @@ def gat_single_A_encoder(X_tensor, A_tensor, attn_depth, attn_dims, num_heads,
 
 
 def gcn_encoder(X_tensor, A_tensor, filter_type, filter_dims, dropout_rate,
-                dense_dims, layer_norm=False, activation='relu'):
+                dense_dims, cheb_polynomial_degree=2, layer_norm=False,
+                activation='relu'):
     import tensorflow as tf
     from kegra.utils import normalize_adj, normalized_laplacian, \
                             rescale_laplacian, chebyshev_polynomial
@@ -63,7 +64,6 @@ def gcn_encoder(X_tensor, A_tensor, filter_type, filter_dims, dropout_rate,
 
     elif filter_type == 'chebyshev':
         SYM_NORM = True
-        MAX_DEGREE = 2
         """ Chebyshev polynomial basis filters (Defferard et al., NIPS 2016)  """
         print('Using Chebyshev polynomial basis filters...')
         def gcn_preprocess(A):
@@ -71,8 +71,8 @@ def gcn_encoder(X_tensor, A_tensor, filter_type, filter_dims, dropout_rate,
             A = A + A.T.multiply(A.T > A) - A.multiply(A.T > A) # symmetrize
             L = normalized_laplacian(A, SYM_NORM)
             L_scaled = rescale_laplacian(L)
-            return chebyshev_polynomial(L_scaled, MAX_DEGREE)
-        support = MAX_DEGREE + 1
+            return chebyshev_polynomial(L_scaled, cheb_polynomial_degree)
+        support = cheb_polynomial_degree + 1
         return_type = [tf.float32] * support
         output_shape = lambda x: [x] * support
         # G = [tf.py_func(gcn_preprocess, [A_tensor], return_type,
