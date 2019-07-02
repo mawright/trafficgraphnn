@@ -36,7 +36,7 @@ def gat_single_A_encoder(X_tensor, A_tensor, attn_depth, attn_dims, num_heads,
 
 
 def gcn_encoder(X_tensor, A_tensor, filter_type, filter_dims, dropout_rate,
-                layer_norm=False, activation='relu'):
+                dense_dims, layer_norm=False, activation='relu'):
     import tensorflow as tf
     from kegra.utils import normalize_adj, normalized_laplacian, \
                             rescale_laplacian, chebyshev_polynomial
@@ -50,6 +50,7 @@ def gcn_encoder(X_tensor, A_tensor, filter_type, filter_dims, dropout_rate,
         print('Using local pooling filters...')
         def gcn_preprocess(A):
             A = sparse.lil_matrix(A)
+            A = A + A.T.multiply(A.T > A) - A.multiply(A.T > A) # symmetrize
             A = normalize_adj(A)
             return [A.todense()]
         support = 1
@@ -66,6 +67,8 @@ def gcn_encoder(X_tensor, A_tensor, filter_type, filter_dims, dropout_rate,
         """ Chebyshev polynomial basis filters (Defferard et al., NIPS 2016)  """
         print('Using Chebyshev polynomial basis filters...')
         def gcn_preprocess(A):
+            A = sparse.lil_matrix(A)
+            A = A + A.T.multiply(A.T > A) - A.multiply(A.T > A) # symmetrize
             L = normalized_laplacian(A, SYM_NORM)
             L_scaled = rescale_laplacian(L)
             return chebyshev_polynomial(L_scaled, MAX_DEGREE)
@@ -97,15 +100,19 @@ def gcn_encoder(X_tensor, A_tensor, filter_type, filter_dims, dropout_rate,
         G = [G]
 
     X = X_tensor
-    for i, units in enumerate(filter_dims):
+    for i, gc_units in enumerate(filter_dims):
         X = TimeDistributed(
             Dropout(dropout_rate), name='dropout_{}'.format(i))(X)
         X = TimeDistributedMultiInput(
-            BatchGraphConvolution(units, support=support, activation=activation,
+            BatchGraphConvolution(gc_units, support=support, activation=activation,
                                   name='GC_{}'.format(i)))([X]+G)
         if layer_norm:
-            X = LayerNormalization(name='layernorm_{}'.format(i))(X)
-
+            X = LayerNormalization(name='GC_layernorm_{}'.format(i))(X)
+        if dense_dims is not None:
+            X = TimeDistributed(Dense(dense_dims, activation=activation),
+                                name='FC_{}'.format(i))(X)
+            if layer_norm:
+                X = LayerNormalization(name='FC_layernorm_{}'.format(i))(X)
     return X
 
 

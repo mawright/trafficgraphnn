@@ -61,6 +61,8 @@ def main(
     num_gpus=1,
     no_plots=False,
     use_gcn=False,
+    gcn_filter_type='localpool',
+    gcn_chebyshev_order=2,
 ):
 
     if use_gcn:
@@ -126,7 +128,7 @@ def main(
     def make_model(X_in, A_in):
         if use_gcn:
             X = gcn_encoder(X_in, A_in, 'localpool', attn_dim,
-                            dropout_rate)
+                            dropout_rate, dense_dim, layer_norm=layer_norm)
         else:
             X = gat_encoder(X_in, A_in, attn_dim, attn_heads,
                             dropout_rate, attn_dropout,
@@ -212,7 +214,10 @@ def main(
         gat_highway_connection=gat_highway_connection,
         attn_heads=attn_heads, rnn_dim=rnn_dim, stateful_rnn=stateful_rnn,
         dense_dim=dense_dim, dropout_rate=dropout_rate,
-        attn_dropout=attn_dropout, seed=seed, num_gpus=num_gpus)
+        attn_dropout=attn_dropout, seed=seed, num_gpus=num_gpus,
+        use_gcn=use_gcn, gcn_filter_type=gcn_filter_type,
+        gcn_chebyshev_order=gcn_chebyshev_order,
+        )
     logdir = get_logging_dir(callback_list)
     if not os.path.exists(logdir):
         os.makedirs(logdir)
@@ -318,6 +323,10 @@ if __name__ == '__main__':
     parser.add_argument('--gcn', action='store_true',
                         help='Use Kipf and Welling\'s "Graph Convolution '
                         'Network" layers instead of attention ones.')
+    parser.add_argument('--gcn_filter_type', type=str, default='localpool',
+                        help="GCN filter type: 'localpool' or 'chebyshev'")
+    parser.add_argument('--gcn_chebyshev_order', type=int, default=3,
+                        help='Max order for GCN Chebyshev polynomials if chosen.')
     # parser.add_argument('--dcrnn', action='store_true',
     #                     help='Use Li et al.\'s "Diffusion Graph Convolutional '
     #                     'Neural Network" instead of graph->RNN')
@@ -363,4 +372,6 @@ if __name__ == '__main__':
          num_gpus=args.num_gpus,
          no_plots=args.no_plots,
          use_gcn=args.gcn,
+         gcn_filter_type=args.gcn_filter_type,
+         gcn_chebyshev_order=args.gcn_chebyshev_order,
          )
