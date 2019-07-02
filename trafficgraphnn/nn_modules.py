@@ -1,11 +1,11 @@
 import keras.backend as K
-from keras.layers import (RNN, Dense, Dropout, GRUCell, InputSpec, LSTMCell,
-                          TimeDistributed, Lambda)
+from keras.layers import (RNN, Dense, Dropout, GRUCell, InputSpec, Lambda,
+                          LSTMCell, TimeDistributed)
 from trafficgraphnn.layers import (BatchGraphAttention,
                                    BatchMultigraphAttention,
-                                   LayerNormalization,
-                                   DenseCausalAttention,
+                                   DenseCausalAttention, LayerNormalization,
                                    TimeDistributedMultiInput)
+from trafficgraphnn.layers.modified_thirdparty import BatchGraphConvolution
 from trafficgraphnn.utils import broadcast_lists, iterfy
 
 
@@ -32,6 +32,80 @@ def gat_single_A_encoder(X_tensor, A_tensor, attn_depth, attn_dims, num_heads,
                                 attn_heads=head,
                                 attn_dropout=attndrop,
                                 activation=gat_activation))([X, A_tensor])
+    return X
+
+
+def gcn_encoder(X_tensor, A_tensor, filter_type, filter_dims, dropout_rate,
+                layer_norm=False, activation='relu'):
+    import tensorflow as tf
+    from kegra.utils import normalize_adj, normalized_laplacian, \
+                            rescale_laplacian, chebyshev_polynomial
+    from scipy import sparse
+    if len(A_tensor.shape) > 4: # flatten out edge type dimension
+        A_tensor = Lambda(lambda A: K.max(A, 2, keepdims=False),
+                          name='flatten_A')(A_tensor)
+
+    if filter_type == 'localpool':
+        """ Local pooling filters (see 'renormalization trick' in Kipf & Welling, arXiv 2016) """
+        print('Using local pooling filters...')
+        def gcn_preprocess(A):
+            A = sparse.lil_matrix(A)
+            A = normalize_adj(A)
+            return [A.todense()]
+        support = 1
+        return_type = [tf.float32]
+        # G = [tf.py_func(gcn_preprocess, [A_tensor], tf.float32,
+        #                 stateful=False)]
+        # output_shape = A_tensor.shape
+        output_shape = K.int_shape(A_tensor)[1:]
+        # graph = [X, A_]
+
+    elif filter_type == 'chebyshev':
+        SYM_NORM = True
+        MAX_DEGREE = 2
+        """ Chebyshev polynomial basis filters (Defferard et al., NIPS 2016)  """
+        print('Using Chebyshev polynomial basis filters...')
+        def gcn_preprocess(A):
+            L = normalized_laplacian(A, SYM_NORM)
+            L_scaled = rescale_laplacian(L)
+            return chebyshev_polynomial(L_scaled, MAX_DEGREE)
+        support = MAX_DEGREE + 1
+        return_type = [tf.float32] * support
+        output_shape = [K.int_shape(A_tensor)[1:]] * support
+        # G = [tf.py_func(gcn_preprocess, [A_tensor], return_type,
+        #                 stateful=False)]
+    else:
+        raise Exception('Invalid filter type.')
+
+    def func(A):
+        shape = tf.shape(A)
+        A = tf.reshape(A, tf.concat((tf.reduce_prod(shape[:2], keepdims=True),
+                                     shape[2:]), axis=0))
+        G = tf.map_fn(
+            lambda a: tf.py_func(gcn_preprocess, [a], return_type,
+                                 stateful=False), A, dtype=[tf.float32])
+        G = [tf.reshape(g, shape) for g in G]
+        return [tf.ensure_shape(g, A_tensor.shape) for g in G]
+
+    l = Lambda(
+        lambda A: func(A),
+        # gcn_preprocess,
+        output_shape=output_shape,
+        name='gcn_preproc')
+    G = l(A_tensor)
+    if K.is_tensor(G):
+        G = [G]
+
+    X = X_tensor
+    for i, units in enumerate(filter_dims):
+        X = TimeDistributed(
+            Dropout(dropout_rate), name='dropout_{}'.format(i))(X)
+        X = TimeDistributedMultiInput(
+            BatchGraphConvolution(units, support=support, activation=activation,
+                                  name='GC_{}'.format(i)))([X]+G)
+        if layer_norm:
+            X = LayerNormalization(name='layernorm_{}'.format(i))(X)
+
     return X
 
 

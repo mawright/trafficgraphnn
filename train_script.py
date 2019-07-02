@@ -21,8 +21,9 @@ from trafficgraphnn.load_data_tf import TFBatcher
 from trafficgraphnn.losses import (huber, negative_masked_huber,
                                    negative_masked_mae, negative_masked_mape,
                                    negative_masked_mse)
-from trafficgraphnn.nn_modules import (gat_encoder, output_tensor_slices,
-                                       rnn_attn_decode, rnn_encode)
+from trafficgraphnn.nn_modules import (gat_encoder, gcn_encoder,
+                                       output_tensor_slices, rnn_attn_decode,
+                                       rnn_encode)
 from trafficgraphnn.utils import iterfy
 
 _logger = logging.getLogger(__name__)
@@ -59,8 +60,11 @@ def main(
     old_model=False,
     num_gpus=1,
     no_plots=False,
+    use_gcn=False,
 ):
 
+    if use_gcn:
+        assert 'A_eye' in A_name_list
     tf.set_random_seed(seed)
     np.random.seed(seed)
 
@@ -120,12 +124,17 @@ def main(
     attn_heads = iterfy(attn_heads) * attn_depth
 
     def make_model(X_in, A_in):
-        X = gat_encoder(X_in, A_in, attn_dim, attn_heads,
-                        dropout_rate, attn_dropout, gat_activation='relu',
-                        dense_dim=dense_dim,
-                        gat_highway_connection=gat_highway_connection,
-                        layer_norm=layer_norm,
-                        residual_connection=attn_residual_connection)
+        if use_gcn:
+            X = gcn_encoder(X_in, A_in, 'localpool', attn_dim,
+                            dropout_rate)
+        else:
+            X = gat_encoder(X_in, A_in, attn_dim, attn_heads,
+                            dropout_rate, attn_dropout,
+                            gat_activation='relu',
+                            dense_dim=dense_dim,
+                            gat_highway_connection=gat_highway_connection,
+                            layer_norm=layer_norm,
+                            residual_connection=attn_residual_connection)
 
         if stateful_rnn:
             reshape_batch_size = batch_size
@@ -306,6 +315,12 @@ if __name__ == '__main__':
                         help='Number of GPUs to use.')
     parser.add_argument('--no_plots', '-np', action='store_true',
                         help='Skip writing the result plots.')
+    parser.add_argument('--gcn', action='store_true',
+                        help='Use Kipf and Welling\'s "Graph Convolution '
+                        'Network" layers instead of attention ones.')
+    # parser.add_argument('--dcrnn', action='store_true',
+    #                     help='Use Li et al.\'s "Diffusion Graph Convolutional '
+    #                     'Neural Network" instead of graph->RNN')
     args = parser.parse_args()
 
     A_name_list = []
@@ -347,4 +362,5 @@ if __name__ == '__main__':
          old_model=args.old_model,
          num_gpus=args.num_gpus,
          no_plots=args.no_plots,
+         use_gcn=args.gcn,
          )

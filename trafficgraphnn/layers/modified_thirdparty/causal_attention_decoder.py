@@ -6,8 +6,7 @@ from __future__ import print_function
 
 from keras import backend as K
 from keras import constraints, initializers, regularizers
-from trafficgraphnn.layers.modified_thirdparty.andhus_attention import \
-    AttentionCellWrapper
+from trafficgraphnn.layers.modified_thirdparty import AttentionCellWrapper
 
 
 class DenseCausalAttention(AttentionCellWrapper):
@@ -92,6 +91,7 @@ class DenseCausalAttention(AttentionCellWrapper):
         h_cell_tm1 = cell_states[0]
         tm1 = attention_states[1]
 
+        # TODO move this definition to the "constants" part
         attended_shape = K.shape(attended)
         length = attended_shape[1]
 
@@ -106,7 +106,7 @@ class DenseCausalAttention(AttentionCellWrapper):
                                       K.cast(causal_mask, 'int32'))
 
         # compute attention weights
-        w = K.repeat(K.dot(h_cell_tm1, self.W_a) + self.b_UW, length)
+        w = K.repeat(K.dot(h_cell_tm1, self.W_a) + self.b_UW, length) #TODO replace repeat with broadcasting
         e = K.exp(K.dot(K.tanh(w + u), self.v_a) + self.b_v)
 
         if attended_mask is not None:
@@ -163,4 +163,5 @@ class DenseCausalAttention(AttentionCellWrapper):
 
     @property
     def attention_state_size(self):
+        # second element is the current timestep
         return [self.attention_size, 1]
