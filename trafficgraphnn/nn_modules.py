@@ -40,7 +40,8 @@ def gcn_encoder(X_tensor, A_tensor, filter_type, filter_dims, dropout_rate,
                 activation='relu'):
     import tensorflow as tf
     from kegra.utils import normalize_adj, normalized_laplacian, \
-                            rescale_laplacian, chebyshev_polynomial
+                            rescale_laplacian, chebyshev_polynomial, \
+                            preprocess_adj
     from scipy import sparse
     if len(A_tensor.shape) > 4: # flatten out edge type dimension
         A_tensor = Lambda(lambda A: K.max(A, 2, keepdims=False),
@@ -52,7 +53,7 @@ def gcn_encoder(X_tensor, A_tensor, filter_type, filter_dims, dropout_rate,
         def gcn_preprocess(A):
             A = sparse.lil_matrix(A)
             A = A + A.T.multiply(A.T > A) - A.multiply(A.T > A) # symmetrize
-            A = normalize_adj(A)
+            A = preprocess_adj(A)
             return [A.todense().A.astype('float32')]
         support = 1
         return_type = [tf.float32]
