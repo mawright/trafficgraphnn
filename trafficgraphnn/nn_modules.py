@@ -39,9 +39,8 @@ def gcn_encoder(X_tensor, A_tensor, filter_type, filter_dims, dropout_rate,
                 dense_dims, cheb_polynomial_degree=2, layer_norm=False,
                 activation='relu'):
     import tensorflow as tf
-    from kegra.utils import normalize_adj, normalized_laplacian, \
-                            rescale_laplacian, chebyshev_polynomial, \
-                            preprocess_adj
+    from kegra.utils import preprocess_adj, normalized_laplacian, \
+                            rescale_laplacian, chebyshev_polynomial
     from scipy import sparse
     if len(A_tensor.shape) > 4: # flatten out edge type dimension
         A_tensor = Lambda(lambda A: K.max(A, 2, keepdims=False),
