@@ -59,6 +59,7 @@ def main(
     per_step_metrics=False,
     old_model=False,
     num_gpus=1,
+    disable_gpu_prefetch=False,
     no_plots=False,
     use_gcn=False,
     gcn_filter_type='localpool',
@@ -104,7 +105,7 @@ def main(
                               y_feature_subset=y_feature_subset,
                               flatten_A=flatten_A,
                               max_time=max_time,
-                              gpu_prefetch=True
+                              gpu_prefetch=not(disable_gpu_prefetch)
                               )
 
         Xtens = batch_gen.X
@@ -320,6 +321,9 @@ if __name__ == '__main__':
                         help='Use the old model without inter-GAT FC layers')
     parser.add_argument('--num_gpus', '-g', type=int, default=1,
                         help='Number of GPUs to use.')
+    parser.add_argument('--disable_gpu_prefetch', action='store_true',
+                        help='Disable the GPU prefetch step in tf.data input '
+                             'pipeline.')
     parser.add_argument('--no_plots', '-np', action='store_true',
                         help='Skip writing the result plots.')
     parser.add_argument('--gcn', action='store_true',
@@ -372,6 +376,7 @@ if __name__ == '__main__':
          per_step_metrics=args.per_step_metrics,
          old_model=args.old_model,
          num_gpus=args.num_gpus,
+         disable_gpu_prefetch=args.disable_gpu_prefetch,
          no_plots=args.no_plots,
          use_gcn=args.gcn,
          gcn_filter_type=args.gcn_filter_type,
