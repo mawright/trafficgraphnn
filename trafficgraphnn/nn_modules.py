@@ -58,6 +58,7 @@ def gcn_encoder(X_tensor, A_tensor, filter_type, filter_dims, dropout_rate,
             D_invsqrt = tf.matrix_diag(degree_invsqrt)
             return tf.matmul(tf.matmul(D_invsqrt, A), D_invsqrt)
         output_shape = K.int_shape(A_tensor)[1:]
+        support = 1
 
     elif filter_type == 'chebyshev':
         SYM_NORM = True
