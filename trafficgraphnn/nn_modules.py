@@ -39,8 +39,8 @@ def gcn_encoder(X_tensor, A_tensor, filter_type, filter_dims, dropout_rate,
                 dense_dims, cheb_polynomial_degree=2, layer_norm=False,
                 activation='relu'):
     import tensorflow as tf
-    from kegra.utils import preprocess_adj, normalized_laplacian, \
-                            rescale_laplacian, chebyshev_polynomial
+    from kegra.utils import chebyshev_polynomial, normalized_laplacian, \
+                            rescale_laplacian
     from scipy import sparse
     if len(A_tensor.shape) > 4: # flatten out edge type dimension
         A_tensor = Lambda(lambda A: K.max(A, 2, keepdims=False),
@@ -49,18 +49,14 @@ def gcn_encoder(X_tensor, A_tensor, filter_type, filter_dims, dropout_rate,
     if filter_type == 'localpool':
         """ Local pooling filters (see 'renormalization trick' in Kipf & Welling, arXiv 2016) """
         print('Using local pooling filters...')
-        def gcn_preprocess(A):
-            A = sparse.lil_matrix(A)
-            A = A + A.T.multiply(A.T > A) - A.multiply(A.T > A) # symmetrize
-            A = preprocess_adj(A)
-            return [A.todense().A.astype('float32')]
-        support = 1
-        return_type = [tf.float32]
-        # G = [tf.py_func(gcn_preprocess, [A_tensor], tf.float32,
-        #                 stateful=False)]
-        # output_shape = A_tensor.shape
-        output_shape = K.int_shape(A_tensor)[1:]
-        # graph = [X, A_]
+        def func(A):
+            A = tf.maximum(A, tf.matrix_transpose(A)) # symmetrize
+            diag = tf.matrix_diag_part(A)
+            A = tf.matrix_set_diag(A, diag + 1)
+            degree = tf.reduce_sum(A, -1)
+            degree_invsqrt = tf.rsqrt(degree)
+            D_invsqrt = tf.matrix_diag(degree_invsqrt)
+            return tf.matmul(tf.matmul(D_invsqrt, A), D_invsqrt)
 
     elif filter_type == 'chebyshev':
         SYM_NORM = True
@@ -78,18 +74,18 @@ def gcn_encoder(X_tensor, A_tensor, filter_type, filter_dims, dropout_rate,
         output_shape = lambda x: [x] * support
         # G = [tf.py_func(gcn_preprocess, [A_tensor], return_type,
         #                 stateful=False)]
+        def func(A):
+            shape = tf.shape(A)
+            A = tf.reshape(A, tf.concat((tf.reduce_prod(shape[:2],
+                                                        keepdims=True),
+                                        shape[2:]), axis=0))
+            G = tf.map_fn(
+                lambda a: tf.py_func(gcn_preprocess, [a], return_type,
+                                    stateful=False), A, dtype=return_type)
+            G = [tf.reshape(g, shape) for g in G]
+            return [tf.ensure_shape(g, A_tensor.shape) for g in G]
     else:
         raise Exception('Invalid filter type.')
-
-    def func(A):
-        shape = tf.shape(A)
-        A = tf.reshape(A, tf.concat((tf.reduce_prod(shape[:2], keepdims=True),
-                                     shape[2:]), axis=0))
-        G = tf.map_fn(
-            lambda a: tf.py_func(gcn_preprocess, [a], return_type,
-                                 stateful=False), A, dtype=return_type)
-        G = [tf.reshape(g, shape) for g in G]
-        return [tf.ensure_shape(g, A_tensor.shape) for g in G]
 
     l = Lambda(
         lambda A: func(A),
